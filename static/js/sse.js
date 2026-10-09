@@ -93,7 +93,7 @@ export function presence({ claim = false } = {}) {
   if (key === lastPresence) return Promise.resolve();
   lastPresence = key;
   return api("/api/presence", { method: "POST", body })
-    .then(r => { if (r && "leader" in r) bus.emit("server:leader", { type: "leader", client: r.leader }); })
+    .then(r => { if (r && "leader" in r) bus.emit("server:leader", { type: "leader", client: r.leader, live: !!r.live }); })
     .catch(() => { lastPresence = ""; });  // said again at the next change
 }
 export function claim() { return presence({ claim: true }); }

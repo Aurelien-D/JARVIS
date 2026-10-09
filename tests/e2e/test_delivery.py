@@ -211,6 +211,8 @@ def test_quiet_hours_hold_back_a_task_result_behind_the_badge(open_page, monkeyp
     assert any(t.startswith('Résultat de la tâche "Rapport" (done)') for t in notices)
     assert any(t.startswith("Données non fiables (Résultat de la tâche « Rapport »)")
                and "<donnees>\nIl fait 18 degres a Lyon.\n</donnees>" in t for t in texts)
+    page.evaluate("__emit({type: 'response.created'})")
+    page.evaluate("__emit({type: 'response.done', response: {status: 'completed', output: []}})")
     until(lambda: pending_ids() == [])
     assert page.evaluate("__jarvis.state.pending") == 0 and not page.is_visible("#badge")
 
@@ -227,7 +229,7 @@ def test_do_not_disturb_for_an_hour(open_page):
     hour = (f"{expected.hour}\u00a0h\u00a0{expected.minute:02d}" if expected.minute
             else f"{expected.hour}\u00a0h")
     assert page.text_content("#dndChip button") == f"Ne pas déranger jusqu'à {hour}"
-    assert page.get_attribute("#dndToggle", "aria-pressed") == "true"
+    assert page.get_attribute("#dndToggle", "data-on") == "true"
     assert page.evaluate("__jarvis.state.quiet") is True
     page.evaluate("__tones.length = 0")
     delegate(page, "Silence")
@@ -236,7 +238,7 @@ def test_do_not_disturb_for_an_hour(open_page):
     page.click("#dndChip button")  # over
     page.wait_for_function("document.getElementById('dndChip').hidden")
     until(lambda: inbox.dnd_until() is None)
-    assert page.get_attribute("#dndToggle", "aria-pressed") == "false"
+    assert page.get_attribute("#dndToggle", "data-on") == "false"
     assert page.text_content("#dndToggle") == "Ne pas déranger 1 h"
 
 # ---------------------------------------------------------------- nothing lost
@@ -264,6 +266,8 @@ def test_speech_refused_keeps_the_message_for_the_next_session(open_page):
     assert pending_ids() == ["refus"]  # not told: still waiting
     page.click("#badge")
     page.wait_for_function("__texts().some(t => t.includes('Appeler le garage'))")
+    page.evaluate("__emit({type: 'response.created'})")
+    page.evaluate("__emit({type: 'response.done', response: {status: 'completed', output: []}})")
     until(lambda: pending_ids() == [])
 
 
@@ -297,6 +301,10 @@ def test_in_a_session_a_message_waits_for_a_pause(open_page):
     page.evaluate("__emit({type: 'response.done', response: {output: []}}); __jarvis.state.phase = 'listening'")
     page.wait_for_function("__types().join() === 'message:input_text,response.create'")
     assert "Le thé est prêt" in page.evaluate("__texts()")[0]
+    page.wait_for_timeout(300)
+    assert "live1" in pending_ids()  # sent, not yet said
+    page.evaluate("__emit({type: 'response.created'})")
+    page.evaluate("__emit({type: 'response.done', response: {status: 'completed', output: []}})")
     until(lambda: "live1" not in pending_ids())
 
 

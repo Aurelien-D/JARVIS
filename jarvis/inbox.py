@@ -235,9 +235,11 @@ class PresenceIn(BaseModel):
 @router.post("/api/presence")
 def post_presence(body: PresenceIn):
     try:
-        return {"leader": events.presence(body.client, body.focused, body.live, body.claim)}
+        events.presence(body.client, body.focused, body.live, body.claim)
     except ValueError as exc:
         raise HTTPException(400, f"Présence refusée : {exc}.") from None
+    info = events.leader_info()  # live: a claim waits for that page's conversation to end
+    return {"leader": info["client"], "live": info["live"]}
 
 
 @router.get("/api/delivery")

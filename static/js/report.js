@@ -1,10 +1,15 @@
 /* The report dashboard (display_report): KPI tiles, an ApexCharts chart,
    a Grid.js table and markdown notes. */
 import { $, esc, md } from "./core.js";
+import { T, fmtNumber } from "./strings-fr.js";
 
 // Series palette validated for dark surfaces (CVD-safe, dataviz checks pass).
 const SERIES_COLORS = ["#1e93c4", "#c47b1e", "#1ea86a"];
 let _apex = null, _grid = null;
+let opener = null;  // where the focus was: it goes back there on close
+
+// Numbers the French way: '1 037', '12,5' (design spec §5).
+const num = (v) => (typeof v === "number" && Number.isFinite(v) ? fmtNumber(v) : v);
 
 export function showReport(r) {
   const rep = $("report");
@@ -29,7 +34,7 @@ export function showReport(r) {
     const nSeries = donut ? (c.categories || []).length : c.series.length;
     const opts = {
       chart: { type: c.type || "line", height: 280, background: "transparent",
-               toolbar: { show: false }, foreColor: "#4d7c99",
+               toolbar: { show: false }, foreColor: "#7aa7c2",  // --muted
                fontFamily: "Rajdhani, sans-serif" },
       theme: { mode: "dark" },
       colors: SERIES_COLORS,
@@ -41,7 +46,11 @@ export function showReport(r) {
       series: donut ? c.series[0].data : c.series,
     };
     if (donut) opts.labels = c.categories || [];
-    else opts.xaxis = { categories: c.categories || [] };
+    else {
+      opts.xaxis = { categories: c.categories || [] };
+      opts.yaxis = { labels: { formatter: num } };
+    }
+    opts.tooltip.y = { formatter: num };
     if (c.type === "area") opts.fill = { type: "gradient", gradient: { opacityFrom: .3, opacityTo: .02 } };
     _apex = new ApexCharts(chartEl, opts);
     _apex.render();
@@ -54,11 +63,13 @@ export function showReport(r) {
   const tb = r.table;
   if (tb && window.gridjs && (tb.rows || []).length) {
     _grid = new gridjs.Grid({
-      columns: tb.columns || [],
+      // shown in French, sorted on the raw values
+      columns: (tb.columns || []).map(name => ({ name, formatter: num })),
       data: tb.rows,
       sort: true,
       search: tb.rows.length > 8,
       pagination: tb.rows.length > 12 ? { limit: 10 } : false,
+      language: T.report.grid,
       style: { table: { "font-family": "Rajdhani, sans-serif" } },
     });
     _grid.render(tableEl);
@@ -68,7 +79,9 @@ export function showReport(r) {
   $("rmd").innerHTML = r.markdown ? md(r.markdown) : "";
 
   // Shown in place, like the old overlay: the HUD behind stays usable and the
-  // focus stays where it was (show() would move it into the report).
+  // focus stays where it was (show() would move it into the report). WP11
+  // makes it a real modal window.
+  if (!rep.open) opener = document.activeElement;
   rep.setAttribute("open", "");
 }
 
@@ -78,5 +91,15 @@ export function closeReport() {
 }
 
 export function init() {
-  $("report").querySelector(".rhead .x").addEventListener("click", closeReport);
+  const rep = $("report");
+  rep.querySelector(".rhead .x").addEventListener("click", closeReport);
+  // Closed by its ✕ or Échap: the focus goes back where it was, not to <body>.
+  rep.addEventListener("close", () => {
+    const back = opener;
+    opener = null;
+    if (rep.contains(document.activeElement) || document.activeElement === document.body) {
+      if (back && back.isConnected && back !== document.body) back.focus({ preventScroll: true });
+      else $("orbBtn")?.focus({ preventScroll: true });
+    }
+  });
 }

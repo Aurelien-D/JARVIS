@@ -186,7 +186,10 @@ def test_a_complet_task_from_the_voice_waits_for_lancer_then_runs_and_is_told(ja
     assert any(d.startswith("Données non fiables (Résultat de la tâche « Ranger les téléchargements »)")
                and "<donnees>\nIl fait 18 degres a Lyon.\n</donnees>" in d for d in data)
     jarvis.wait_for_function("__sent.some(m => m.type === 'response.create')")
-    until(lambda: started[0]["id"] not in pending_ids())  # told: acknowledged in the inbox
+    jarvis.wait_for_timeout(300)
+    assert started[0]["id"] in pending_ids()  # sent, not yet said: still in the inbox
+    jarvis_says(jarvis, "La tâche est terminée, monsieur.", "a2")
+    until(lambda: started[0]["id"] not in pending_ids())  # said in full: acknowledged
 
 
 def test_a_spoken_oui_only_counts_after_the_question(jarvis):
@@ -291,6 +294,7 @@ def test_quiet_hours_hold_a_result_until_the_wake_word_opens_a_session(spied_pag
     said = [i["content"][0]["text"] for i in items(page) if i.get("role") == "user"]
     assert said[0] == "quoi de neuf ?"  # his words first, then the result as data
     assert any("<donnees>" in s for s in said[1:])
+    jarvis_says(page, "La météo du jour est prête, monsieur.", "a2")  # said in full
     until(lambda: task["task_id"] not in pending_ids())
     assert page.evaluate("__jarvis.state.pending") == 0 and not page.is_visible("#badge")
     inbox.set_dnd(None)

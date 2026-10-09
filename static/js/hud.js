@@ -4,8 +4,8 @@
    left to the orb's colour alone. */
 import { $, bus, md, settings, state, usesMarked } from "./core.js";
 import { connect, interrupt, setMuted, sleep } from "./voice.js";
-import { wakeWanted } from "./wake.js";
-import { T, explainError, fmtElapsed, fmtRelative, fmtTime } from "./strings-fr.js";
+import { wakeEngine, wakeWanted } from "./wake.js";
+import { T, explainError, fmtElapsed, fmtRelative, fmtTime, fr } from "./strings-fr.js";
 
 const MAX_CARDS = 8;               // beyond, the oldest evictable card goes
 const FADE_MS = 10 * 60e3;         // info and result cards fade after 10 minutes
@@ -58,7 +58,8 @@ function statusModel(now = Date.now()) {
   if (ui.wasSynced && state.synced === false && state.mode !== "live") {
     key = "server"; text = T.status.serverDown;
   } else if (state.mode === "off") {
-    key = "off"; text = T.status.off;
+    // The wake word switched off is a choice, not an outage (design spec §11).
+    key = "off"; text = wakeEngine() && !wakeWanted() ? T.status.wakeOff : T.status.off;
   } else if (state.mode === "standby") {
     key = "standby";
     text = wakeWanted() ? T.status.standby + wakeEngineSuffix() : T.status.wakeOff;
@@ -121,8 +122,9 @@ export function renderStatus() {
   const html = pillHtml(m.text, m.tick);
   if (html !== lastStatusHtml) {
     // A tick of the same status updates the text silently (aria-live off);
-    // a new status is announced (role=status, polite).
-    statusEl.setAttribute("aria-live", m.key === lastStatusKey ? "off" : "polite");
+    // a new status is announced (role=status, polite). An error is not: #srAlert
+    // already says it.
+    statusEl.setAttribute("aria-live", m.err || m.key === lastStatusKey ? "off" : "polite");
     statusEl.innerHTML = html;
     lastStatusHtml = html;
   }
@@ -187,7 +189,9 @@ function renderControls(phase) {
   const live = state.mode === "live";
   if (controlsEl.hidden === live) controlsEl.hidden = !live;
   setText(micBtn, state.muted ? T.controls.micOff : T.controls.micOn);
-  setAttr(micBtn, "aria-pressed", String(!!state.muted));
+  // 'Micro : activé / coupé' says the state itself: no aria-pressed on a
+  // label that changes (WAI-ARIA APG), the colour follows data-on.
+  setAttr(micBtn, "data-on", String(!state.muted));
   const canInterrupt = phase === "speaking" || phase === "tool";
   if (interruptBtn.disabled === canInterrupt) interruptBtn.disabled = !canInterrupt;
   // The wake word switch (#wakeBtn) belongs to wake.js: it knows when it is paused,
@@ -208,6 +212,9 @@ export function setSideOpen(open, { returnFocus = true } = {}) {
   open = !!open && narrow.matches;
   document.body.classList.toggle("side-open", open);
   panelBtn.setAttribute("aria-expanded", String(open));
+  // What the open panel covers can't take the focus (WCAG 2.4.11); the top
+  // bar stays usable above it.
+  for (const id of ["cards", "stage"]) $(id).inert = open;
   if (open && !was) {
     side.setAttribute("tabindex", "-1");
     side.focus({ preventScroll: true });
@@ -229,6 +236,13 @@ function renderTopActions() {
   panelBtn.setAttribute("aria-expanded", "false");
   const prefs = button(T.controls.settings, open("settings"), "top-btn");
   prefs.setAttribute("aria-controls", "settingsDialog");
+  // Shown once journal.js / settings.js really open them (bus 'ui:ready'):
+  // never a button that does nothing.
+  journal.hidden = prefs.hidden = true;
+  bus.on("ui:ready", (name) => {
+    if (name === "journal") journal.hidden = false;
+    if (name === "settings") prefs.hidden = false;
+  });
   nav.replaceChildren(help, journal, panelBtn, prefs);
 }
 
@@ -257,8 +271,11 @@ function onJarvisCaption({ itemId = "", text = "", final = false } = {}) {
     lines.forEach((l, i) => l.classList.toggle("old", i < lines.length - 1));
     for (let i = 0; i < lines.length - MAX_LINES; i++) lines[i].remove();
   }
-  const prev = line.textContent;
-  line.textContent = final || !prev || text.startsWith(prev) ? text : prev + text;
+  const prev = line.dataset.raw || "";
+  const raw = final || !prev || text.startsWith(prev) ? text : prev + text;
+  line.dataset.raw = raw;
+  line.textContent = fr(raw);  // '… des prix ?': the '?' never wraps alone
+  box.scrollTop = box.scrollHeight;  // the newest words in view; older ones fade out above
   box.classList.toggle("clipped", box.scrollHeight > box.clientHeight + 1);
 }
 
@@ -305,7 +322,7 @@ export function makeCard(title, kind = "info", { id, sticky = false } = {}) {
   for (let i = all.length - 1, n = all.length; i >= 0 && n > MAX_CARDS; i--) {
     if (all[i] !== el && evictable(all[i])) { all[i].remove(); n--; }
   }
-  if (fresh) announce(T.hud.newCard(title));
+  if (fresh && kind !== "confirm") announce(T.hud.newCard(title));  // confirm.js alerts itself
   syncCards();
   return el;
 }
@@ -400,14 +417,28 @@ function syncCards() {
   const n = cards().length;
   cardsEl.classList.toggle("empty", n === 0);
   clearBtn.hidden = n < 2;
-  const more = n - 1;
-  moreBtn.hidden = more < 1;
-  if (more < 1) cardsEl.classList.remove("expanded");
-  const expanded = cardsEl.classList.contains("expanded");
-  moreBtn.textContent = expanded ? "−" : T.hud.moreCards(more);
-  moreBtn.setAttribute("aria-label", expanded ? T.hud.fewerCards : T.hud.moreCardsLabel(more));
-  moreBtn.setAttribute("aria-expanded", String(expanded));
+  syncMore();
   measureSheet();
+}
+
+/* '+n' in the bottom sheet: the other cards, or the rest of a newest card
+   too long for the sheet (its body is cut at 4.4 lines). */
+function syncMore() {
+  const more = cards().length - 1;
+  const top = listEl.firstElementChild;  // the newest card ('Aide' is never cut)
+  const first = top && top.id !== "card-aide" ? top.querySelector(".body") : null;
+  const long = sheetQuery.matches && !!first
+    && first.scrollHeight > 4.4 * parseFloat(getComputedStyle(first).fontSize) + 1;
+  if (more < 1 && !long) cardsEl.classList.remove("expanded");
+  const expanded = cardsEl.classList.contains("expanded");
+  moreBtn.hidden = more < 1 && !long;
+  moreBtn.textContent = expanded ? "−" : more >= 1 ? T.hud.moreCards(more) : "+";
+  moreBtn.setAttribute("aria-label", expanded ? T.hud.fewerCards
+    : more >= 1 ? T.hud.moreCardsLabel(more) : T.hud.wholeCard);
+  moreBtn.setAttribute("aria-expanded", String(expanded));
+  // A cut body scrolls: the keyboard must reach it too.
+  for (const b of listEl.querySelectorAll(".body[tabindex]")) if (b !== first || expanded) b.removeAttribute("tabindex");
+  if (first && long && !expanded) first.tabIndex = 0;
 }
 
 const sheetQuery = window.matchMedia("(max-width: 900px)");
@@ -429,7 +460,8 @@ async function copyText(text) {
 }
 
 /* ---------------------------------------------------------- toasts & announcements */
-export function toast(text, { actionLabel, onAction, ms = 6000 } = {}) {
+/* focus: put the keyboard on the action at once ('Rappel supprimé · Annuler'). */
+export function toast(text, { actionLabel, onAction, ms = 6000, focus = false } = {}) {
   const el = document.createElement("div");
   el.className = "toast";
   const span = document.createElement("span");
@@ -439,7 +471,16 @@ export function toast(text, { actionLabel, onAction, ms = 6000 } = {}) {
     el.append(button(actionLabel, () => { el.remove(); onAction?.(); }, "ctl"));
   }
   $("toasts").append(el);
-  setTimeout(() => el.remove(), ms);
+  // Held while the pointer or the focus is on it (WCAG 2.2.1): its action
+  // stays within reach; it goes 3 s after they leave.
+  let timer = setTimeout(() => el.remove(), ms);
+  const hold = () => clearTimeout(timer);
+  const resume = () => { clearTimeout(timer); timer = setTimeout(() => el.remove(), 3000); };
+  el.addEventListener("pointerenter", hold);
+  el.addEventListener("pointerleave", resume);
+  el.addEventListener("focusin", hold);
+  el.addEventListener("focusout", resume);
+  if (focus) el.querySelector("button")?.focus();
   return el;
 }
 
@@ -502,8 +543,12 @@ export function init() {
   listEl = document.createElement("div");
   listEl.className = "cards-list";
   listEl.id = "cardList";
-  cardsEl.replaceChildren(bar, listEl);
-  if ("ResizeObserver" in window) new ResizeObserver(measureSheet).observe(cardsEl);
+  // The cards' heading, for screen readers (h1 brand > h2 Affichages > h3 cards).
+  const heading = document.createElement("h2");
+  heading.className = "visually-hidden";
+  heading.textContent = T.hud.cards;
+  cardsEl.replaceChildren(heading, bar, listEl);
+  if ("ResizeObserver" in window) new ResizeObserver(() => { syncMore(); measureSheet(); }).observe(cardsEl);
   sheetQuery.addEventListener?.("change", measureSheet);
   syncCards();
 
@@ -522,6 +567,20 @@ export function init() {
 
   renderTopActions();
   narrow.addEventListener?.("change", () => { if (!narrow.matches) setSideOpen(false, { returnFocus: false }); });
+  // The off-canvas panel (≤ 1100 px): its own ✕, and a click beside it closes it.
+  const closeSide = button("✕", () => setSideOpen(false), "x side-close");
+  closeSide.setAttribute("aria-label", T.hud.closePanel);
+  $("side").prepend(closeSide);
+  document.addEventListener("pointerdown", (e) => {
+    if (!document.body.classList.contains("side-open")) return;
+    if ($("side").contains(e.target) || panelBtn.contains(e.target)) return;
+    setSideOpen(false, { returnFocus: false });
+  });
+  // The panel and the toasts sit under the top bar, whatever its height (it wraps).
+  const topbar = $("topbar");
+  const topH = () => document.body.style.setProperty("--topbar-h", `${topbar.offsetHeight}px`);
+  topH();
+  if ("ResizeObserver" in window) new ResizeObserver(topH).observe(topbar);
 
   orbBtn.addEventListener("click", () => {
     if (state.mode === "live" || state.mode === "connecting") sleep();
@@ -546,7 +605,8 @@ export function init() {
   bus.on("error", setStatusError);
   bus.on("caption:user", onUserCaption);
   bus.on("caption:jarvis", onJarvisCaption);
-  for (const type of ["server:task", "server:config"]) bus.on(type, () => renderStatus());
+  // After every listener of the event: delivery.js keeps state.tasks up to date.
+  for (const type of ["server:task", "server:config"]) bus.on(type, () => queueMicrotask(renderStatus));
 
   tick();
   setInterval(tick, 1000);

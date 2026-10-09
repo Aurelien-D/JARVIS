@@ -9,7 +9,10 @@
      presentation) keep JARVIS silent: a reminder monsieur set still gets a
      silent notification and one soft chime; everything else waits behind the
      badge on the orb (#badge) until the next session.
-   - In a session, a message waits for a pause in the conversation.
+   - In a session, a message waits for a pause in the conversation, and is
+     acknowledged once the answer that tells it has been said in full: cut
+     short (a dropped connection, monsieur stopping JARVIS), it goes back
+     behind the badge.
    Other modules ask through bus.emit("deliver", {text, kind, priority, spoken}). */
 import { $, api, bus, settings, state, touch } from "./core.js";
 import { earcon } from "./audio-fx.js";
@@ -28,10 +31,12 @@ const BUSY_PHASES = new Set(["user", "speaking", "thinking", "tool", "confirm"])
 const MAX_PENDING = 30;
 
 let leaderId = null;      // the page that speaks; null until the server says
+let leaderLive = false;   // ...and it is in a conversation: no taking over until it ends
 let leaderSeen = false;
 const leaderWaiters = [];
 const pending = [];       // nobody told yet: waits for the next session (the badge)
 const liveQueue = [];     // in a session: waits for a pause in the conversation
+const telling = [];       // sent to the model: acknowledged once its answer completes
 const handled = new Set();  // inbox ids this page already took care of
 let quietSpec = "";       // config.QUIET_HOURS, e.g. "22:30-07:30"
 let dndUntil = 0;         // epoch seconds
@@ -57,12 +62,16 @@ export function leaderKnown(ms = 2000) {
 }
 
 function onLeader(ev) {
-  const before = isLeader(), first = !leaderSeen;
+  const before = isLeader(), first = !leaderSeen, wasLive = leaderLive;
   leaderId = ev && ev.client ? String(ev.client) : null;
+  leaderLive = !!(ev && ev.live);
   leaderSeen = true;
   leaderWaiters.splice(0).forEach(fn => fn());
   const now = isLeader();
-  if (!first && before === now) return;
+  if (!first && before === now) {
+    if (!now && wasLive !== leaderLive) renderOtherPage();
+    return;
+  }
   if (!now) handOver();
   renderOtherPage();
   renderBadge();
@@ -72,7 +81,7 @@ function onLeader(ev) {
 
 /* Another page speaks now: what the inbox holds is its job. */
 function handOver() {
-  for (const list of [pending, liveQueue]) {
+  for (const list of [pending, liveQueue, telling]) {
     for (let i = list.length - 1; i >= 0; i--) {
       if (list[i].inboxIds.length) {
         list[i].inboxIds.forEach(id => handled.delete(id));
@@ -82,8 +91,14 @@ function handOver() {
   }
 }
 
+/* The other window in a conversation keeps JARVIS until it ends: no button
+   that would do nothing, the reason instead. */
 function renderOtherPage() {
   if (isLeader()) { removeCard("other-page"); return; }
+  if (leaderLive) {
+    addCard(S.otherTitle, S.otherLive, "info", { id: "other-page", sticky: true });
+    return;
+  }
   addCard(S.otherTitle, S.otherPage, "info", { id: "other-page", sticky: true,
     actions: [{ label: S.useThisPage, primary: true, onClick: () => claim() }] });
 }
@@ -154,7 +169,8 @@ function renderDnd() {
   }
   if (dndToggle) {
     dndToggle.textContent = active ? label : S.dndHour;
-    dndToggle.setAttribute("aria-pressed", String(active));
+    // The label says the state; no aria-pressed on a label that changes (WAI-ARIA APG).
+    dndToggle.dataset.on = String(active);
     dndToggle.title = active ? S.dndEnd : "";
   }
 }
@@ -278,8 +294,22 @@ function flushLive() {
   batch.forEach(tell);
   requestResponse();
   touch();
-  ack(batch.flatMap(m => m.inboxIds));
+  telling.push(...batch);
   batch.forEach(m => delivered(m, "live"));
+}
+
+/* The answer telling them ended (voice.js 'response:done'): said in full, they
+   are acknowledged; cut short, they wait behind the badge again. */
+function onResponseDone({ status } = {}) {
+  if (!telling.length) return;
+  const batch = telling.splice(0);
+  if (status === undefined || status === "completed") ack(batch.flatMap(m => m.inboxIds));
+  else batch.forEach(queue);
+}
+
+/* The session ended before the answer did: nothing was heard in full. */
+function untold() {
+  if (telling.length) telling.splice(0).forEach(queue);
 }
 
 export function pendingCount() { return pending.reduce((n, m) => n + (m.count || 1), 0); }
@@ -463,7 +493,7 @@ function onWarning(w) {
 /* Another page acknowledged: nothing left to tell here. */
 function onAcked(ev) {
   const acked = new Set((ev && ev.acked) || []);
-  for (const list of [pending, liveQueue]) {
+  for (const list of [pending, liveQueue, telling]) {
     for (let i = list.length - 1; i >= 0; i--) {
       const ids = list[i].inboxIds;
       if (ids.length && ids.every(id => acked.has(id))) list.splice(i, 1);
@@ -568,7 +598,13 @@ export function init() {
     cacheVoices();
     try { speechSynthesis.addEventListener("voiceschanged", cacheVoices); } catch { /* old engine */ }
   }
-  $("badge")?.addEventListener("click", () => connect());  // the queue is told once live
+  // The queue is told once live; in a session, at the next pause.
+  $("badge")?.addEventListener("click", () => {
+    if (!isLive()) { connect(); return; }
+    liveQueue.push(...pending.splice(0));
+    renderBadge();
+    flushLive();
+  });
 
   bus.on("server:task", onTask);
   bus.on("server:reminder", onReminder);
@@ -579,7 +615,9 @@ export function init() {
   bus.on("server:dnd", onDnd);
   bus.on("deliver", deliver);
   bus.on("tool:result", (r) => { if (r && r.name === "schedule") offerNotifications(); });
+  bus.on("response:done", onResponseDone);
   bus.on("mode", ({ mode }) => {
+    if (mode !== "live") untold();
     if (mode === "live" && pending.length) {
       liveQueue.push(...pending.splice(0));
       renderBadge();

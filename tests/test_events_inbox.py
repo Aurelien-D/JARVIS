@@ -23,12 +23,14 @@ def fresh_events():
     events._replay.clear()
     events._clients.clear()
     events._leader = None
+    events._leader_live = False
     events._closing.clear()
     inbox._toasted.clear()
     yield
     events._closing.clear()
     events._clients.clear()
     events._leader = None
+    events._leader_live = False
 
 
 @pytest.fixture
@@ -144,15 +146,15 @@ def test_stream_lines_carry_ids_and_a_reconnection_replays_only_what_was_missed(
         page = await opened("page-a", last_event_id=str(ids[1]))
         got = await frames(page, 4)
         assert [(i, d.get("n")) for i, d in got[:3]] == [(ids[2], 2), (ids[3], 3), (ids[4], 4)]
-        assert got[3] == (None, {"type": "leader", "client": "page-a"})  # who speaks, no id
+        assert got[3] == (None, {"type": "leader", "client": "page-a", "live": False})  # who speaks, no id
         new_id = events.publish("memory", {"n": 5})
         rest = await frames(page, 2)  # the election when it joined, then the new event
-        assert rest[0][1] == {"type": "leader", "client": "page-a"} and rest[0][0] < new_id
+        assert rest[0][1] == {"type": "leader", "client": "page-a", "live": False} and rest[0][0] < new_id
         assert rest[1] == (new_id, {"type": "memory", "n": 5})
         await page.aclose()
 
         fresh = await opened("page-b")  # a new page: no replay, the inbox covers it
-        assert (await frames(fresh, 1))[0] == (None, {"type": "leader", "client": "page-b"})
+        assert (await frames(fresh, 1))[0] == (None, {"type": "leader", "client": "page-b", "live": False})
         await fresh.aclose()
     asyncio.run(scenario())
 
@@ -246,8 +248,28 @@ def test_presence_route_answers_with_the_leader(client):
     async def scenario():
         page = await opened("page-r")
         r = client.post("/api/presence", headers=AUTH, json={"client": "page-r", "focused": True, "live": False})
-        assert r.json() == {"leader": "page-r"}
+        assert r.json() == {"leader": "page-r", "live": False}
         await page.aclose()
+    asyncio.run(scenario())
+
+
+def test_the_leader_event_says_when_that_page_is_in_a_conversation(client):
+    """A claim can't take over a conversation: the other pages are told why
+    ('JARVIS est en conversation dans l'autre fenêtre')."""
+    async def scenario():
+        a = await opened("page-a")
+        b = await opened("page-b")
+        events.presence("page-a", focused=True)
+        events._replay.clear()
+        assert events.presence("page-a", live=True) == "page-a"
+        r = client.post("/api/presence", headers=AUTH, json={"client": "page-b", "claim": True})
+        assert r.json() == {"leader": "page-a", "live": True}  # the conversation keeps it
+        events.presence("page-a", live=False)
+        leaders = [json.loads(m) for _, m in events._replay if json.loads(m)["type"] == "leader"]
+        # Same page, but its conversation started then ended: both are news.
+        assert [(m["client"], m["live"]) for m in leaders] == [("page-a", True), ("page-b", False)]
+        await a.aclose()
+        await b.aclose()
     asyncio.run(scenario())
 
 

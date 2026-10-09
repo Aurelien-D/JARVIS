@@ -16,8 +16,8 @@
 .ctl[hidden], .top-btn[hidden] { display: none; }
 .ctl.primary { background: var(--cyan); color: var(--bg); border-color: var(--cyan); font-weight: 600; }
 .ctl.primary:hover { background: var(--text); border-color: var(--text); color: var(--bg); }
-.ctl.mic[aria-pressed="true"] { color: var(--err); border-color: var(--err); }
-#wakeBtn[aria-pressed="false"] { color: var(--muted); }
+.ctl.mic[data-on="false"] { color: var(--err); border-color: var(--err); }
+#wakeBtn[data-on="false"] { color: var(--muted); }
 #wakeEngine:empty { display: none; }
 .top-btn { min-height: 28px; padding: 2px 10px; font-size: var(--fs-md); }
 /* close buttons: a 28 px target around the ✕ */
@@ -53,20 +53,29 @@
 }
 #statusPill b { color: var(--cyan); font-weight: 600; }
 #statusPill .tick { color: var(--muted); font-variant-numeric: tabular-nums; }
-#statusPill.err { color: var(--err); border-color: var(--err); text-transform: none; }
+/* an error is a sentence to read: body text, a box rather than a lozenge */
+#statusPill.err {
+  color: var(--err); border-color: var(--err); text-transform: none;
+  max-width: min(64ch, 100%); border-radius: var(--radius); padding: 6px 12px;
+  font: 500 var(--fs-md) / var(--lh-body) var(--font-hud); letter-spacing: 0; text-align: left;
+}
 #statusPill.err b { color: var(--err); }
 body.muted #statusPill:not(.err) { border-color: var(--err); }
+body.muted #statusPill:not(.err) b { color: var(--err); }
 
 /* ------------------------------------------------ caption */
 #you { font-size: var(--fs-user); color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
 #you.dim { opacity: .75; }
+/* A block, scrolled to the end by hud.js: the hidden text is above and
+   measurable, so the fade shows when there is one. */
 #transcript {
-  display: flex; flex-direction: column; justify-content: flex-end;
+  display: block;
   max-height: calc(3 * var(--fs-say) * var(--lh-body));
   overflow: hidden;
   font-size: var(--fs-say); line-height: var(--lh-body); font-weight: 500;
   color: var(--speak); overflow-wrap: anywhere;
 }
+#transcript .line { display: block; }
 #transcript .line + .line { margin-top: 2px; }
 #transcript .line.old { color: var(--muted); }
 /* older lines fade out at the top once three lines are full */
@@ -114,6 +123,8 @@ body.muted #statusPill:not(.err) { border-color: var(--err); }
 .card .body.md p, .card .body.md ul, .card .body.md ol { margin: 0 0 6px; }
 .card .body.md ul, .card .body.md ol { padding-left: 16px; }
 .card .body.md > :last-child { margin-bottom: 0; }
+.card .body a, #rmd a { color: var(--cyan); text-underline-offset: 2px; }
+.card .body a:hover, #rmd a:hover { color: var(--text); }
 .card.code .body pre {
   white-space: pre; overflow-x: auto; max-height: 40vh;
   padding: 8px; background: rgba(1, 4, 9, .6); border: 1px solid var(--line);
@@ -129,8 +140,10 @@ body.muted #statusPill:not(.err) { border-color: var(--err); }
 body > dialog#report { backdrop-filter: none; }
 
 /* ------------------------------------------------ toasts */
+/* Under the top bar, not bottom-centre as in the spec: there they covered
+   the live controls and the composer (WCAG 2.4.11). */
 #toasts {
-  position: fixed; left: 50%; bottom: 18px; z-index: 30;
+  position: fixed; left: 50%; top: calc(var(--topbar-h, 49px) + 12px); z-index: 30;
   transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   width: max-content; max-width: calc(100vw - 24px);

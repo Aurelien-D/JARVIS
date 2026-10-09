@@ -258,6 +258,9 @@ function acceptWake() {
 }
 
 export function onWakeResult(e) {
+  // In a session the Realtime model hears monsieur itself: a recognizer still
+  // running (a wake settled meanwhile) must not send his words a second time.
+  if (state.mode === "live" && !state.wake) { stopWake(); return; }
   restartDelay = 300;
   heard = true;
   quickEnds = 0;
@@ -306,9 +309,16 @@ function disarmGuard() {
   clearTimeout(guardTimer);
   guardTimer = null;
 }
+// JARVIS answering ('Oui, monsieur ?', then a result or the briefing that
+// waited for this session) is not silence: the guard waits for it to end.
+const BUSY_PHASES = new Set(["thinking", "speaking", "tool", "confirm"]);
 function falseWake() {
   guardTimer = null;
   if (state.mode !== "live") return;
+  if (state.responseActive || state.pendingResponse || BUSY_PHASES.has(state.phase)) {
+    armGuard();
+    return;
+  }
   settings.set("falseWakes", (Number(settings.get("falseWakes", 0)) || 0) + 1);
   sleep();
 }
@@ -341,7 +351,7 @@ function renderToggle() {
   const on = wakeWanted();
   ui.box.hidden = !SR || !(state.mode === "off" || state.mode === "standby");
   ui.toggle.textContent = on ? S.wakeOn : S.wakeOff;
-  ui.toggle.setAttribute("aria-pressed", String(on));
+  ui.toggle.dataset.on = String(on);  // the label says the state (no aria-pressed)
   // Which engine listens is in the status line; here only what it doesn't say.
   ui.engine.textContent = !on ? "" : paused ? S.paused : !isLeader() ? S.elsewhere : "";
 }
@@ -383,6 +393,8 @@ export async function init() {
   bus.on("caption:user", (c) => { if (c && c.itemId !== "wake") disarmGuard(); });
   bus.on("ui:compose", disarmGuard);
   bus.on("tool:start", disarmGuard);
+  // A message that waited for this session is being told: he called for it.
+  bus.on("delivered", (d) => { if (d && d.how === "live") disarmGuard(); });
   bus.on("server:config", refreshConfig);
   bus.on("server:usage", refreshConfig);
   $("orbBtn")?.addEventListener("click", tryInstall);

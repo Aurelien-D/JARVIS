@@ -241,12 +241,12 @@ def test_ctrl_m_mutes_even_from_the_composer(jarvis):
     ensure_composer(jarvis)
     go_live(jarvis)
     jarvis.keyboard.press("Control+m")
-    assert jarvis.get_attribute("#micBtn", "aria-pressed") == "true"
+    assert jarvis.get_attribute("#micBtn", "data-on") == "false"
     assert jarvis.inner_text("#statusPill").startswith("Micro coupé")
     assert jarvis.evaluate("__jarvis.state.muted") is True
     jarvis.focus("#askInput")
     jarvis.keyboard.press("Control+m")
-    assert jarvis.get_attribute("#micBtn", "aria-pressed") == "false"
+    assert jarvis.get_attribute("#micBtn", "data-on") == "true"
     assert jarvis.input_value("#askInput") == ""
 
 

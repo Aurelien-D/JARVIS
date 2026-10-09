@@ -14,6 +14,8 @@ thread-safely.
   in another browser profile). Only one of them listens for the wake word and
   announces things. Browser-side locks don't span profiles, so the server
   picks it: the live page, else the most recently focused one, else the newest.
+  The 'leader' event also says whether that page is in a conversation: the
+  others then explain why they can't take over yet.
 - Deliverable events (reminders, task results, briefings, warnings) go to the
   inbox before any page sees them, so nothing is lost when no page is open.
 """
@@ -40,6 +42,7 @@ _seq = int(time.time() * 1000)
 _closing = threading.Event()
 _clients: dict = {}  # client id -> _Presence
 _leader = None
+_leader_live = False
 _CLIENT_RE = re.compile(r"^[\w-]{1,64}$")
 
 
@@ -158,7 +161,7 @@ async def stream(client_id: str = "", last_event_id=None):
             last = event_id
             yield f"id: {event_id}\ndata: {message}\n\n"
         # Who speaks, even if it didn't change (no id: not part of the replay).
-        current = json.dumps({"type": "leader", "client": leader()})
+        current = json.dumps({"type": "leader", **leader_info()})
         yield f"data: {current}\n\n"
         while not _closing.is_set():
             try:
@@ -234,13 +237,21 @@ def leader():
         return _leader
 
 
+def leader_info() -> dict:
+    """The leader and whether it holds a voice session (a claim can't take
+    over a conversation: 'Utiliser celle-ci' waits until it ends)."""
+    with _lock:
+        return {"client": _leader, "live": _leader_live}
+
+
 def _elect():
-    global _leader
+    global _leader, _leader_live
     with _elect_lock:
         with _lock:
             ranked = [(p.rank(), cid) for cid, p in _clients.items() if p.streams > 0]
             new = max(ranked)[1] if ranked else None
-            changed = new != _leader
-            _leader = new
+            live = bool(new is not None and _clients[new].live)
+            changed = (new, live) != (_leader, _leader_live)
+            _leader, _leader_live = new, live
         if changed and new is not None:
-            publish("leader", {"client": new})
+            publish("leader", {"client": new, "live": live})

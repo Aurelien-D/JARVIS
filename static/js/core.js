@@ -107,8 +107,20 @@ function mdLite(s) {
 export function usesMarked() { return !!(window.marked && window.DOMPurify); }
 
 /* Markdown to safe HTML: marked + DOMPurify, or the tiny fallback offline. */
+let linkHook = false;
 export function md(text) {
   if (usesMarked()) {
+    if (!linkHook) {
+      // A link opens beside JARVIS, never in its window: the HUD and the
+      // voice session would be gone with it.
+      DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+        if (node.tagName === "A" && node.getAttribute("href")) {
+          node.setAttribute("target", "_blank");
+          node.setAttribute("rel", "noopener noreferrer");
+        }
+      });
+      linkHook = true;
+    }
     return DOMPurify.sanitize(marked.parse(text));
   }
   return mdLite(text); // offline fallback

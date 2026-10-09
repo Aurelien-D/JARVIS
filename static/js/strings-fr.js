@@ -107,6 +107,8 @@ export const T = typeset({
     moreCards: (n) => `+${n}`,
     moreCardsLabel: (n) => (n === 1 ? "Afficher 1 autre carte" : `Afficher ${n} autres cartes`),
     fewerCards: "Réduire les cartes",
+    wholeCard: "Afficher toute la carte",
+    closePanel: "Fermer le panneau",
     copyCode: (title) => `Copier le code de « ${title} »`,
     copyFailed: "Copie impossible : sélectionnez le texte à la main.",
     dismissError: "Effacer le message d'erreur",
@@ -143,6 +145,14 @@ export const T = typeset({
     followUp: (title) => `suite de « ${title} »`,
     sectionTitle: (n) => `Sessions Claude Code · ${n} en cours`,
     history: (n) => `Historique (${n})`,
+    working: "Claude Code travaille…",
+    defaultModel: "modèle par défaut",
+    routine: "Routine",
+    briefing: "Briefing",
+    cancelLabel: (title) => `Annuler la tâche « ${title} »`,
+    outputLabel: (title) => `Résultat de la tâche « ${title} »`,
+    deleteReminder: (text) => `Supprimer le rappel « ${text} »`,
+    forget: (text) => `Oublier « ${text} »`,
   },
   error: {
     noKey: "Clé OpenAI absente : ajoutez-la dans Réglages › Connexion, puis réessayez.",
@@ -189,6 +199,8 @@ export const T = typeset({
     lockTitle: "Verrouillage",
     lockBody: "Le PC va se verrouiller.",
     lockCancelled: "Verrouillage annulé.",
+    lockCancel: "Annuler le verrouillage",
+    dismiss: "Refuser la demande et fermer la carte",
   },
   delivery: {
     badge: (n) => (n > 1 ? `${n} messages en attente · cliquez pour les écouter`
@@ -205,6 +217,7 @@ export const T = typeset({
     notifEnable: "Activer",
     notifLater: "Plus tard",
     otherPage: "JARVIS est actif dans une autre fenêtre.",
+    otherLive: "JARVIS est en conversation dans une autre fenêtre : celle-ci prendra le relais dès que l'autre sera en veille.",
     useThisPage: "Utiliser celle-ci",
     otherTitle: "Autre fenêtre",
     dndHour: "Ne pas déranger 1 h",
@@ -215,6 +228,18 @@ export const T = typeset({
     reminder: "Rappel",
     reminderLate: (minutes) => ` (en retard de ${minutes} min)`,
     reminderAt: (time) => `Rappel (${time})`,
+  },
+  // The report window (report.js): Grid.js's own words, in French.
+  report: {
+    grid: {
+      search: { placeholder: "Rechercher…" },
+      sort: { sortAsc: "Trier par ordre croissant", sortDesc: "Trier par ordre décroissant" },
+      pagination: { previous: "Précédent", next: "Suivant", navigate: (page, pages) => `Page ${page} sur ${pages}`,
+                    page: (page) => `Page ${page}`, showing: "Lignes", of: "sur", to: "à", results: "lignes" },
+      loading: "Chargement…",
+      noRecordsFound: "Aucune ligne ne correspond.",
+      error: "Le tableau n'a pas pu être affiché.",
+    },
   },
   // Cards of the voice session (voice.js).
   voice: {
@@ -235,7 +260,7 @@ export const T = typeset({
     paused: "en pause (micro refusé)",
     elsewhere: "dans l'autre fenêtre",
     denied: "Micro refusé dans le navigateur : mot d'éveil désactivé. Autorisez le micro (cadenas de la barre d'adresse › Microphone), puis réactivez le mot d'éveil.",
-    installed: "Pack vocal français hors-ligne installé.",
+    installed: "Pack vocal français hors ligne installé.",
     capped: "Plafond de dépenses du jour atteint : le mot d'éveil n'ouvre plus de conversation. Cliquez sur l'orbe si besoin.",
   },
   composer: {

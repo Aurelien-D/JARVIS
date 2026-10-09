@@ -1,10 +1,12 @@
 /* Report dashboard: KPI tiles, ApexCharts chart, Grid.js table, notes. */
+/* Centred at any window size (design spec §2), opaque: the HUD never shows
+   through. Still non-modal until WP11 makes it a real modal window. */
 #report {
-  position: fixed; inset: 60px 380px 40px 60px; z-index: 20; display: none;
-  /* undo the browser's dialog box model: the inset above sizes it */
-  width: auto; height: auto; max-width: none; max-height: none; margin: 0; color: inherit;
-  background: rgba(5,12,22,.96); border: 1px solid var(--line);
-  border-top: 2px solid var(--cyan); backdrop-filter: blur(14px);
+  position: fixed; inset: 0; margin: auto; z-index: 20; display: none;
+  width: min(1100px, calc(100vw - 48px)); height: min(860px, calc(100dvh - 48px));
+  max-width: none; max-height: none; color: inherit;
+  background: var(--panel); border: 1px solid var(--line);
+  border-top: 2px solid var(--cyan);
   box-shadow: 0 0 60px rgba(0,0,0,.7), 0 0 30px rgba(64,220,255,.08);
   padding: 22px 26px; overflow-y: auto; animation: materialize .35s ease;
 }

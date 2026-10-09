@@ -98,7 +98,7 @@ def test_the_pack_installs_only_after_a_click(open_page):
     page.click("#orbBtn")
     page.wait_for_function("__installs.length === 1")
     assert page.evaluate("__installs[0]") == {"langs": ["fr-FR"], "processLocally": True}
-    page.wait_for_selector(".card:has-text('Pack vocal français hors-ligne installé.')")
+    page.wait_for_selector(".card:has-text('Pack vocal français hors ligne installé.')")
     page.wait_for_function("__jarvis.state.mode === 'live'")
     page.click("#orbBtn")  # back to standby: listening on-device now
     page.wait_for_function("__jarvis.state.mode === 'standby' && __rec.running && __rec.processLocally === true")
@@ -171,6 +171,9 @@ def test_a_wake_followed_by_silence_goes_back_to_sleep(open_page):
     page = open_page()
     listening(page)
     go_live_by_name(page)
+    page.evaluate("""__emit({type: 'response.created'});  // « Oui, monsieur ? », then nothing
+      __emit({type: 'response.done', response: {status: 'completed', output: []}});
+      __emit({type: 'output_audio_buffer.stopped'})""")
     page.clock.run_for(7000)
     assert page.evaluate("__jarvis.state.mode") == "live"
     page.clock.run_for(1500)  # 8 s without monsieur speaking
@@ -228,7 +231,7 @@ def test_an_expired_one_time_permission_pauses_without_switching_off(open_page):
     page.wait_for_function("typeof __perm.onchange === 'function'")
     assert "wake" not in saved_settings(page)  # unchanged in localStorage
     assert page.inner_text("#wakeEngine") == "en pause (micro refusé)"
-    assert page.get_attribute("#wakeBtn", "aria-pressed") == "true"
+    assert page.get_attribute("#wakeBtn", "data-on") == "true"
     # Allowed again (the next prompt answered): listening again by itself.
     page.evaluate("__perm.state = 'granted'; __perm.onchange()")
     listening(page)
@@ -284,13 +287,13 @@ def test_the_switch_lives_in_controls_extra_and_is_remembered(open_page):
     listening(page)
     toggle = "#controlsExtra #wakeBtn"
     assert page.text_content(toggle) == "Mot d'éveil\u202f: activé"
-    assert page.get_attribute(toggle, "aria-pressed") == "true"
+    assert page.get_attribute(toggle, "data-on") == "true"
     assert page.inner_text("#statusPill").endswith(" · écoute via Google")
     page.click(toggle)
     assert page.evaluate("__jarvis.state.mode") == "off"
     assert not page.evaluate("__rec.running")
     assert page.text_content(toggle) == "Mot d'éveil\u202f: désactivé"
-    assert page.get_attribute(toggle, "aria-pressed") == "false"
+    assert page.get_attribute(toggle, "data-on") == "false"
     page.reload()
     wait_ready(page)
     assert page.evaluate("__jarvis.state.mode") == "off"

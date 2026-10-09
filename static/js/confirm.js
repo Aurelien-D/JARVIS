@@ -1,9 +1,10 @@
 /* Confirmation cards for risky actions waiting for monsieur's "oui" (design
    spec §3). The server holds the pending actions (jarvis/confirm.py): a card
    appears when a tool answers needs_confirmation or the server pushes
-   'pending', and [Lancer] / [Annuler] post /api/pending/{id}/decide. Locking
-   the PC goes through a 3-second countdown card first, cancelled by Échap
-   (keys.js calls cancelLock) or its button. */
+   'pending', and [Lancer] / [Annuler] post /api/pending/{id}/decide; closing
+   the card (✕) answers « non ». Locking the PC goes through a 3-second
+   countdown card first, cancelled by Échap (keys.js calls cancelLock), its
+   button, its ✕, « Interrompre », or monsieur starting to speak. */
 import { api, bus, state } from "./core.js";
 import * as fx from "./audio-fx.js";
 import * as hud from "./hud.js";
@@ -40,6 +41,11 @@ export function showPending(p) {
   });
   el.dataset.pending = p.id;
   el.dataset.state = "pending";
+  // Closing the card answers "non": a request never stays pending without its
+  // card (hud.js removes it first, decide() then shows the outcome).
+  const x = el.querySelector(".x");
+  x.setAttribute("aria-label", C.dismiss);
+  x.addEventListener("click", () => decide(p.id, "non"));
   // What exactly will run (the prompt, the link...), as plain text, and the countdown.
   const extra = document.createElement("div");
   extra.className = "confirm-extra";
@@ -142,13 +148,14 @@ function updatePhase() {
 
 /* ---------------------------------------------------------- lock screen */
 /* Resolves to null to go ahead, or to the tool's answer when monsieur
-   cancelled (Échap or the button). */
+   cancelled (Échap, the button, the card's ✕, « Interrompre », his voice). */
 export function lockCountdown(seconds = 3) {
   if (lock) return lock.promise;
   let left = seconds;
   let resolve;
   const promise = new Promise((r) => { resolve = r; });
   const id = "lock-countdown";
+  const me = { promise, cancel: () => finish(true), timer: null };
   const el = hud.addCard(C.lockTitle, C.lockBody, "confirm", {
     id, sticky: true, actions: [{ label: C.cancel, onClick: () => finish(true) }],
   });
@@ -157,9 +164,15 @@ export function lockCountdown(seconds = 3) {
   line.className = "confirm-countdown";
   line.textContent = C.lock(left);
   placeExtra(el, line);
+  // Closing the card cancels too: the PC never locks behind a dismissed card.
+  const x = el.querySelector(".x");
+  x.setAttribute("aria-label", C.lockCancel);
+  x.addEventListener("click", () => finish(true));
+  // Only this countdown: the card element may be reused by the next one, and
+  // a stale listener must never settle (or orphan) a newer lock.
   function finish(cancelled) {
-    if (!lock) return;
-    clearInterval(lock.timer);
+    if (lock !== me) return;
+    clearInterval(me.timer);
     lock = null;
     line.remove();
     if (cancelled) {
@@ -170,11 +183,12 @@ export function lockCountdown(seconds = 3) {
       resolve(null);
     }
   }
-  lock = { promise, cancel: () => finish(true), timer: setInterval(() => {
+  me.timer = setInterval(() => {
     left -= 1;
     if (left <= 0) finish(false);
     else line.textContent = C.lock(left);
-  }, 1000) };
+  }, 1000);
+  lock = me;
   hud.announce(C.lock(left), { urgent: true });
   return promise;
 }
@@ -194,6 +208,10 @@ export function init() {
   });
   bus.on("server:pending", (ev) => showPending(ev?.pending));
   bus.on("mode", updatePhase);
+  // « Interrompre » (voice.interrupt) and monsieur speaking during the
+  // countdown (« non, attends ! ») stop the lock, like Échap.
+  bus.on("interrupt", cancelLock);
+  bus.on("phase", (p) => { if (p && p.phase === "user") cancelLock(); });
   // voice.runTool asks before running a tool: locking waits for the countdown.
   bus.on("tool:intercept", ({ name, args, hold } = {}) => {
     if (name === "system_control" && args?.action === "lock_screen") hold?.(lockCountdown());

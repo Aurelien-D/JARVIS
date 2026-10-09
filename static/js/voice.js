@@ -23,6 +23,8 @@ let quietConnect = false; // the 55-minute refresh: no earcon
 let lastCreateId = "", createSeq = 0;
 let turnSeq = 0;          // bumped by interrupt(): tools finishing later don't restart speech
 let toolsRunning = 0;
+let toolPhaseLabel = "";  // the running tool's status line, shown again after a barge-in
+let userWaiting = false;  // monsieur's typed words wait for the running response to end
 let sessionGen = 0;       // bumped by teardown(): late tool results never reach the next session
 let inaudibleRun = 0;
 let phaseLabel = "";
@@ -161,12 +163,16 @@ export async function connect({ reconnect = false, pendingText = "", quiet = fal
     if (reconnect && state.wantLive && !(err && err.where === "mic")) {
       retryLater();
     } else {
+      // What monsieur typed goes back in the field, and 'Réessayer' sends it.
+      const lost = state.pendingText;
       state.wantLive = false;
       state.wake = null;
       state.pendingText = "";
       earcon("error");
       goStandby();
-      bus.emit("error", { kind: "connect", message: explain(err), detail: err, retry: () => connect() });
+      if (lost) bus.emit("ui:compose", { text: lost });
+      bus.emit("error", { kind: "connect", message: explain(err), detail: err,
+                          retry: () => connect(lost ? { pendingText: lost } : {}) });
     }
   } finally {
     if (mine === attempt) state.connecting = false;
@@ -229,6 +235,14 @@ function onSessionCreated(session) {
   const typed = state.pendingText;
   state.pendingText = "";
   if (typed) {
+    // Typed while the name was still being heard: the wake is settled first
+    // (its words, then the text), or it would linger for the whole session.
+    const w = state.wake;
+    if (w) {
+      state.wake = null;
+      stopWake();
+      if (w.command) sendText(w.command);
+    }
     sendText(typed);
   } else if (state.wake) {
     if (state.wake.final) deliverWake();
@@ -258,6 +272,7 @@ export function teardown() {
   state.responseActive = false;
   state.pendingResponse = false;
   sessionReady = false; sessionStart = 0; ptt = false; toolsRunning = 0; sessionGen++;
+  toolPhaseLabel = ""; userWaiting = false;
   said.clear(); heard.clear(); responseLines.length = 0;
   if (state.phase) setPhase(null);
 }
@@ -271,6 +286,9 @@ export function sleep() {
   state.retries = 0;
   state.pendingText = "";
   teardown();
+  // The next session (a wake word, maybe) starts with the microphone on:
+  // standby shows no mute, so it must not hide one.
+  if (state.muted) setMuted(false);
   earcon("sleep");
   goStandby();
 }
@@ -377,6 +395,13 @@ function restingPhase() {
   return state.confirming && state.confirming.length ? "confirm" : "listening";
 }
 
+/* Back at rest after JARVIS spoke: the running tool's phase while one still
+   runs (monsieur talked over it and got his answer meanwhile). */
+function rest() {
+  if (toolsRunning && toolPhaseLabel && restingPhase() !== "confirm") setPhase("tool", toolPhaseLabel);
+  else setPhase(restingPhase());
+}
+
 /* How loud JARVIS is right now (0..1), from the speaker's analyser. */
 const outBuf = new Uint8Array(128);
 function outputLevel() {
@@ -393,20 +418,20 @@ function armQuietWatch() {
   clearInterval(quietTimer);
   let quietSince = 0;
   quietTimer = setInterval(() => {
-    if (state.mode !== "live" || state.responseActive || toolsRunning
+    if (state.mode !== "live" || state.responseActive || (toolsRunning && !toolPhaseLabel)
         || !["thinking", "speaking"].includes(state.phase)) { clearInterval(quietTimer); return; }
     quietSince = outputLevel() < 0.01 ? (quietSince || Date.now()) : 0;
     if (quietSince && Date.now() - quietSince >= QUIET_MS) {
       clearInterval(quietTimer);
-      setPhase(restingPhase());
+      rest();
     }
   }, 100);
 }
 
 function backToListening() {
-  if (state.mode !== "live" || state.responseActive || toolsRunning) return;
+  if (state.mode !== "live" || state.responseActive || (toolsRunning && !toolPhaseLabel)) return;
   if (state.phase === "user" || state.phase === "confirm") return;
-  setPhase(restingPhase());
+  rest();
 }
 
 /* The HUD draws captions from caption:* events. If nothing on the page
@@ -573,6 +598,7 @@ export function sendText(text) {
   turn("user", text, { source: "text" });
   sendUserText(text);
   requestResponse();
+  if (state.pendingResponse) userWaiting = true;  // answered once the current response ends
   touch();
 }
 
@@ -589,11 +615,17 @@ export function requestResponse() {
 /* Stop JARVIS mid-sentence (or mid-tool) without ending the session. OpenAI:
    response.cancel first, then output_audio_buffer.clear. */
 export function interrupt() {
+  bus.emit("interrupt", {});  // confirm.js: a lock-screen countdown stops too
   turnSeq++;
-  if (state.responseActive) send({ type: "response.cancel" });
+  toolPhaseLabel = "";  // a tool still finishing is no longer shown as JARVIS's work
+  const active = state.responseActive;
+  if (active) send({ type: "response.cancel" });
   send({ type: "output_audio_buffer.clear" });
   if ("speechSynthesis" in window) speechSynthesis.cancel();
-  state.pendingResponse = false;
+  // A question typed while JARVIS spoke is what he stops it for: it still
+  // gets its answer (asked when the cancelled response ends, or now).
+  if (!userWaiting) state.pendingResponse = false;
+  else if (!active) { state.pendingResponse = false; requestResponse(); }
   if (state.mode === "live") setPhase(restingPhase());
 }
 
@@ -666,6 +698,7 @@ export function handleEvent(ev) {
       break;
     case "response.created":
       state.responseActive = true;
+      userWaiting = false;  // a new response: his words are in its context
       clearInterval(quietTimer);
       said.clear();
       responseLines.length = 0;
@@ -732,6 +765,7 @@ export async function onResponseDone(resp) {
   const reason = (resp.status_details && resp.status_details.reason) || "";
   // Older events (and some fakes) carry no status: only an explicit one counts.
   const interrupted = status !== undefined && status !== "completed";
+  bus.emit("response:done", { status, reason });  // delivery.js: was the news said in full?
   if (resp.usage) bus.emit("usage", { usage: resp.usage, model: currentModel });
   if (status === "cancelled") responseLines.forEach(e => { e.text += " (interrompu)"; });
   responseLines.length = 0;
@@ -769,6 +803,7 @@ export async function onResponseDone(resp) {
       }
       const label = toolLabel(call.name, args) || BUSY;
       if (call.name !== "wait_for_user") { // nothing to show: JARVIS just keeps listening
+        toolPhaseLabel = label;
         setPhase("tool", label);
         bus.emit("tool:start", { name: call.name, callId: call.call_id, label });
       }
@@ -798,6 +833,7 @@ export async function onResponseDone(resp) {
    interrupted meanwhile, or the model only chose to wait. */
 function answerCalls(calls, outputs, images, quiet, reason) {
   toolsRunning = Math.max(0, toolsRunning - 1);
+  if (!toolsRunning) toolPhaseLabel = "";
   for (const call of calls) {
     if (!outputs.some(o => o.callId === call.call_id)) outputs.push({ callId: call.call_id, out: { ok: false, error: NOT_RUN } });
   }

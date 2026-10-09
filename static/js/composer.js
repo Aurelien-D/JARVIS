@@ -286,9 +286,11 @@ function showHint() {
   el.textContent = T.help.tryThis(list[hintIndex % list.length]);
 }
 
-/* Rotates in standby only: while live, monsieur is busy talking. */
+/* Rotates in standby only: while live, monsieur is busy talking. Never with
+   the Animations setting off: it is auto-updating content (WCAG 2.2.2). */
 function rotateHint() {
   if (state.mode !== "standby" && state.mode !== "off") return;
+  if (document.body.classList.contains("reduce-motion")) return;
   hintIndex++;
   showHint();
 }

@@ -221,8 +221,8 @@ def test_status_pill_in_every_state(jarvis):
     assert status(jarvis).endswith(" · écoute via Google")
     jarvis.evaluate("delete __jarvis.state.wakeEngine")
 
-    jarvis.click("#wakeBtn")  # wake word off: offline
-    assert status(jarvis) == "Hors ligne · cliquez sur l'orbe ou appuyez sur Espace pour parler"
+    jarvis.click("#wakeBtn")  # wake word off: a choice, not an outage
+    assert status(jarvis) == "En veille · mot d'éveil désactivé · cliquez sur l'orbe"
     assert jarvis.evaluate("document.body.dataset.state") == "off-idle"
     jarvis.click("#wakeBtn")
 
@@ -346,10 +346,10 @@ def test_live_controls(jarvis):
     jarvis.click("#interruptBtn")
     assert "response.cancel" in jarvis.evaluate("__types()")
     jarvis.click("#micBtn")
-    assert jarvis.get_attribute("#micBtn", "aria-pressed") == "true"
+    assert jarvis.get_attribute("#micBtn", "data-on") == "false"
     assert jarvis.inner_text("#micBtn").replace("\u202f", " ") == "Micro : coupé"
     jarvis.click("#micBtn")
-    assert jarvis.get_attribute("#micBtn", "aria-pressed") == "false"
+    assert jarvis.get_attribute("#micBtn", "data-on") == "true"
     jarvis.click("#sleepBtn")
     jarvis.wait_for_function("__jarvis.state.mode === 'standby'")
     assert jarvis.evaluate("document.getElementById('controls').hidden")
@@ -361,6 +361,10 @@ def test_top_actions_open_their_panels(jarvis):
     jarvis.evaluate("window.__opened = []; __jarvis.bus.on('ui:open', n => __opened.push(n)); 0")
     names = jarvis.evaluate("[...document.querySelectorAll('#topActions button')].map(b => b.textContent)")
     assert names == ["Aide", "Journal", "Panneau", "Réglages"]
+    # Journal and Réglages show once their module opens them (no dead button).
+    assert jarvis.is_hidden("#topActions button:has-text('Journal')")
+    assert jarvis.is_hidden("#topActions button:has-text('Réglages')")
+    jarvis.evaluate("__jarvis.bus.emit('ui:ready', 'journal'); __jarvis.bus.emit('ui:ready', 'settings')")
     for name in ["Aide", "Journal", "Réglages"]:
         jarvis.click(f"#topActions button:has-text('{name}')")
     assert jarvis.evaluate("__opened") == ["aide", "journal", "settings"]

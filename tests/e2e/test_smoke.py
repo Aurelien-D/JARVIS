@@ -258,7 +258,7 @@ def test_earcons_mark_each_change(jarvis):
 def test_wake_word_flow(jarvis):
     jarvis.wait_for_function("window.__rec && __rec.running")
     assert "EN VEILLE" in jarvis.inner_text("#statusPill").upper()
-    assert jarvis.get_attribute("#wakeBtn", "aria-pressed") == "true"
+    assert jarvis.get_attribute("#wakeBtn", "data-on") == "true"
 
     jarvis.evaluate("__say('bonjour tout le monde', true)")
     assert jarvis.evaluate("__jarvis.state.mode") == "standby"  # other words are ignored
@@ -285,7 +285,7 @@ def test_wake_word_switch_is_remembered(jarvis, reload_jarvis):
     jarvis.click("#wakeBtn")
     assert jarvis.evaluate("__jarvis.state.mode") == "off"
     assert not jarvis.evaluate("__rec.running")
-    assert jarvis.get_attribute("#wakeBtn", "aria-pressed") == "false"
+    assert jarvis.get_attribute("#wakeBtn", "data-on") == "false"
     reload_jarvis()
     assert jarvis.evaluate("__jarvis.state.mode") == "off"
     jarvis.click("#wakeBtn")
@@ -310,7 +310,7 @@ def test_wake_word_refused_falls_back_to_the_orb(jarvis):
     assert jarvis.evaluate("__jarvis.state.mode") == "off"
     # The microphone is still granted: paused, not switched off for good (WP07, test_wake.py).
     assert jarvis.evaluate("__jarvis.settings.get('wake')") is not False
-    assert jarvis.get_attribute("#wakeBtn", "aria-pressed") == "true"
+    assert jarvis.get_attribute("#wakeBtn", "data-on") == "true"
     jarvis.wait_for_selector(".card.warning:has-text(\"Mot d'éveil\")")
     go_live(jarvis)  # the orb still works
 
