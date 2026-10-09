@@ -139,7 +139,7 @@ def test_the_off_canvas_panel_opens_under_the_top_bar_and_closes_by_mouse(jarvis
     jarvis.wait_for_function("!document.body.classList.contains('side-open')")
     assert jarvis.evaluate("__jarvis.state.mode") == "standby"  # that click only closed the panel
 
-# ---------------------------------------------------------------- the side panel (interim, WP10)
+# ---------------------------------------------------------------- the side panel (WP10: tests/e2e/test_panels.py)
 
 def test_side_panel_controls_are_labelled_buttons_with_french_words(jarvis):
     jarvis.evaluate("""__jarvis.bus.emit('server:task', {id: 'tk9', title: 'Comparatif', status: 'running',
@@ -177,9 +177,9 @@ def test_side_panel_controls_are_labelled_buttons_with_french_words(jarvis):
       && [...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())
       && parseFloat(getComputedStyle(e).fontSize) < 12).map(e => e.className || e.tagName)""")
     assert small == []
-    assert jarvis.evaluate("parseFloat(getComputedStyle(document.querySelector('#side section > h2')).letterSpacing)") <= 12 * .18 + .01
+    assert jarvis.evaluate("parseFloat(getComputedStyle(document.querySelector('#side section h2')).letterSpacing)") <= 12 * .18 + .01
 
-# ---------------------------------------------------------------- the report (interim, WP11)
+# ---------------------------------------------------------------- the report (WP11: tests/e2e/test_report.py)
 
 def test_the_report_is_centred_opaque_and_in_french(jarvis):
     jarvis.set_viewport_size({"width": 800, "height": 600})
@@ -190,13 +190,10 @@ def test_the_report_is_centred_opaque_and_in_french(jarvis):
     r = box(jarvis, "#report")
     assert abs(r["x"] - 24) <= 1 and abs(r["w"] - (800 - 48)) <= 1  # centred, whatever the width
     assert jarvis.evaluate("getComputedStyle(document.getElementById('report')).backgroundColor") == "rgb(7, 20, 30)"
-    if jarvis.evaluate("!!window.gridjs"):
-        # Grid.js fills the rows asynchronously, after the wrapper and footer exist.
-        jarvis.wait_for_selector("#rtable tbody td")
-        assert jarvis.get_attribute("#rtable .gridjs-search input", "placeholder") == "Rechercher…"
-        footer = jarvis.inner_text("#rtable .gridjs-pagination")
-        assert "Précédent" in footer and "Suivant" in footer and "Previous" not in footer
-        assert f"1{NNBSP}037" in jarvis.inner_text("#rtable tbody")  # fr-FR digit grouping
+    # The native table: French digit grouping, French pager (25 rows a page).
+    jarvis.wait_for_selector("#rtable tbody td")
+    assert f"1{NNBSP}037" in jarvis.inner_text("#rtable tbody")
+    assert jarvis.locator("#rtable .rtable-pager").is_hidden()  # 14 rows: one page
     # Closed with its ✕ from the keyboard: the focus does not fall to <body>.
     jarvis.focus("#report .rhead .x")
     jarvis.keyboard.press("Enter")

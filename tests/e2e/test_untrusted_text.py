@@ -219,11 +219,13 @@ def test_display_card_and_report_stay_text_holds(jarvis):
     shown(jarvis, "#kpis", "kpi-label")
     shown(jarvis, "#kpis", "kpi-delta")
     shown(jarvis, "#rmd", "notes-gras")
-    if jarvis.evaluate("!!window.gridjs"):
-        shown(jarvis, "#rtable", "cellule3")
-        shown(jarvis, "#rtable th", "colonne-a")
-        jarvis.click("#rtable th >> nth=0")  # sorted: re-rendered
-        jarvis.fill("#rtable input", "cellule")  # searched: re-rendered
+    shown(jarvis, "#rtable td", "cellule3")
+    shown(jarvis, "#rtable th", "colonne-a")
+    jarvis.click("#rtable th button >> nth=0")  # sorted: re-rendered
+    jarvis.click("#rtable th button >> nth=0")  # the other way
+    shown(jarvis, "#rtable td", "cellule11")
+    # ApexCharts comes on demand: wait until it drew the chart (or could not load).
+    jarvis.wait_for_selector("#rchart[data-state='ready'], #rchart[data-state='unavailable']", timeout=20_000)
     if jarvis.evaluate("!!window.ApexCharts"):
         jarvis.wait_for_selector("#rchart svg.apexcharts-svg")
         shown(jarvis, "#rchart", "serie-a")  # the legend
@@ -236,6 +238,7 @@ def test_display_card_and_report_stay_text_holds(jarvis):
     donut = {"title": "Parts", "chart": {"type": "donut", "categories": [evil("part-a"), evil("part-b")],
                                          "series": [{"name": evil("donut"), "data": [60, 40]}]}}
     call(jarvis, "display_report", donut, "r2")
+    jarvis.wait_for_selector("#rchart[data-state='ready'], #rchart[data-state='unavailable']", timeout=20_000)
     if jarvis.evaluate("!!window.ApexCharts"):
         jarvis.wait_for_selector("#rchart svg.apexcharts-svg")
         shown(jarvis, "#rchart", "part-a")

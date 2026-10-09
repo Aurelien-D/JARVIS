@@ -318,9 +318,12 @@ def test_wake_word_refused_falls_back_to_the_orb(jarvis):
 # ---------------------------------------------------------------- HUD
 
 def test_cdn_libraries_load(jarvis):
+    # ApexCharts comes on demand (report.js, same pinned URL and hash); Grid.js is gone.
     libs = jarvis.evaluate("({marked: typeof marked?.parse, purify: typeof DOMPurify?.sanitize,"
-                           " apex: typeof ApexCharts, grid: typeof gridjs?.Grid})")
-    assert libs == {"marked": "function", "purify": "function", "apex": "function", "grid": "function"}
+                           " apex: typeof window.ApexCharts, grid: typeof window.gridjs})")
+    assert libs == {"marked": "function", "purify": "function", "apex": "undefined", "grid": "undefined"}
+    loaded = jarvis.evaluate("async () => typeof (await (await import('/static/js/report.js')).loadApexCharts())")
+    assert loaded == "function"
 
 
 def test_task_card_shows_progress_then_result(jarvis):
@@ -351,12 +354,14 @@ def test_display_card_and_report(jarvis):
          table: {columns: ['Mois', 'CA'], rows: [['jan', 3], ['fév', 5], ['mar', 4]]},
          markdown: '## Conclusion\\nEn hausse.'})}]}})""")
     jarvis.wait_for_selector("#report[open] .apexcharts-canvas")
-    jarvis.wait_for_selector("#rtable .gridjs-wrapper")
+    jarvis.wait_for_selector("#rtable table tbody tr")
     card = jarvis.inner_html(".card.result .body")
     assert "<strong>18 °C</strong>" in card and "<li>ciel clair</li>" in card
     assert jarvis.text_content("#rtitle") == "Ventes"
     assert "12 480 €" in jarvis.inner_text("#kpis")
-    assert jarvis.evaluate("document.activeElement === document.body")  # the report doesn't steal focus
+    # A real modal window: the focus is inside, the page behind is inert.
+    assert jarvis.evaluate("document.getElementById('report').contains(document.activeElement)")
+    assert jarvis.evaluate("document.getElementById('report').matches(':modal')")
     jarvis.click("#report .rhead .x")
     assert not jarvis.evaluate("document.getElementById('report').open")
 
