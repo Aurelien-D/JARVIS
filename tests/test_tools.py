@@ -19,8 +19,8 @@ def test_every_tool_is_handled_somewhere():
 
 
 def test_registry_keeps_the_current_tools():
-    assert {t["name"] for t in tools.session_tools()} == CURRENT_TOOLS
-    assert tools.client_tools() == {"display_card", "display_report", "look_at_camera",
+    assert CURRENT_TOOLS <= {t["name"] for t in tools.session_tools()}  # later packages add more
+    assert tools.client_tools() >= {"display_card", "display_report", "look_at_camera",
                                     "end_conversation"}
 
 
@@ -94,7 +94,7 @@ def test_family_blocks_reach_the_instructions(monkeypatch):
 def test_delegate_passes_the_profile_through(monkeypatch):
     seen = []
 
-    def create_task(title, prompt, profile, complexity, continue_task):
+    def create_task(title, prompt, profile, complexity, continue_task, **extra):
         seen.append(profile)
         return {"id": "t1", "profile": "complet", "model": ""}
 
