@@ -5,8 +5,10 @@ The family interface is described in tools.py.
 from . import config, tasks
 
 PROFILE = {"type": "string", "enum": list(tasks.PROFILES),
-           "description": ("recherche = web only; lecture = read local files, no changes, "
-                           "no web; complet = files, commands and web. Pick the narrowest.")}
+           "description": ("recherche = web uniquement (aucun fichier) ; lecture = lit vos fichiers "
+                           "sans rien modifier ni aller sur internet (par défaut) ; complet = "
+                           "fichiers, commandes et web ; exige votre confirmation. "
+                           "Pick the narrowest that does the job.")}
 COMPLEXITY = {"type": "string", "enum": list(config.MODELS),
               "description": "simple = quick question, normale, complexe = heavy work."}
 
@@ -16,7 +18,8 @@ TOOLS = [{
     "description": ("Delegate a real task to a Claude Code session running on "
                     "this machine (files, code, web research, mail and calendar "
                     "through connectors, automation). Returns immediately; the "
-                    "result arrives later as a system message."),
+                    "result arrives later. Profile complet first returns "
+                    "needs_confirmation: ask monsieur, then call confirm_action."),
     "parameters": {
         "type": "object",
         "properties": {
@@ -48,13 +51,16 @@ CLIENT_TOOLS: set = set()
 
 def _delegate(a: dict, ctx) -> dict:
     # The profile goes through as given: tasks.create_task decides what an
-    # unknown or missing one becomes.
+    # unknown or missing one becomes (lecture). The voice session goes along so
+    # a later approval of denied tools can be confirmed in that conversation.
     task = tasks.create_task(a.get("title", ""), a.get("prompt", ""),
                              profile=a.get("profile"),
                              complexity=a.get("complexity") or "normale",
-                             continue_task=a.get("continue_task") or None)
-    out = {"status": "started", "task_id": task["id"], "profile": task["profile"],
-           "model": task["model"] or "défaut"}
+                             continue_task=a.get("continue_task") or None,
+                             voice_session=getattr(ctx, "session_id", None))
+    queued = task.get("status") == "en_file"  # MAX_CONCURRENT_TASKS already running
+    out = {"status": "en_file" if queued else "started", "task_id": task["id"],
+           "profile": task["profile"], "model": task["model"] or "défaut"}
     if task.get("resumed_from"):
         out["continues"] = task["resumed_from"]
     if task.get("note"):

@@ -9,7 +9,9 @@ Tools come in families, one module each. A family exposes:
 
 This module is itself the core family (status, display, camera, standby).
 Every server-side call goes through run_tool(), which asks confirm.gate()
-first: that is where risky actions will wait for monsieur's "oui".
+first: that is where risky actions wait for monsieur's "oui". After a tool
+that brought outside content in (screen, notes, news), confirm.after_tool()
+marks the voice session as tainted.
 """
 import sys
 import time
@@ -98,9 +100,16 @@ TOOLS = [{
     "description": ("Go back to standby once your goodbye has been said. JARVIS then "
                     "waits for its wake word again."),
     "parameters": {"type": "object", "properties": {}},
+}, {
+    "type": "function",
+    "name": "wait_for_user",
+    "description": ("Call when the latest audio needs no spoken reply: silence, noise, TV, "
+                    "side conversation, speech not addressed to JARVIS."),
+    "parameters": {"type": "object", "properties": {}},
 }]
 
-CLIENT_TOOLS = {"display_card", "display_report", "look_at_camera", "end_conversation"}
+CLIENT_TOOLS = {"display_card", "display_report", "look_at_camera", "end_conversation",
+                "wait_for_user"}
 
 
 def _status(a: dict, ctx) -> dict:
@@ -109,10 +118,10 @@ def _status(a: dict, ctx) -> dict:
     return {
         "now": f"{scheduler.fr_date(now)}, {now:%H:%M}",
         "running_tasks": [{"id": t["id"], "title": t["title"], "progress": t["progress"],
-                           "elapsed_s": round(time.time() - t["started"])}
-                          for t in all_tasks if t["status"] == "running"],
+                           "status": t["status"], "elapsed_s": round(time.time() - t["started"])}
+                          for t in all_tasks if t["status"] in tasks.ACTIVE],  # queued ones too
         "recent_tasks": [{"id": t["id"], "title": t["title"], "status": t["status"]}
-                         for t in all_tasks if t["status"] != "running"][:5],
+                         for t in all_tasks if t["status"] not in tasks.ACTIVE][:5],
         "upcoming": [scheduler.describe(i, now) for i in scheduler.items()[:8]],
     }
 
@@ -161,6 +170,8 @@ def run_tool(name: str, args: dict, ctx: ToolCtx | None = None) -> dict:
         handler = handlers().get(name)
         if not handler:
             return {"ok": False, "error": f"Outil inconnu : {name}"}
-        return handler(args, ctx)
+        out = handler(args, ctx)
+        confirm.after_tool(name, args, ctx, out)
+        return out
     except Exception as exc:  # noqa: BLE001 - the model gets the reason and can say it
         return {"ok": False, "error": str(exc)}

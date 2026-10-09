@@ -57,13 +57,13 @@ LANGUAGE = os.environ.get("JARVIS_LANGUAGE", "français")
 PORT = _int("JARVIS_PORT", 8788)
 
 # Where Claude Code sessions run (their working directory).
-WORKDIR = os.path.expanduser(os.environ.get("JARVIS_WORKDIR", "~"))
+WORKDIR = os.path.expanduser(os.environ.get("JARVIS_WORKDIR", "~/JARVIS-travail"))
 TASK_TIMEOUT = _int("JARVIS_TASK_TIMEOUT", 600)
 
-# Headless sessions have nobody to answer permission prompts: a task that asks
-# would just hang until the timeout. Run them in a non-interactive mode instead.
-# bypassPermissions = no prompt at all; acceptEdits = files yes, commands still ask.
-PERMISSION_MODE = os.environ.get("JARVIS_PERMISSION_MODE", "bypassPermissions")
+# Headless sessions have nobody to answer permission prompts: what would ask is
+# denied. auto = a classifier lets safe actions through and refuses risky ones;
+# bypassPermissions = no check at all (not recommended).
+PERMISSION_MODE = os.environ.get("JARVIS_PERMISSION_MODE", "auto")
 
 # Claude model per task complexity (Claude Code aliases; empty = account default).
 MODELS = {
