@@ -470,11 +470,26 @@ def apply_overrides():
         _BOOT.update({s.key: _get(s) for s in SCHEMA})
 
 
-def _live(s: Setting) -> str:
-    """When this change takes effect (a hotkey can be swapped live if WP13 allows it)."""
-    if s.key == "hotkey" and callable(getattr(shell, "set_hotkey", None)):
+def _swap_hotkey(combo: str) -> str:
+    """Hand the new combination to the running hotkey thread (shell.py, Windows).
+    NOW when Windows took it; RESTART when no thread runs (not Windows, or JARVIS
+    not started): the next start reads config.HOTKEY. A combination another
+    program holds raises SettingError: the old one stays and nothing is saved."""
+    swap = getattr(shell, "set_hotkey", None)
+    if not callable(swap):
+        return RESTART
+    try:
+        result = swap(combo)
+    except ValueError as exc:  # shell's parser refused it (normalize_hotkey checked already)
+        raise SettingError(str(exc)) from None
+    except Exception:  # noqa: BLE001 - the restart takes it then
+        logging.exception("JARVIS: raccourci non changé à chaud")
+        return RESTART
+    if not isinstance(result, dict):
         return NOW
-    return s.live
+    if result.get("error"):
+        raise SettingError(str(result["error"]))
+    return NOW if result.get("ok") else RESTART
 
 
 def set_many(changes: dict, confirm: bool = False) -> dict:
@@ -492,6 +507,12 @@ def set_many(changes: dict, confirm: bool = False) -> dict:
         s = BY_KEY[key]
         ready[key] = None if value is None else validate(s, value)
     applied = {}
+    hotkey_was = config.HOTKEY
+    if "hotkey" in ready:
+        # Windows has the last word on a hotkey (another program may hold it):
+        # asked before anything is saved, so a refusal changes nothing.
+        applied["hotkey"] = _swap_hotkey(ready["hotkey"] if ready["hotkey"] is not None
+                                         else _ENV["hotkey"])
     with _lock, store.LOCK:
         saved = _saved()
         for key, value in ready.items():
@@ -500,17 +521,17 @@ def set_many(changes: dict, confirm: bool = False) -> dict:
                 ready[key] = _ENV[key]
             else:
                 saved[key] = value
-        store.save(SETTINGS_FILE, saved)  # saved first: a full disk changes nothing
+        try:
+            store.save(SETTINGS_FILE, saved)  # saved first: a full disk changes nothing
+        except Exception:
+            if applied.get("hotkey") == NOW:  # ... the hotkey included
+                _swap_hotkey(hotkey_was)
+            raise
         for key, value in ready.items():
             _put(BY_KEY[key], value)
-            applied[key] = _live(BY_KEY[key])
+            applied.setdefault(key, BY_KEY[key].live)
     if applied.get("hotkey") == NOW:
-        try:
-            shell.set_hotkey(config.HOTKEY)
-            _BOOT["hotkey"] = config.HOTKEY  # in effect now: no restart waits for it
-        except Exception:  # noqa: BLE001 - the restart takes it then
-            logging.exception("JARVIS: raccourci non changé à chaud")
-            applied["hotkey"] = RESTART
+        _BOOT["hotkey"] = config.HOTKEY  # in effect now: no restart waits for it
     if applied:
         logging.info("JARVIS: réglages modifiés : %s", ", ".join(sorted(applied)))
         events.publish("config", {"keys": sorted(applied), "restart": restart_pending()})

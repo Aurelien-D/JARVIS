@@ -214,16 +214,56 @@ def test_restart_settings_are_reported_until_the_next_start(client):
 
 def test_a_hotkey_wp13_can_swap_live_is_applied_at_once(client, monkeypatch):
     calls = []
-    monkeypatch.setattr(settings.shell, "set_hotkey", calls.append, raising=False)
+
+    def swap(combo):  # shell.set_hotkey with a running hotkey thread
+        calls.append(combo)
+        return {"ok": True}
+    monkeypatch.setattr(settings.shell, "set_hotkey", swap)
     r = client.put("/api/settings", json={"hotkey": "ctrl+alt+shift+h"})
     assert r.json()["applied"] == {"hotkey": "now"} and r.json()["restart"] == []
     assert calls == ["ctrl+alt+shift+h"]
 
-    def refuse(combo):
-        raise OSError("déjà pris")
-    monkeypatch.setattr(settings.shell, "set_hotkey", refuse, raising=False)
+    def broken(combo):
+        raise OSError("fil du raccourci arrêté")
+    monkeypatch.setattr(settings.shell, "set_hotkey", broken)
     r = client.put("/api/settings", json={"hotkey": "ctrl+alt+shift+g"})
     assert r.json()["applied"] == {"hotkey": "restart"} and r.json()["restart"] == ["hotkey"]
+
+
+def test_a_hotkey_another_program_holds_is_refused_and_nothing_changes(client, monkeypatch):
+    """Windows refuses it (shell keeps the old one): the dialog says why, the
+    old combination stays in config and on disk."""
+    before, on_disk = config.HOTKEY, saved_file().get("hotkey")
+    monkeypatch.setattr(settings.shell, "set_hotkey", lambda combo: {
+        "ok": False, "error": "Raccourci Ctrl+Alt+Maj+P indisponible (déjà utilisé). "
+                              "Choisissez-en un autre dans Réglages › Système."})
+    r = client.put("/api/settings", json={"hotkey": "ctrl+alt+shift+p"})
+    assert r.status_code == 400 and "indisponible" in r.json()["detail"]
+    assert config.HOTKEY == before and saved_file().get("hotkey") == on_disk
+
+
+def test_a_full_disk_puts_the_old_hotkey_back(client, monkeypatch):
+    calls = []
+
+    def swap(combo):
+        calls.append(combo)
+        return {"ok": True}
+    monkeypatch.setattr(settings.shell, "set_hotkey", swap)
+    before = config.HOTKEY
+
+    def full(name, data):
+        raise OSError("No space left on device")
+    monkeypatch.setattr(settings.store, "save", full)
+    r = client.put("/api/settings", json={"hotkey": "ctrl+alt+shift+u"})
+    assert r.status_code == 500
+    assert calls == ["ctrl+alt+shift+u", before] and config.HOTKEY == before
+
+
+def test_without_a_hotkey_thread_the_next_start_takes_it(client):
+    """Not Windows, or JARVIS not started: shell.set_hotkey has nothing to swap."""
+    r = client.put("/api/settings", json={"hotkey": "ctrl+alt+shift+y"})
+    assert r.status_code == 200 and r.json()["applied"] == {"hotkey": "restart"}
+    client.put("/api/settings", json={"hotkey": settings._BOOT["hotkey"]})
 
 
 def test_a_full_disk_changes_nothing(client, monkeypatch):
@@ -296,7 +336,12 @@ def test_bad_hotkeys(value):
 
 def test_hotkeys():
     assert settings.normalize_hotkey("Maj+Ctrl+Alt+J") == "ctrl+alt+shift+j"
-    assert settings.normalize_hotkey("win+F12") == "win+f12"
+    assert settings.normalize_hotkey("win+F11") == "win+f11"
+    # shell.parse_hotkey (WP13) has the last word: F12 belongs to the debugger.
+    with pytest.raises(settings.SettingError, match="F12"):
+        settings.normalize_hotkey("win+F12")
+    with pytest.raises(settings.SettingError, match="A.R.E.S"):
+        settings.normalize_hotkey("ctrl+alt+k")
     with pytest.raises(settings.SettingError, match="A.R.E.S"):
         settings.normalize_hotkey("alt+ctrl+j")
 
