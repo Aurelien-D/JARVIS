@@ -1,48 +1,224 @@
-/* Side panel content: Claude Code tasks, reminders and routines, memory. */
-#side section { margin-bottom: 26px; }
-/* a long task history must not push reminders and memory off screen */
-#taskList { max-height: 46vh; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--cyan-dim) transparent; }
-/* design spec §5: 12 px at least, letter-spacing .18em at most */
-#side section > h2 {
-  font-size: var(--fs-xs); letter-spacing: .18em; text-transform: uppercase; color: var(--cyan);
-  margin-bottom: 14px; font-family: var(--font-mono);
-  border-bottom: 1px solid var(--line); padding-bottom: 10px;
+/* Side panel content (panels.js): Claude Code task cards, reminders and
+   routines, memory; and the task viewer dialog (taskview.js). */
+
+/* ------------------------------------------------ sections: <details open> with a count */
+#side section { margin-bottom: 22px; }
+#side section[hidden] { display: none; }
+#side .side-sec > summary {
+  display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
+  margin-bottom: 12px; padding: 4px 0 10px; border-bottom: 1px solid var(--line);
+  min-height: 24px;
 }
+#side .side-sec > summary::-webkit-details-marker { display: none; }
+#side .side-sec > summary::before {
+  content: "▸"; color: var(--muted); font-size: var(--fs-xs); transition: transform .15s ease;
+}
+#side .side-sec[open] > summary::before { transform: rotate(90deg); }
+#side .side-sec > summary:hover h2 { color: var(--text); }
+/* design spec §5: 12 px at least, letter-spacing .18em at most */
+#side .side-sec > summary h2 {
+  font-size: var(--fs-xs); letter-spacing: .18em; text-transform: uppercase; color: var(--cyan);
+  font-family: var(--font-mono); font-weight: 400; line-height: var(--lh-label);
+}
+/* a long task history must not push reminders and memory off screen */
+#taskList { max-height: 52vh; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.none { font-size: var(--fs-xs); color: var(--muted); font-style: italic; line-height: var(--lh-body); }
+
+/* ------------------------------------------------ task cards */
 .task {
   border: 1px solid var(--line); border-left: 3px solid var(--cyan);
-  padding: 12px 14px; margin-bottom: 12px;
-  background: linear-gradient(180deg, rgba(64,220,255,.06), transparent);
-  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
-  animation: materialize .35s ease;
+  padding: 10px 12px; margin-bottom: 10px;
+  background: linear-gradient(180deg, rgba(64, 220, 255, .06), transparent);
+  animation: materialize .18s ease-out;
 }
-.task .t { font-size: 14px; font-weight: 600; margin-bottom: 4px; letter-spacing: .04em; }
-.task .meta { font-size: var(--fs-xs); color: var(--muted); letter-spacing: .06em; font-family: var(--font-mono); margin-bottom: 6px; }
-.task .s { font-size: var(--fs-xs); color: var(--muted); display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); }
-.task .prog { font-size: var(--fs-xs); color: var(--amber); margin-top: 6px; font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.task .t {
+  font-size: var(--fs-md); font-weight: 600; line-height: var(--lh-label); letter-spacing: .02em;
+  color: var(--text); overflow-wrap: anywhere; min-width: 0;
+}
+.task .s {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); white-space: nowrap;
+}
+.task .chrono { font-variant-numeric: tabular-nums; }
+.task .chrono:empty { display: none; }
+.task .meta { margin-top: 4px; line-height: var(--lh-body); overflow-wrap: anywhere; }
+/* live progress: two lines at most */
+.task .prog {
+  margin-top: 6px; font-family: var(--font-mono); font-size: var(--fs-xs); line-height: var(--lh-body);
+  color: var(--amber); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
 .task .prog:empty { display: none; }
-.task .out { font-size: var(--fs-sm); line-height: var(--lh-body); color: var(--text); margin-top: 8px; max-height: 7.5em; overflow: auto; overflow-wrap: anywhere; }
+/* the output: sanitised markdown, 7.5 lines' worth, a fade while there is more */
+.task .out {
+  margin-top: 8px; max-height: 7.5em; overflow: auto; overscroll-behavior: contain;
+  font-size: var(--fs-sm); line-height: var(--lh-body); color: var(--text); overflow-wrap: anywhere;
+  scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent;
+}
+.task .out.clipped { mask-image: linear-gradient(#000 calc(100% - 1.6em), transparent); }
 .task .out:empty { display: none; }
-.task .out p, .task .out ul, .task .out ol, .task .out table { margin: 0 0 6px; }
+.task .out.plain { white-space: pre-wrap; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); }
+.task .out p, .task .out ul, .task .out ol, .task .out table, .task .out pre { margin: 0 0 6px; }
+.task .out > :last-child { margin-bottom: 0; }
 .task .out ul, .task .out ol { padding-left: 16px; }
-.task .out h1, .task .out h2, .task .out h3 { font-size: var(--fs-sm); color: var(--cyan); margin: 6px 0 4px; }
+.task .out h1, .task .out h2, .task .out h3, .task .out h4 {
+  font-size: var(--fs-sm); color: var(--cyan); margin: 6px 0 4px; line-height: var(--lh-label);
+}
 .task .out table { border-collapse: collapse; }
 .task .out th, .task .out td { border: 1px solid var(--line); padding: 2px 6px; }
 .task .out code { font-family: var(--font-mono); color: var(--amber); }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); animation: blink 1s infinite alternate; }
-.task.done { border-left-color: var(--ok); } .task.done .dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); animation: none; }
-.task.error { border-left-color: var(--err); } .task.error .dot { background: var(--err); box-shadow: 0 0 8px var(--err); animation: none; }
+.task .out a, .tv-md a { color: var(--cyan); text-underline-offset: 2px; }
+.task .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.task .actions .ctl { min-height: 28px; padding: 2px 10px; font-size: var(--fs-sm); }
+.task .approval {
+  margin-top: 8px; padding: 8px 10px; border: 1px solid var(--amber); border-radius: var(--radius);
+  font-size: var(--fs-sm); line-height: var(--lh-body); color: var(--text);
+}
+.task .approval[hidden] { display: none; }
+.task .ap-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.task .ap-actions .ctl { min-height: 28px; padding: 2px 10px; font-size: var(--fs-sm); }
+
+.dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+@media (prefers-reduced-motion: no-preference) {
+  .task.running .dot, .tv-status .dot.running { animation: blink 1s infinite alternate; }
+  @keyframes blink { to { opacity: .2; } }
+}
+.task.queued { border-left-color: var(--line-strong); }
+.task.queued .dot { background: var(--muted); box-shadow: none; }
+.task.waiting { border-left-color: var(--amber); }
+.task.waiting .lbl { color: var(--amber); }
+.task.waiting .dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.task.done { border-left-color: var(--ok); }
+.task.done .dot, .tv-status .dot.done { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.task.error { border-left-color: var(--err); }
+.task.error .dot, .tv-status .dot.error, .tv-status .dot.interrompue { background: var(--err); box-shadow: 0 0 8px var(--err); }
+.task.error .lbl { color: var(--err); }
 /* cancelled: the title in --muted, no opacity (design spec §6) */
-.task.cancelled { border-left-color: var(--muted); } .task.cancelled .t { color: var(--muted); }
-.task.cancelled .dot { background: var(--muted); box-shadow: none; animation: none; }
-.task .cancel { margin-left: auto; }
-@keyframes blink { to { opacity: .2; } }
-.none { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
-.item { display: flex; gap: 10px; align-items: baseline; font-size: 13px; padding: 7px 0; border-bottom: 1px dashed var(--line); }
-.item .when { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--amber); white-space: nowrap; }
-.item .txt { flex: 1; word-break: break-word; }
-.item .x { align-self: center; }
+.task.cancelled { border-left-color: var(--muted); }
+.task.cancelled .t { color: var(--muted); }
+.task.cancelled .dot, .tv-status .dot.cancelled { background: var(--muted); box-shadow: none; }
+
+/* finished tasks older than an hour */
+.task-history { margin-top: 4px; }
+.task-history > summary {
+  cursor: pointer; min-height: 24px; padding: 4px 0;
+  font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); letter-spacing: .06em;
+}
+.task-history > summary:hover { color: var(--text); }
+.task-history .history-list { margin-top: 8px; }
+
+/* ------------------------------------------------ reminders and memory */
+.grp {
+  margin: 10px 0 4px; font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 400;
+  letter-spacing: .08em; color: var(--muted);
+}
+.grp:first-child { margin-top: 0; }
+.rows { list-style: none; margin: 0; padding: 0; }
+/* line 1: the text (14 px); line 2: when (12 px); ✎ and ✕ span both */
+.item {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: "txt edit x" "when edit x";
+  column-gap: 6px; align-items: center;
+  padding: 6px 0; border-bottom: 1px dashed var(--line);
+}
+.item .txt { grid-area: txt; font-size: var(--fs-md); line-height: var(--lh-body); overflow-wrap: anywhere; }
+.item .when {
+  grid-area: when; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--amber);
+  line-height: var(--lh-body);
+}
+.item .x { grid-area: x; }
+.item .edit { grid-area: edit; }
+.item.fact { grid-template-areas: "txt edit x"; }
+.item.fact .txt { cursor: default; }
 .item .tag {
   display: inline-block; padding: 0 6px; margin-right: 2px;
   border: 1px solid var(--line-strong); border-radius: var(--radius);
-  font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted);
+  font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.5; color: var(--muted);
+}
+.ibtn {
+  display: inline-grid; place-items: center; width: 28px; height: 28px;
+  background: transparent; color: var(--muted); border: 1px solid transparent; border-radius: var(--radius);
+  font-size: 14px; line-height: 1; cursor: pointer;
+}
+.ibtn:hover { color: var(--cyan); border-color: var(--line-strong); }
+.item.editing { grid-template-areas: "txt txt txt" "when when when"; }
+.item.editing .x:not(.edit-form .x), .item.editing .edit { display: none; }
+.edit-form { grid-area: txt; display: flex; gap: 6px; align-items: center; }
+.edit-form input {
+  flex: 1; min-width: 0; min-height: 28px; padding: 2px 8px;
+  background: rgba(1, 4, 9, .6); color: var(--text);
+  border: 1px solid var(--line-strong); border-radius: var(--radius);
+  font: var(--fs-md) var(--font-hud);
+}
+.edit-form .ctl { min-height: 28px; padding: 2px 10px; font-size: var(--fs-sm); }
+
+@media (forced-colors: active) {
+  .task, .item { border-color: CanvasText; }
+  .ibtn { border: 1px solid ButtonText; color: ButtonText; background: ButtonFace; }
+}
+
+/* ------------------------------------------------ the task viewer (taskview.js) */
+#taskView {
+  position: fixed; inset: 0; margin: auto; z-index: 21;
+  width: min(820px, calc(100vw - 48px)); height: fit-content;
+  max-width: none; max-height: calc(100dvh - 48px);
+  padding: 0 24px 22px; overflow-y: auto; overscroll-behavior: contain;
+  color: var(--text); background: var(--panel);
+  border: 1px solid var(--line-strong); border-top: 2px solid var(--cyan); border-radius: 2px;
+  box-shadow: 0 0 60px rgba(0, 0, 0, .7);
+  scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent;
+}
+#taskView:not([open]) { display: none; }
+#taskView::backdrop { background: rgba(1, 4, 9, .72); backdrop-filter: blur(3px); }
+@media (prefers-reduced-motion: no-preference) {
+  #taskView[open] { animation: materialize .18s ease-out; }
+}
+.tv-head {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 0 -24px 12px; padding: 16px 24px 12px;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.tv-head h2 { font: 600 var(--fs-h) / var(--lh-label) var(--font-hud); color: var(--cyan); overflow-wrap: anywhere; }
+.tv-status { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text); }
+.tv-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  gap: 8px 16px; margin: 12px 0 4px;
+}
+.tv-facts dt { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); letter-spacing: .06em; }
+.tv-facts dd { margin: 2px 0 0; font-size: var(--fs-md); overflow-wrap: anywhere; }
+.tv-sec { margin-top: 18px; }
+.tv-sec[hidden] { display: none; }
+.tv-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.tv-sec h3 {
+  font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 400; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--cyan);
+}
+.tv-text {
+  white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-md); line-height: var(--lh-body);
+  max-height: 30vh; overflow: auto; padding: 8px 10px;
+  background: rgba(1, 4, 9, .5); border: 1px solid var(--line);
+}
+.tv-md { font-size: var(--fs-in); line-height: 1.55; overflow-wrap: anywhere; }
+.tv-md h1, .tv-md h2, .tv-md h3, .tv-md h4 { color: var(--cyan); margin: 12px 0 6px; line-height: var(--lh-label); }
+.tv-md h1 { font-size: 20px; } .tv-md h2 { font-size: 18px; } .tv-md h3, .tv-md h4 { font-size: var(--fs-in); }
+.tv-md p, .tv-md ul, .tv-md ol, .tv-md pre, .tv-md table { margin: 0 0 8px; }
+.tv-md ul, .tv-md ol { padding-left: 20px; }
+.tv-md table { border-collapse: collapse; }
+.tv-md th, .tv-md td { border: 1px solid var(--line); padding: 4px 8px; font-size: var(--fs-sm); }
+.tv-md code { font-family: var(--font-mono); color: var(--amber); font-size: .9em; }
+.tv-md pre { overflow-x: auto; padding: 8px; background: rgba(1, 4, 9, .6); border: 1px solid var(--line); }
+.tv-list { margin: 0; padding-left: 18px; font-size: var(--fs-md); line-height: var(--lh-body); }
+.tv-list li { margin-bottom: 4px; overflow-wrap: anywhere; }
+.tv-file { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.tv-file .path { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--speak); overflow-wrap: anywhere; }
+.tv-file .ctl { min-height: 28px; padding: 2px 10px; font-size: var(--fs-sm); }
+.tv-intro { font-size: var(--fs-md); margin-bottom: 4px; }
+.tv-steps { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); }
+.tv-steps time { color: var(--amber); }
+.tv-empty { list-style: none; color: var(--muted); font-style: italic; }
+@media (max-width: 600px) {
+  #taskView { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 0 14px 16px; }
+  .tv-head { margin: 0 -14px 10px; padding: 12px 14px 10px; }
 }

@@ -222,13 +222,15 @@ def test_escape_interrupts_a_tool_but_not_listening(jarvis):
 
 def test_escape_closes_the_most_recent_layer_first(jarvis):
     jarvis.set_viewport_size({"width": 1024, "height": 700})
+    jarvis.click("#panelBtn")
+    # The report is a modal window (WP11): opened after the panel, it sits on
+    # top of it and goes first.
     jarvis.evaluate("async () => (await import('/static/js/report.js')).showReport({title: 'Ventes'})")
-    jarvis.click("#panelBtn")  # opened after the report: closed first
-    jarvis.keyboard.press("Escape")
-    assert not jarvis.evaluate("document.body.classList.contains('side-open')")
-    assert jarvis.evaluate("document.getElementById('report').open")
     jarvis.keyboard.press("Escape")
     assert not jarvis.evaluate("document.getElementById('report').open")
+    assert jarvis.evaluate("document.body.classList.contains('side-open')")
+    jarvis.keyboard.press("Escape")
+    assert not jarvis.evaluate("document.body.classList.contains('side-open')")
     # a drawer (the Journal) closes too, and says so
     jarvis.evaluate("""window.__closed = []; __jarvis.bus.on('ui:close', n => __closed.push(n));
       document.getElementById('journalDrawer').hidden = false; 0""")
