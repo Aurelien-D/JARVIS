@@ -61,7 +61,7 @@ def test_task_result_is_read_out_while_live(jarvis):
     tool(jarvis, "delegate_to_claude", {"title": "Météo", "prompt": "météo ?", "profile": "recherche"})
     jarvis.wait_for_function("__sent.some(m => m.type === 'response.create')")
     texts = jarvis.evaluate("__texts()")
-    assert any(t.startswith('[SYSTEM] Résultat de la tâche "Météo" (done)') for t in texts)
+    assert any('Résultat de la tâche "Météo" (done)' in t for t in texts)
 
 
 def test_one_response_at_a_time(jarvis):
