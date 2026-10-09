@@ -299,6 +299,8 @@ def test_quiet_hours(spec, hhmm, quiet):
 
 def test_do_not_disturb_is_stored_for_the_scheduler_and_the_page(client, monkeypatch):
     monkeypatch.setattr(config, "QUIET_HOURS", "")
+    # Not the real machine's state: a Windows CI runner reports 'quiet_time'.
+    monkeypatch.setattr(desktop, "attention_state", lambda: "ok")
     until = time.time() + 3600
     assert client.post("/api/dnd", headers=AUTH, json={"until": until}).json() == {"until": until}
     assert store.load("state.json", {})["dnd_until"] == until
