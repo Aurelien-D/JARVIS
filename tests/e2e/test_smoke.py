@@ -68,7 +68,7 @@ def test_one_response_at_a_time(jarvis):
     go_live(jarvis)
     jarvis.evaluate("__sent.length = 0")
     emit(jarvis, {"type": "response.created"})
-    jarvis.evaluate("__jarvis.bus.emit('deliver', {text: 'Rappel test', kind: 'reminder', spoken: 'x'})")
+    jarvis.evaluate("__jarvis.voice.sendText('Rappel test')")  # deliver() itself waits for a pause (WP09)
     assert jarvis.evaluate("__types()") == ["message:input_text"]  # waits for the running response
     emit(jarvis, {"type": "response.done", "response": {"output": []}})
     assert jarvis.evaluate("__types()") == ["message:input_text", "response.create"]
@@ -190,12 +190,12 @@ def test_end_conversation_goes_back_to_standby(jarvis):
 
 def test_result_finished_while_asleep_is_told_on_wake(jarvis):
     tool(jarvis, "delegate_to_claude", {"title": "Actus", "prompt": "actus ?", "profile": "recherche"})
-    jarvis.wait_for_function("__jarvis.state.queue.length === 1")
+    jarvis.wait_for_function("__jarvis.state.pending === 1")  # the badge's count (delivery.js)
     jarvis.evaluate("__sent.length = 0")
     go_live(jarvis)
     jarvis.wait_for_function("__sent.some(m => m.type === 'response.create')")
     assert any("Actus" in t for t in jarvis.evaluate("__texts()"))
-    assert jarvis.evaluate("__jarvis.state.queue.length") == 0
+    assert jarvis.evaluate("__jarvis.state.pending") == 0
 
 
 def test_idle_session_goes_to_standby(jarvis):
@@ -305,8 +305,8 @@ def test_wake_word_refused_falls_back_to_the_orb(jarvis):
     jarvis.wait_for_function("window.__rec && __rec.running")
     jarvis.evaluate("__rec.onerror({error: 'not-allowed'})")  # micro or speech service refused
     assert jarvis.evaluate("__jarvis.state.mode") == "off"
-    assert jarvis.evaluate("__jarvis.settings.get('wake')") is False  # not asked again on reload
-    assert "OFF" in jarvis.inner_text("#wakeBtn").upper()
+    # The microphone is still granted: paused, not switched off for good (WP07, test_wake.py).
+    assert jarvis.evaluate("__jarvis.settings.get('wake')") is not False
     jarvis.wait_for_selector(".card.warning:has-text(\"Mot d'éveil\")")
     go_live(jarvis)  # the orb still works
 
