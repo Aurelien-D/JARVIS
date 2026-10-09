@@ -44,7 +44,7 @@ let editing = null;              // {key, form, cancel} while a row is being edi
 
 /* ---------------------------------------------------------- task cards */
 const taskId = (tk) => (tk.waiting ? `task-attente-${tk.pendingId}` : `task-${tk.id}`);
-const titleOf = (tk) => String(tk.title || "") || "Tâche";
+const titleOf = (tk) => String(tk.title || "") || T.task.untitled;
 
 /* Waiting > running > failed > done, newest first in each group. */
 function rank(tk) {

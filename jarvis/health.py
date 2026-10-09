@@ -6,7 +6,9 @@ level is ok, info, warning or error; ok is false when something must be
 fixed. Checks run side by side, each bounded in time, and the slow ones are
 cached (the OpenAI key 10 minutes, Claude Code's login 5 minutes) unless
 monsieur asks to check again. Nothing here spends model quota: the key is
-tested by reading the model's description, which is free.
+tested by reading the model's description, which is free. A.R.E.S is asked
+for real (ares.reachable), and on Windows the shell's state is read: the
+global hotkey, the tray icon, the start with Windows (shell.py, desktop.py).
 """
 import hashlib
 import importlib.util

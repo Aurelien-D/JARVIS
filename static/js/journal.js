@@ -24,9 +24,7 @@ const MAX_WAIT_MS = 10000;        // a long conversation still reaches the disk 
 const RECENT_MS = 30 * 60e3;      // what recentContext carries into a new session (voice.js)
 const KEEPALIVE_BYTES = 60000;    // keepalive bodies are capped at 64 KiB per page
 const SEARCH_MS = 250;
-const DAYS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
-const MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
-                "septembre", "octobre", "novembre", "décembre"];
+const DAYS = J.days, MONTHS = J.months;  // strings-fr.js
 
 let drawer, logEl, listEl, daySel, searchEl, statusEl, footEl, keepEl;
 let pending = [];                 // turns not on the server yet

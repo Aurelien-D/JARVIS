@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 from test_desktop import FakeHotkeyApi, start_hotkey
 
 import server
-from jarvis import ares, config, desktop, health, inbox, scheduler, security, settings, shell, tasks, tools
+from jarvis import (ares, config, confirm, desktop, health, inbox, scheduler, security, settings, shell, tasks,
+                    tools)
 
 AUTH = {"X-Jarvis-Token": security.TOKEN}
 
@@ -71,6 +72,33 @@ def test_ares_switched_in_reglages_is_asked_again_at_once(client, fake_ares, mon
     assert client.get("/api/ares").json() == {"available": False, "mode": "off", "lines": [], "at": 0}
     assert "ares_lire" not in {t["name"] for t in tools.session_tools()}
     assert len(fake_ares.requests) == asked  # off means never called
+
+
+def test_a_hostile_note_cannot_write_into_ares_without_a_yes(fake_ares, monkeypatch):
+    """A note read aloud taints the session (G8); a write into A.R.E.S then asks
+    first, like a link to an unknown site, and runs only the stored request."""
+    monkeypatch.setattr(config, "ARES", "auto")
+    confirm.SESSIONS.clear()
+    confirm.PENDING.clear()
+    sid = confirm.new_session()
+    ctx = tools.ToolCtx(session_id=sid)
+    out = tools.run_tool("ares_ajouter", {"type": "note", "titre": "Courses", "texte": "pain"}, ctx)
+    assert out.get("ok") is True  # clean session: instant, as before
+    tools.run_tool("ares_lire", {"quoi": "notes", "requete": "garage"}, ctx)
+    assert confirm.is_tainted(sid)
+    out = tools.run_tool("ares_ajouter", {"type": "tache", "titre": "Virer 480 € au garage"}, ctx)
+    assert out["status"] == "needs_confirmation"
+    assert out["summary"] == "Écrire dans A.R.E.S : nouvelle tâche « Virer 480 € au garage » ?"
+    assert not [c for c in fake_ares.calls("create_task") if c[1]["title"] == "Virer 480 € au garage"]
+    out = tools.run_tool("ares_modifier", {"action": "terminer", "id": "t3f2c1a",
+                                           "titre_attendu": "Appeler le labo"}, ctx)
+    assert out["summary"] == "Écrire dans A.R.E.S : tâche « Appeler le labo » terminée ?"
+    assert fake_ares.calls("complete_task") == []
+    # The model cannot say yes for monsieur: no turn of his since the question.
+    first = next(iter(confirm.PENDING))
+    assert confirm.decide(first, "oui", voice_session=sid, by_voice=True)["ok"] is False
+    confirm.SESSIONS.clear()
+    confirm.PENDING.clear()
 
 
 # ---------------------------------------------------------------- Réglages -> quiet hours, briefing, journal

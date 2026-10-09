@@ -143,6 +143,7 @@ export const T = typeset({
     actions: { read: "Lire", copy: "Copier", continue: "Continuer", retry: "Réessayer",
                cancel: "Annuler la tâche", reveal: "Afficher dans l'explorateur" },
     followUp: (title) => `suite de « ${title} »`,
+    untitled: "Tâche",
     sectionTitle: (n) => `Sessions Claude Code · ${n} en cours`,
     history: (n) => `Historique (${n})`,
     working: "Claude Code travaille…",
@@ -506,6 +507,9 @@ export const T = typeset({
   },
   // The conversation journal (journal.js, WP14).
   journal: {
+    days: ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"],
+    months: ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
+             "septembre", "octobre", "novembre", "décembre"],
     title: "Journal",
     close: "Fermer le journal",
     day: "Jour affiché",

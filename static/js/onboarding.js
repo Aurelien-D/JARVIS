@@ -411,6 +411,9 @@ export async function refresh(force = false, list = null) {
   try {
     lastList = list || await checkHealth(force);
     lastErrors = errorSignature(lastList);
+    // Shown now: remembered at once, not only on 'close' (an event the browser
+    // queues, which a reload right after Échap can outrun).
+    if (dialog.open) prefs.set("onboardingSeen", lastErrors);
     applyServer(lastList);
   } catch {
     setRow(ui.rows.key, { state: "fix", message: S.serverDown });

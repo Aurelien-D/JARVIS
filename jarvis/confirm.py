@@ -4,8 +4,9 @@ Every tool call goes through gate() before it runs. A risky call is parked
 here and the model gets needs_confirmation instead:
 - a full-access Claude task, or a full-access routine;
 - once untrusted content entered the voice session (screen, clipboard, web
-  news, notes, journal, a task result), a link to an unknown site or a
-  clipboard write;
+  news, notes, journal, a task result), a link to an unknown site, a
+  clipboard write or a write into A.R.E.S (a hostile note must not fill
+  monsieur's organiser);
 - a finished task's denied tools, which monsieur may approve (tasks.approve).
 
 A parked action then runs with the arguments stored here, never new ones, and
@@ -47,6 +48,7 @@ class T:
     clipboard = "Remplacer le contenu du presse-papiers ?"
     complet_routine = "Programmer une routine {freq} avec accès complet : « {title} »."
     task_approval = "Claude demande l'autorisation d'utiliser {tool} pour « {title} »."
+    ares_write = "Écrire dans A.R.E.S : {what} ?"
     refused = "Confirmation refusée : attendez la réponse de monsieur."
     expired = "Demande expirée : rien n'a été lancé."
     unknown = "Demande inconnue : rien n'a été lancé."
@@ -220,7 +222,22 @@ def _rule(name: str, args: dict, sid):
             return T.link.format(domain=domain or "ce lien"), _clip(url, 300)
     if name == "system_control" and args.get("action") == "write_clipboard":
         return T.clipboard, _clip(args.get("value"), 300)
+    if name in ("ares_ajouter", "ares_modifier"):
+        return T.ares_write.format(what=_ares_what(name, args)), _clip(
+            "\n".join(f"{k} : {v}" for k, v in args.items() if v not in (None, "")), DETAIL_MAX)
     return None
+
+
+_ARES_KINDS = {"tache": "nouvelle tâche", "tâche": "nouvelle tâche", "rappel": "nouveau rappel",
+               "note": "nouvelle note"}
+
+
+def _ares_what(name: str, args: dict) -> str:
+    if name == "ares_ajouter":
+        kind = _ARES_KINDS.get(str(args.get("type") or "").strip().lower(), "ajout")
+        return f"{kind} « {_title(args.get('titre'), args.get('texte'))} »"
+    done = str(args.get("action") or "").strip().lower() == "terminer"
+    return f"tâche « {_title(args.get('titre_attendu'), args.get('id'))} » {'terminée' if done else 'reportée'}"
 
 
 def _title(title, fallback) -> str:

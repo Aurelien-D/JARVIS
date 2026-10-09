@@ -124,7 +124,7 @@ function fact(label, value, title = "") {
 
 function render(tk) {
   current = tk;
-  el.title.textContent = String(tk.title || "") || "Tâche";
+  el.title.textContent = String(tk.title || "") || T.task.untitled;
   el.status.replaceChildren(node("span", `dot ${tk.status || ""}`), node("span", "lbl", S.status[tk.status] || S.status.error));
   el.status.querySelector(".dot").setAttribute("aria-hidden", "true");
   el.status.dataset.status = tk.status || "";
