@@ -1,0 +1,37 @@
+/* Side panel content: Claude Code tasks, reminders and routines, memory. */
+#side section { margin-bottom: 26px; }
+/* a long task history must not push reminders and memory off screen */
+#taskList { max-height: 46vh; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--cyan-dim) transparent; }
+#side h2 {
+  font-size: 11px; letter-spacing: .34em; text-transform: uppercase; color: var(--cyan);
+  margin-bottom: 14px; font-family: var(--font-mono);
+  border-bottom: 1px solid var(--line); padding-bottom: 10px;
+  text-shadow: 0 0 10px rgba(64,220,255,.6);
+}
+.task {
+  border: 1px solid var(--line); border-left: 3px solid var(--cyan);
+  padding: 12px 14px; margin-bottom: 12px;
+  background: linear-gradient(180deg, rgba(64,220,255,.06), transparent);
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+  animation: materialize .35s ease;
+}
+.task .t { font-size: 14px; font-weight: 600; margin-bottom: 4px; letter-spacing: .04em; }
+.task .meta { font-size: 10px; color: var(--dim); letter-spacing: .14em; text-transform: uppercase; font-family: var(--font-mono); margin-bottom: 6px; }
+.task .s { font-size: 11px; color: var(--dim); display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); }
+.task .prog { font-size: 11px; color: var(--amber); margin-top: 6px; font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task .prog:empty { display: none; }
+.task .out { font-size: 11px; color: #a9cbe4; margin-top: 8px; max-height: 120px; overflow: auto; white-space: pre-wrap; font-family: var(--font-mono); }
+.task .out:empty { display: none; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); animation: blink 1s infinite alternate; }
+.task.done { border-left-color: var(--ok); } .task.done .dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); animation: none; }
+.task.error { border-left-color: var(--err); } .task.error .dot { background: var(--err); box-shadow: 0 0 8px var(--err); animation: none; }
+.task.cancelled { border-left-color: var(--dim); opacity: .65; } .task.cancelled .dot { background: var(--dim); box-shadow: none; animation: none; }
+.task .cancel { margin-left: auto; cursor: pointer; color: var(--dim); }
+.task .cancel:hover { color: var(--err); }
+@keyframes blink { to { opacity: .2; } }
+.none { font-size: 12px; color: var(--dim); font-style: italic; }
+.item { display: flex; gap: 10px; align-items: baseline; font-size: 13px; padding: 7px 0; border-bottom: 1px dashed var(--line); }
+.item .when { font-family: var(--font-mono); font-size: 11px; color: var(--amber); white-space: nowrap; }
+.item .txt { flex: 1; word-break: break-word; }
+.item .x { cursor: pointer; color: var(--dim); }
+.item .x:hover { color: var(--err); }

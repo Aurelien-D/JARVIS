@@ -1,0 +1,5 @@
+# Tests: pip install -r requirements-dev.txt
+# End-to-end tests also need a browser: python -m playwright install chromium
+-r requirements.txt
+pytest==9.1.1
+pytest-playwright==0.10.0

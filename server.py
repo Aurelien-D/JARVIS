@@ -7,7 +7,8 @@ One small FastAPI server, reachable from this PC only (see jarvis/security.py):
                            never reaches the browser)
   POST /api/tool           runs a voice tool (Claude task, app, volume, reminder...)
   GET  /api/events         live push: task progress, reminders, briefings
-  GET  /api/tasks ...      task list and cancel, reminders, memory
+  GET  /api/tasks ...      task list and cancel, reminders, memory (jarvis/api_*.py)
+  POST /api/shutdown       stops JARVIS (the tray's Quit)
 
 The browser talks to OpenAI Realtime over WebRTC for voice, and the model
 calls tools; delegate_to_claude hands real work to Claude Code. Results are
@@ -18,6 +19,7 @@ read back aloud when the Claude session finishes.
   python server.py --autostart on     launch JARVIS when Windows starts (off to undo)
 """
 import argparse
+import mimetypes
 import sys
 import threading
 import time
@@ -29,7 +31,13 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from jarvis import config, desktop, events, memory, scheduler, security, tasks, tools
+from jarvis import (api_memory, api_schedules, api_tasks, ares, config, confirm, desktop, events,
+                    health, inbox, journal, realtime, scheduler, security, settings, shell, tasks,
+                    tools, usage)
+
+settings.apply_overrides()  # settings saved from the UI win over .env
+
+SERVER = None  # the running uvicorn.Server: /api/shutdown and the tray's Quit stop it
 
 
 @asynccontextmanager
@@ -42,7 +50,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="JARVIS Local", lifespan=lifespan)
 app.middleware("http")(security.guard)
+# The Windows registry can map .js to text/plain, and browsers refuse to run a
+# module script served that way: pin the types StaticFiles will guess.
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/css", ".css")
 app.mount("/static", StaticFiles(directory=config.ROOT / "static"), name="static")
+for router in (api_tasks.router, api_schedules.router, api_memory.router, inbox.router,
+               settings.router, health.router, usage.router, journal.router, ares.router,
+               confirm.router):
+    app.include_router(router)
 
 # ---------------------------------------------------------------- page
 
@@ -71,47 +87,26 @@ class SessionIn(BaseModel):
 
 @app.post("/api/session")
 def create_session(body: SessionIn | None = None):
-    if not config.OPENAI_API_KEY:
-        raise HTTPException(500, "OPENAI_API_KEY manquant: copie .env.example vers .env et mets ta clé.")
-    payload = {
-        "session": {
-            "type": "realtime",
-            "model": config.REALTIME_MODEL,
-            "instructions": tools.build_instructions(body.recent if body else ""),
-            "tools": tools.TOOLS,
-            "audio": {
-                "input": {"transcription": {"model": "whisper-1"}},
-                "output": {"voice": config.VOICE},
-            },
-        }
-    }
     try:
-        r = httpx.post(
-            "https://api.openai.com/v1/realtime/client_secrets",
-            headers={"Authorization": f"Bearer {config.OPENAI_API_KEY}",
-                     "Content-Type": "application/json"},
-            json=payload, timeout=30,
-        )
-    except httpx.HTTPError as exc:
-        raise HTTPException(502, f"OpenAI injoignable : {exc}") from None
-    if r.status_code >= 400:
-        # 502, not OpenAI's own status: a 401 here is about the API key, not our page token.
-        raise HTTPException(502, f"OpenAI {r.status_code}: {r.text[:300]}")
-    data = r.json()
-    return {"client_secret": data["value"], "model": config.REALTIME_MODEL}
+        data = realtime.mint(body.recent if body else "")
+    except realtime.MintError as exc:
+        raise HTTPException(exc.status, exc.detail) from None
+    return {"client_secret": data["value"], "model": config.REALTIME_MODEL,
+            "session_id": confirm.new_session()}
 
 # ---------------------------------------------------------------- tools & live events
 
 class ToolIn(BaseModel):
     name: str
     arguments: dict = {}
+    session_id: str | None = None  # the voice session that called it (see /api/session)
 
 
 @app.post("/api/tool")
 def run_tool(body: ToolIn):
-    if body.name in tools.CLIENT_TOOLS:
+    if body.name in tools.client_tools():
         raise HTTPException(400, f"{body.name} s'exécute dans la page.")
-    return tools.run_tool(body.name, body.arguments)
+    return tools.run_tool(body.name, body.arguments, tools.ToolCtx(session_id=body.session_id))
 
 
 @app.get("/api/events")
@@ -119,44 +114,18 @@ async def stream_events():
     return StreamingResponse(events.stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
-# ---------------------------------------------------------------- side panels
+# ---------------------------------------------------------------- lifecycle
 
-@app.get("/api/tasks")
-def list_tasks():
-    return tasks.list_tasks()
-
-
-@app.get("/api/task/{task_id}")
-def get_task(task_id: str):
-    task = tasks.TASKS.get(task_id)
-    if not task:
-        raise HTTPException(404, "unknown task")
-    return tasks.public(task)
+def _request_shutdown():
+    tasks.shutdown()
+    if SERVER is not None:
+        SERVER.should_exit = True
 
 
-@app.post("/api/task/{task_id}/cancel")
-def cancel_task(task_id: str):
-    return tasks.cancel(task_id)
-
-
-@app.get("/api/schedules")
-def list_schedules():
-    return scheduler.items()
-
-
-@app.delete("/api/schedules/{item_id}")
-def delete_schedule(item_id: str):
-    return {"ok": True, "removed": len(scheduler.cancel(item_id))}
-
-
-@app.get("/api/memory")
-def list_memory():
-    return memory.facts()
-
-
-@app.delete("/api/memory/{fact_id}")
-def delete_memory(fact_id: str):
-    return {"ok": True, "removed": len(memory.forget(fact_id))}
+@app.post("/api/shutdown")
+def shutdown():
+    _request_shutdown()
+    return {"ok": True}
 
 # ---------------------------------------------------------------- launcher
 
@@ -204,7 +173,7 @@ def main():
     if _already_running(url):
         # Second launch (double-click, autostart): just bring the window back.
         if args.app:
-            desktop.open_app_window(url)
+            desktop.show_app_window(url)
         else:
             print(f"JARVIS tourne déjà -> {url}")
         return
@@ -212,8 +181,16 @@ def main():
         threading.Thread(target=_open_when_ready, args=(url,), daemon=True).start()
 
     import uvicorn
+    global SERVER
+    # A Server object (not uvicorn.run) so Quit and /api/shutdown can stop it cleanly.
+    SERVER = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=config.PORT,
+                                           log_level="warning", timeout_graceful_shutdown=3))
     print(f"\n  JARVIS Local -> {url}\n")
-    uvicorn.run(app, host="127.0.0.1", port=config.PORT, log_level="warning")
+    shell.start(url, _request_shutdown)
+    try:
+        SERVER.run()
+    finally:
+        shell.stop()
 
 
 if __name__ == "__main__":

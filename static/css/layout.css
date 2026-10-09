@@ -1,0 +1,80 @@
+/* Page layout: background, HUD chrome, top bar, the stage around the orb,
+   and where the cards column and the side panel sit. */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background:
+    radial-gradient(1100px 650px at 50% 38%, rgba(20,60,100,.35) 0%, transparent 60%),
+    var(--bg);
+  color: var(--text); font-family: var(--font-hud);
+  height: 100vh; overflow: hidden; display: flex;
+}
+/* hex grid + scanlines overlay */
+body::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .5;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(64,220,255,.028) 0 1px, transparent 1px 3px),
+    linear-gradient(rgba(64,220,255,.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(64,220,255,.045) 1px, transparent 1px);
+  background-size: 100% 3px, 52px 52px, 52px 52px;
+}
+/* subtle vignette */
+body::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none;
+  box-shadow: inset 0 0 220px rgba(0,0,0,.85);
+}
+
+/* ------------------------------------------------ HUD chrome */
+.corner { position: fixed; width: 46px; height: 46px; pointer-events: none; z-index: 5; }
+.corner::before { content: ""; position: absolute; inset: 0; border: 2px solid var(--cyan); opacity: .55; }
+.corner.tl { top: 14px; left: 14px; } .corner.tl::before { border-right: 0; border-bottom: 0; }
+.corner.tr { top: 14px; right: 358px; } .corner.tr::before { border-left: 0; border-bottom: 0; }
+.corner.bl { bottom: 14px; left: 14px; } .corner.bl::before { border-right: 0; border-top: 0; }
+.corner.br { bottom: 14px; right: 358px; } .corner.br::before { border-left: 0; border-top: 0; }
+
+#topbar {
+  position: fixed; top: 20px; left: 80px; right: 420px; z-index: 5;
+  display: flex; align-items: center;
+  font-family: var(--font-mono); font-size: 11px; color: var(--dim);
+  letter-spacing: .28em; text-transform: uppercase;
+}
+/* the brand on the left, everything else pushed to the right */
+#topbar .brand { margin-right: auto; color: var(--cyan); text-shadow: 0 0 12px rgba(64,220,255,.8); }
+#clock { color: var(--amber); }
+
+#stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+#orbBtn {
+  display: block; padding: 0; margin: 0; border: 0; border-radius: 50%;
+  background: none; color: inherit; cursor: pointer;
+}
+#orb { display: block; width: min(48vh, 440px); height: min(48vh, 440px); cursor: pointer; filter: drop-shadow(0 0 35px rgba(64,220,255,.25)); }
+#statusPill {
+  margin-top: 6px; letter-spacing: .45em; text-transform: uppercase;
+  font-size: 12px; font-weight: 600; color: var(--dim); font-family: var(--font-mono);
+  text-align: center; max-width: 80%;
+}
+#statusPill b { color: var(--cyan); font-weight: 600; text-shadow: 0 0 14px rgba(64,220,255,.9); }
+#hint { position: absolute; bottom: 22px; font-size: 11px; color: var(--dim); font-family: var(--font-mono); letter-spacing: .2em; }
+#you {
+  position: absolute; top: 54px; left: 50%; transform: translateX(-50%);
+  max-width: 60%; text-align: center; font-size: 13px; color: var(--dim);
+  font-family: var(--font-mono); letter-spacing: .03em; min-height: 18px;
+}
+#transcript {
+  position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
+  max-width: 68%; text-align: center; font-size: 15px; font-weight: 500;
+  color: #9fd4f5; min-height: 22px; text-shadow: 0 0 18px rgba(64,220,255,.35);
+}
+#controls { position: absolute; bottom: 46px; display: flex; gap: 10px; z-index: 5; }
+
+/* ------------------------------------------------ display cards column */
+#cards {
+  position: absolute; top: 96px; left: 34px; bottom: 30px; width: 330px;
+  display: flex; flex-direction: column; gap: 14px; overflow-y: auto;
+  pointer-events: none; scrollbar-width: none; z-index: 4;
+}
+
+/* ------------------------------------------------ right panel */
+#side {
+  width: 340px; border-left: 1px solid var(--line); background: var(--panel);
+  backdrop-filter: blur(10px); padding: 18px; overflow-y: auto; z-index: 6;
+}

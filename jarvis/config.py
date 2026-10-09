@@ -34,6 +34,20 @@ def _int(name: str, default: int) -> int:
         return default
 
 
+def _float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, default))
+    except ValueError:
+        return default
+
+
+def _bool(name: str, default: bool) -> bool:
+    value = os.environ.get(name, "").strip().lower()
+    if not value:
+        return default
+    return value not in ("0", "false", "non", "off", "no")
+
+
 load_env()
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
@@ -74,3 +88,43 @@ _SPEECH_LANGS = {"français": "fr-FR", "francais": "fr-FR", "french": "fr-FR",
                  "espagnol": "es-ES", "deutsch": "de-DE", "allemand": "de-DE",
                  "italiano": "it-IT", "italien": "it-IT"}
 SPEECH_LANG = os.environ.get("JARVIS_SPEECH_LANG") or _SPEECH_LANGS.get(LANGUAGE.lower(), "fr-FR")
+
+# ---------------------------------------------------------------- voice session (OpenAI Realtime)
+# Transcription of what monsieur says (shown on screen and kept for reconnections),
+# with a fallback model if OpenAI refuses the first one.
+TRANSCRIBE_MODEL = os.environ.get("JARVIS_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
+TRANSCRIBE_FALLBACK = os.environ.get("JARVIS_TRANSCRIBE_FALLBACK", "whisper-1")
+REASONING_EFFORT = os.environ.get("JARVIS_REASONING", "low")  # gpt-realtime-2.x models only
+NOISE_REDUCTION = os.environ.get("JARVIS_NOISE_REDUCTION", "far_field")  # near_field for a headset
+EAGERNESS = os.environ.get("JARVIS_EAGERNESS", "auto")  # low = JARVIS cuts in less often
+VOICE_SPEED = _float("JARVIS_VOICE_SPEED", 1.0)
+SECRET_TTL = _int("JARVIS_SECRET_TTL", 120)  # seconds an ephemeral key stays usable
+RETENTION_RATIO = _float("JARVIS_RETENTION_RATIO", 0.8)  # share of a long conversation kept
+
+# ---------------------------------------------------------------- Claude Code tasks: safety and cost
+TASK_BUDGET_USD = _float("JARVIS_TASK_BUDGET_USD", 2.0)
+DAILY_BUDGET_USD = _float("JARVIS_DAILY_BUDGET_USD", 0)  # 0 = no daily cap
+MAX_CONCURRENT_TASKS = _int("JARVIS_MAX_CONCURRENT_TASKS", 3)
+CONFIRM_COMPLET = _bool("JARVIS_CONFIRM_COMPLET", True)  # full-access tasks wait for a "oui"
+PENDING_TTL = _int("JARVIS_PENDING_TTL", 90)  # seconds a confirmation request stays open
+OPEN_URL_ALLOW = os.environ.get("JARVIS_OPEN_URL_ALLOW", "")  # domains opened without asking
+SAFE_MODE = os.environ.get("JARVIS_SAFE_MODE", "auto")
+RESTRICTED = os.environ.get("JARVIS_RESTRICTED", "auto")
+
+# ---------------------------------------------------------------- A.R.E.S (local MCP server)
+ARES = os.environ.get("JARVIS_ARES", "auto")  # auto | on | off
+ARES_URL = os.environ.get("JARVIS_ARES_URL", "http://127.0.0.1:6178/mcp")
+ARES_MCP_NAME = os.environ.get("JARVIS_ARES_MCP_NAME", "ares")
+
+# ---------------------------------------------------------------- proactivity
+QUIET_HOURS = os.environ.get("JARVIS_QUIET_HOURS", "22:30-07:30")
+BRIEFING_DAYS = os.environ.get("JARVIS_BRIEFING_DAYS", "lun-ven")
+BRIEFING_NEWS = _bool("JARVIS_BRIEFING_NEWS", False)
+NEWS_FEEDS = os.environ.get("JARVIS_NEWS_FEEDS", "https://www.lemonde.fr/rss/une.xml")
+REOPEN_ON_REMINDER = _bool("JARVIS_REOPEN_ON_REMINDER", True)
+JOURNAL_DAYS = _int("JARVIS_JOURNAL_DAYS", 30)
+
+# ---------------------------------------------------------------- Windows integration
+HOTKEY = os.environ.get("JARVIS_HOTKEY", "ctrl+alt+shift+j")
+BROWSER = os.environ.get("JARVIS_BROWSER", "auto")  # auto | chrome | edge
+TRAY = _bool("JARVIS_TRAY", True)

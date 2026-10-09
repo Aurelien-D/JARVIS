@@ -23,6 +23,12 @@ def publish(kind: str, data: dict):
             pass
 
 
+def has_subscribers() -> bool:
+    """Is any JARVIS page listening? (otherwise a message needs another way out)"""
+    with _lock:
+        return bool(_subscribers)
+
+
 async def stream():
     sub = (asyncio.get_running_loop(), asyncio.Queue())
     with _lock:

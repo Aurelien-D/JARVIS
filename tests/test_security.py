@@ -1,9 +1,11 @@
+import re
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 import server
-from jarvis import config, security
+from jarvis import config, realtime, security
 
 BASE = "http://127.0.0.1:8788"
 AUTH = {"X-Jarvis-Token": security.TOKEN}
@@ -65,10 +67,14 @@ def _fake_openai(status, body, captured):
 def test_session_hands_out_a_temporary_secret_only(client, monkeypatch):
     monkeypatch.setattr(config, "OPENAI_API_KEY", "sk-secret")
     captured = {}
-    monkeypatch.setattr(server.httpx, "post", _fake_openai(200, {"value": "ek_temp"}, captured))
+    monkeypatch.setattr(realtime.httpx, "post", _fake_openai(200, {"value": "ek_temp"}, captured))
     r = client.post("/api/session", headers=AUTH, json={"recent": "monsieur : bonjour"})
     assert r.status_code == 200
-    assert r.json() == {"client_secret": "ek_temp", "model": config.REALTIME_MODEL}
+    body = r.json()
+    assert body.pop("client_secret") == "ek_temp"
+    assert body.pop("model") == config.REALTIME_MODEL
+    assert len(body.pop("session_id")) == 32  # ties later confirmations to this session
+    assert not body
     assert "sk-secret" not in r.text
     session = captured["json"]["session"]
     assert "monsieur : bonjour" in session["instructions"]
@@ -77,7 +83,7 @@ def test_session_hands_out_a_temporary_secret_only(client, monkeypatch):
 
 def test_openai_key_error_is_not_mistaken_for_a_page_token_error(client, monkeypatch):
     monkeypatch.setattr(config, "OPENAI_API_KEY", "sk-bad")
-    monkeypatch.setattr(server.httpx, "post", _fake_openai(401, {"error": "bad key"}, {}))
+    monkeypatch.setattr(realtime.httpx, "post", _fake_openai(401, {"error": "bad key"}, {}))
     r = client.post("/api/session", headers=AUTH, json={})
     assert r.status_code == 502  # a 401 would make the page reload itself
     assert "OpenAI 401" in r.json()["detail"]
@@ -86,3 +92,42 @@ def test_openai_key_error_is_not_mistaken_for_a_page_token_error(client, monkeyp
 def test_client_side_tools_are_not_run_by_the_server(client):
     r = client.post("/api/tool", headers=AUTH, json={"name": "display_card", "arguments": {}})
     assert r.status_code == 400
+
+
+def test_missing_openai_key_is_explained(client, monkeypatch):
+    monkeypatch.setattr(config, "OPENAI_API_KEY", "")
+    r = client.post("/api/session", headers=AUTH, json={})
+    assert r.status_code == 500
+    assert "OPENAI_API_KEY" in r.json()["detail"]
+
+
+def test_tool_call_carries_its_voice_session(client, monkeypatch):
+    seen = []
+    monkeypatch.setattr(server.tools, "run_tool", lambda name, args, ctx: seen.append(ctx) or {"ok": True})
+    r = client.post("/api/tool", headers=AUTH, json={"name": "get_status", "session_id": "abc"})
+    assert r.status_code == 200
+    assert seen[0].session_id == "abc"
+
+
+def test_modules_are_served_as_javascript(client):
+    # Browsers refuse a module script served as text/plain (a Windows registry quirk).
+    r = client.get("/static/js/main.js")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/javascript")
+    assert client.get("/static/css/tokens.css").headers["content-type"].startswith("text/css")
+
+
+def test_page_loads_only_the_module_entry_point(client):
+    html = client.get("/").text
+    local_scripts = re.findall(r'<script[^>]*src="(/[^"]+)"[^>]*>', html)
+    assert local_scripts == ["/static/js/main.js"]
+    assert '<script type="module" src="/static/js/main.js">' in html
+    assert not (config.ROOT / "static" / "jarvis.js").exists()
+
+
+def test_shutdown_needs_the_token(client, monkeypatch):
+    stopped = []
+    monkeypatch.setattr(server.tasks, "shutdown", lambda: stopped.append(True))
+    assert client.post("/api/shutdown").status_code == 401
+    assert client.post("/api/shutdown", headers=AUTH).json() == {"ok": True}
+    assert stopped == [True]

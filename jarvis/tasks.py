@@ -315,6 +315,20 @@ def cancel(task_id: str = "latest") -> dict:
     return {"ok": True, "cancelled": task["id"], "title": task["title"]}
 
 
+def approve(task_id: str):
+    """Resume a task with the tools Claude was denied, once monsieur agrees (WP03)."""
+    raise NotImplementedError("Approbation des tâches : pas encore disponible.")
+
+
+def shutdown():
+    """JARVIS is quitting: running tasks will be stopped cleanly here (WP13)."""
+
+
+def claude_version() -> str | None:
+    """The installed Claude Code version, once detected (WP01); None = unknown."""
+    return None
+
+
 # ---------------------------------------------------------------- history
 
 def list_tasks() -> list:

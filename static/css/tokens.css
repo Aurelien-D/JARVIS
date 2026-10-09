@@ -1,0 +1,7 @@
+/* Design tokens: colours and fonts shared by every stylesheet. */
+:root {
+  --bg: #010409; --panel: rgba(6,14,24,.78); --line: rgba(64,220,255,.18);
+  --cyan: #40dcff; --cyan-dim: #1e7ea3; --amber: #ffb347; --text: #cfeaff;
+  --dim: #4d7c99; --ok: #43ffa4; --err: #ff5470;
+  --font-hud: "Rajdhani", sans-serif; --font-mono: "Share Tech Mono", monospace;
+}

@@ -474,6 +474,39 @@ def open_app_window(url: str):
     )
 
 
+def show_app_window(url: str):
+    """Bring JARVIS's window to the front (a second launch, a reminder).
+
+    For now it opens a window like open_app_window; WP13 focuses the
+    existing one instead of opening another.
+    """
+    open_app_window(url)
+
+
+# ---------------------------------------------------------------- attention & notifications (stubs, WP13)
+
+def attention_state() -> str:
+    """'ok', or why monsieur shouldn't be interrupted (fullscreen, presentation...)."""
+    return "ok"
+
+
+def toast(title: str, body: str):
+    """Native Windows notification, for when no JARVIS page is open."""
+
+
+def keep_awake():
+    """Keep the PC from sleeping while a task runs."""
+
+
+def flash_app_window():
+    """Flash JARVIS's taskbar button to draw attention without stealing focus."""
+
+
+def reveal_in_explorer(path):
+    """Show a file Claude created in the Explorer (never run it)."""
+    raise NotImplementedError("Afficher dans l'explorateur : pas encore disponible.")
+
+
 def set_autostart(enabled: bool) -> str:
     """Add (or remove) a JARVIS shortcut in the Windows Startup folder."""
     if not config.IS_WINDOWS:
