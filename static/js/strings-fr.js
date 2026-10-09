@@ -1,9 +1,32 @@
 /* Every French string of the interface, in one place (design spec §11):
    "vous" everywhere, "tâche" is feminine. Parameterised strings are
-   functions. The current HUD still carries its own wording; modules move
-   to T as they are reworked (WP04 owns this file and its typography). */
+   functions. The source is written with plain spaces; fr() sets the French
+   typography once, at load (a narrow no-break space before ? ! : ; and
+   inside « »), so the strings stay readable here and correct on screen. */
 
-export const T = {
+const NNBSP = "\u202f";  // espace fine insécable
+const NBSP = "\u00a0";
+
+/* French typography for one string: U+202F before ? ! : ; » and after «.
+   Idempotent, and safe on URLs and clock times (no space before their colon). */
+export function fr(s) {
+  return String(s ?? "")
+    .replace(/[ \u00a0]+([?!:;»])/g, `${NNBSP}$1`)
+    .replace(/«[ \u00a0\u202f]*/g, `«${NNBSP}`)
+    .replace(/([^\s\u202f])»/g, `$1${NNBSP}»`);
+}
+
+// Applied to the whole dictionary below: functions get their result typeset.
+function typeset(node) {
+  for (const [key, value] of Object.entries(node)) {
+    if (typeof value === "string") node[key] = fr(value);
+    else if (typeof value === "function") node[key] = (...args) => fr(value(...args));
+    else if (value && typeof value === "object") typeset(value);
+  }
+  return node;
+}
+
+export const T = typeset({
   status: {
     off: "Hors ligne · cliquez sur l'orbe ou appuyez sur Espace pour parler",
     standby: "En veille · dites « Jarvis » ou cliquez sur l'orbe",
@@ -20,11 +43,13 @@ export const T = {
     muted: "Micro coupé · Ctrl+M pour le réactiver",
     countdown: (s) => `Veille dans ${s} s`,
     tasks: (n, elapsed) => (n === 1 ? ` · 1 tâche en cours (${elapsed})` : ` · ${n} tâches en cours`),
+    toolElapsed: (s) => ` (${s} s)`,
     serverDown: "Serveur JARVIS déconnecté · reconnexion…",
+    error: "Erreur",
   },
   tool: {
     delegate_to_claude: "Je confie la tâche à Claude…",
-    open_app: (a) => `Ouverture de ${a.name || "l'application"}…`,
+    open_app: (a) => `Ouverture de ${(a && a.name) || "l'application"}…`,
     open_url: "Ouverture du lien…",
     system_control: "Commande système…",
     look_at_screen: "Je regarde l'écran…",
@@ -33,6 +58,7 @@ export const T = {
     remember: "Je retiens…",
     forget: "J'oublie…",
     get_status: "Je fais le point…",
+    info: (a) => (a && /actu|news/i.test(a.kind || a.topic || "") ? "Je consulte l'actualité…" : "Je consulte la météo…"),
     infoWeather: "Je consulte la météo…",
     infoNews: "Je consulte l'actualité…",
     ares_lire: "Je consulte A.R.E.S…",
@@ -60,6 +86,40 @@ export const T = {
     composerLabel: "Message pour JARVIS",
     send: "Envoyer",
   },
+  // The HUD's own chrome: labels for buttons, regions and screen readers.
+  hud: {
+    skip: "Aller au champ de message",
+    orbTalk: "Parler à JARVIS",
+    orbSleep: "Mettre JARVIS en veille",
+    cards: "Affichages de JARVIS",
+    side: "Panneau latéral",
+    actions: "Actions",
+    liveControls: "Commandes de la conversation",
+    closeCard: (title) => `Fermer la carte « ${title} »`,
+    newCard: (title) => `Nouvelle carte : ${title}`,
+    moreCards: (n) => `+${n}`,
+    moreCardsLabel: (n) => (n === 1 ? "Afficher 1 autre carte" : `Afficher ${n} autres cartes`),
+    fewerCards: "Réduire les cartes",
+    copyCode: (title) => `Copier le code de « ${title} »`,
+    copyFailed: "Copie impossible : sélectionnez le texte à la main.",
+    dismissError: "Effacer le message d'erreur",
+    closeReport: "Fermer le rapport",
+    you: (text) => `Vous : ${text}`,
+    server: "Serveur",
+    serverOk: " connecté",
+    serverDown: " déconnecté",
+  },
+  time: {
+    justNow: "à l'instant",
+    minutesAgo: (n) => `il y a ${n} min`,
+    hoursAgo: (n) => `il y a ${n} h`,
+    inMinutes: (n) => `dans ${n} min`,
+    inHours: (n) => `dans ${n} h`,
+    at: (time) => `à ${time}`,
+    yesterday: (time) => `hier à ${time}`,
+    tomorrow: (time) => `demain à ${time}`,
+    onDate: (date, time) => `${date} à ${time}`,
+  },
   empty: {
     tasks: "Aucune tâche. Dites par exemple « Jarvis, cherche les meilleurs aspirateurs robots sous 400 € ».",
     reminders: "Aucun rappel. « Rappelle-moi dans 10 minutes de sortir le pain. »",
@@ -70,7 +130,8 @@ export const T = {
   },
   task: {
     status: { running: "En cours", done: "Terminée", cancelled: "Annulée", error: "Échec",
-              attente: "En attente de confirmation", queued: "En file", interrupted: "Interrompue" },
+              attente: "En attente de confirmation", queued: "En file", en_file: "En file",
+              interrupted: "Interrompue" },
     profile: { recherche: "Web uniquement", lecture: "Lecture seule", complet: "Accès complet" },
     complexity: { simple: "Simple", normale: "Normale", complexe: "Complexe" },
     actions: { read: "Lire", copy: "Copier", continue: "Continuer", retry: "Réessayer",
@@ -103,6 +164,7 @@ export const T = {
     budget: (amount) => `Plafond du jour atteint (${amount}). Modifiable dans Réglages › Coûts.`,
     hotkey: (combo) => `Raccourci ${combo} indisponible (déjà utilisé). Choisissez-en un autre dans Réglages › Système.`,
     corruptFile: (name) => `Le fichier ${name} était abîmé : une copie a été gardée et la sauvegarde restaurée.`,
+    unknown: "Une erreur inattendue s'est produite : réessayez.",
     retry: "Réessayer",
   },
   confirm: {
@@ -155,6 +217,7 @@ export const T = {
     openData: "Ouvrir le dossier data",
   },
   help: {
+    // What monsieur says to JARVIS (he says "tu" to it): examples, not UI copy.
     examples: [
       "Jarvis, ouvre Spotify sur l'écran de gauche",
       "Baisse le volume à 30 %",
@@ -172,12 +235,105 @@ export const T = {
     tryThis: (example) => `Essayez : « ${example} »`,
     shortcuts: "Espace : parler · Ctrl+J : écrire · Échap : interrompre · Ctrl+M : micro · Ctrl+Alt+Maj+J : depuis n'importe où",
   },
-};
+});
 
 /* The status line while a tool runs ('' when there is no label for it). */
 export function toolLabel(name, args = {}) {
   const label = T.tool[name];
-  return typeof label === "function" ? label(args) : label || "";
+  return typeof label === "function" ? label(args ?? {}) : label || "";
+}
+
+/* ---------------------------------------------------------- formatting (fr-FR) */
+const asDate = (d) => (d instanceof Date ? d : new Date(d ?? Date.now()));
+const pad2 = (n) => String(n).padStart(2, "0");
+
+/* '14 h 30', '8 h' (no-break spaces: a time never wraps). */
+export function fmtTime(d = new Date()) {
+  const t = asDate(d), h = t.getHours(), m = t.getMinutes();
+  return m ? `${h}${NBSP}h${NBSP}${pad2(m)}` : `${h}${NBSP}h`;
+}
+
+/* Elapsed seconds as 'm:ss' (or 'h:mm:ss'), for running tasks. */
+export function fmtElapsed(seconds) {
+  const s = Math.max(0, Math.floor(seconds || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h ? `${h}:${pad2(m)}:${pad2(s % 60)}` : `${m}:${pad2(s % 60)}`;
+}
+
+const numberFormats = new Map();
+export function fmtNumber(n, options = {}) {
+  const key = JSON.stringify(options);
+  if (!numberFormats.has(key)) numberFormats.set(key, new Intl.NumberFormat("fr-FR", options));
+  return numberFormats.get(key).format(n);
+}
+
+const dayFormat = new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", month: "short" });
+
+/* 'à l'instant', 'il y a 3 min', 'il y a 2 h', 'hier à 9 h 05', 'dans 5 min'... */
+export function fmtRelative(when, now = Date.now()) {
+  const t = asDate(when), ref = asDate(now);
+  const diff = (ref - t) / 1000;  // seconds, > 0 in the past
+  const abs = Math.abs(diff);
+  if (abs < 45) return T.time.justNow;
+  if (abs < 3600) {
+    const n = Math.max(1, Math.round(abs / 60));
+    return diff > 0 ? T.time.minutesAgo(n) : T.time.inMinutes(n);
+  }
+  const days = Math.round((startOfDay(t) - startOfDay(ref)) / 86400e3);
+  if (abs < 6 * 3600) {
+    const n = Math.round(abs / 3600);
+    return diff > 0 ? T.time.hoursAgo(n) : T.time.inHours(n);
+  }
+  if (days === 0) return T.time.at(fmtTime(t));
+  if (days === -1) return T.time.yesterday(fmtTime(t));
+  if (days === 1) return T.time.tomorrow(fmtTime(t));
+  return T.time.onDate(dayFormat.format(t), fmtTime(t));
+}
+function startOfDay(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); }
+
+/* ---------------------------------------------------------- errors */
+// Bus error kinds (or codes) that map straight to a message.
+const ERROR_KINDS = {
+  lost: "lost", wake_refused: "wakeRefused", wakeRefused: "wakeRefused", inaudible: "inaudible",
+  content_filter: "contentFilter", contentFilter: "contentFilter", image: "image",
+  claude_missing: "claudeMissing", claudeMissing: "claudeMissing", claude_logged_out: "claudeLoggedOut",
+  claudeLoggedOut: "claudeLoggedOut", sandbox: "sandbox", no_key: "noKey", noKey: "noKey",
+  timeout: "timeout", network: "network", server: "server", quota: "quota", rate: "rate",
+  model: "model", unauthorized: "unauthorized", insufficient_quota: "quota",
+  rate_limit_exceeded: "rate", model_not_found: "model", invalid_api_key: "unauthorized",
+};
+
+/* The French message for an error (design spec §11 errors table): a bus error
+   {kind, message, detail}, an Error or DOMException, or a string. A message
+   that is already one of ours comes back unchanged. */
+export function explainError(err) {
+  if (err == null || err === "") return T.error.unknown;
+  if (typeof err !== "object") err = { message: String(err) };
+  const src = err.detail && typeof err.detail === "object" ? err.detail : {};
+  const name = String(err.name || src.name || "");
+  const kind = String(err.code || err.kind || src.code || "");
+  const status = Number(err.status ?? src.status) || 0;
+  const msg = String(err.message || src.message || "").trim();
+
+  if (ERROR_KINDS[kind]) return T.error[ERROR_KINDS[kind]];
+  if (/^(NotAllowedError|SecurityError|PermissionDeniedError)$/.test(name)) return T.error.NotAllowedError;
+  if (/^(NotFoundError|OverconstrainedError|DevicesNotFoundError)$/.test(name)) return T.error.NotFoundError;
+  if (/^(NotReadableError|TrackStartError)$/.test(name)) return T.error.NotReadableError;
+  if (name === "AbortError" || name === "TimeoutError") return T.error.timeout;
+  if (/OPENAI_API_KEY|cl[ée] (openai )?(absente|manquante)|no api key/i.test(msg)) return T.error.noKey;
+  const openai = /OpenAI (\d{3})\b/.exec(msg);
+  const code = openai ? Number(openai[1]) : status;
+  if (/insufficient_quota|exceeded your current quota|billing_hard_limit/i.test(msg)) return T.error.quota;
+  if (code === 429 || /rate.?limit/i.test(msg)) return T.error.rate;
+  if ((openai && code === 401) || /invalid_api_key|incorrect api key/i.test(msg)) return T.error.unauthorized;
+  if (/model_not_found|does not exist|do(es)? not have access|unknown model|invalid model/i.test(msg)) return T.error.model;
+  if (/content_filter/i.test(msg)) return T.error.contentFilter;
+  if (/OpenAI injoignable|getaddrinfo|ENOTFOUND|ECONNREFUSED|ConnectError|api\.openai\.com/i.test(msg)) return T.error.network;
+  if (name === "TypeError" && /fetch|network|load failed/i.test(msg)) {
+    return typeof navigator !== "undefined" && navigator.onLine === false ? T.error.network : T.error.server;
+  }
+  if (/timed? ?out\b/i.test(msg)) return T.error.timeout;
+  return msg ? fr(msg) : T.error.unknown;
 }
 
 export function init() {}
