@@ -284,10 +284,8 @@ def test_toasts_stay_clear_of_the_controls_and_wait_while_pointed_at(jarvis):
 # ---------------------------------------------------------------- top actions, status, suffixes
 
 def test_journal_and_reglages_wait_for_their_module(jarvis):
-    # journal.js (WP14) announces itself at start.
+    # journal.js (WP14) and settings.js (WP12) both announce themselves at start.
     assert jarvis.is_visible("#topActions button:has-text('Journal')")
-    assert jarvis.is_hidden("#topActions button:has-text('Réglages')")
-    jarvis.evaluate("__jarvis.bus.emit('ui:ready', 'settings')")
     assert jarvis.is_visible("#topActions button:has-text('Réglages')")
 
 

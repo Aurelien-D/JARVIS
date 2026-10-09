@@ -362,9 +362,9 @@ def test_top_actions_open_their_panels(jarvis):
     names = jarvis.evaluate("[...document.querySelectorAll('#topActions button')].map(b => b.textContent)")
     assert names == ["Aide", "Journal", "Panneau", "Réglages"]
     # Journal and Réglages show once their module opens them (no dead button);
-    # journal.js (WP14) does at start.
+    # journal.js (WP14) and settings.js (WP12) both do at start.
     assert jarvis.is_visible("#topActions button:has-text('Journal')")
-    assert jarvis.is_hidden("#topActions button:has-text('Réglages')")
+    assert jarvis.is_visible("#topActions button:has-text('Réglages')")
     jarvis.evaluate("__jarvis.bus.emit('ui:ready', 'journal'); __jarvis.bus.emit('ui:ready', 'settings')")
     for name in ["Aide", "Journal", "Réglages"]:
         jarvis.click(f"#topActions button:has-text('{name}')")

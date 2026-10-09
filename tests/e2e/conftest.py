@@ -39,7 +39,7 @@ def app_server(tmp_path_factory):
     import uvicorn
 
     import server
-    from jarvis import config, info, realtime, tasks
+    from jarvis import config, health, info, realtime, tasks
 
     data = tmp_path_factory.mktemp("jarvis-data")
     fake_claude = data / "fake_claude.py"
@@ -64,6 +64,11 @@ def app_server(tmp_path_factory):
     # Not monsieur's real A.R.E.S nor the internet (test_journal_ui brings fakes).
     mp.setattr(config, "ARES", "off")
     mp.setattr(info, "TRANSPORT", httpx.MockTransport(_no_network))
+    # An onboarded user with nothing to fix (each test has a fresh data folder),
+    # or the Mise en route would open over every test and the health check would
+    # reach OpenAI: test_settings_ui puts the real ones back where it needs them.
+    mp.setattr(health, "onboarded", lambda: True)
+    mp.setattr(health, "run_checks", lambda refresh=False: [])
 
     port = _free_port()
     srv = uvicorn.Server(uvicorn.Config(server.app, host="127.0.0.1", port=port, log_level="warning"))
