@@ -53,6 +53,7 @@ def app_server(tmp_path_factory):
     mp.setattr(config, "DATA_DIR", data)
     mp.setattr(config, "WORKDIR", str(data))
     mp.setattr(config, "BRIEFING_TIME", "")
+    mp.setattr(config, "QUIET_HOURS", "")  # same behaviour at any hour (tests set it when needed)
     mp.setattr(realtime, "mint", fake_mint)
     mp.setattr(tasks, "claude_command", lambda: [sys.executable, str(fake_claude)])
 
@@ -85,9 +86,12 @@ def app_server(tmp_path_factory):
 def _stop_leftover_tasks():
     """A task still running must not report into the next test's page."""
     yield
-    from jarvis import tasks
+    from jarvis import inbox, tasks
     for task in tasks.running():
         tasks.cancel(task["id"])
+    # Nor a message it left unheard: the next page would tell it on load.
+    for item in inbox.pending():
+        inbox.ack(item["id"])
 
 
 # ---------------------------------------------------------------- pytest-playwright settings

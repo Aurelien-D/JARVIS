@@ -27,7 +27,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -123,8 +123,11 @@ def run_tool(body: ToolIn):
 
 
 @app.get("/api/events")
-async def stream_events():
-    return StreamingResponse(events.stream(), media_type="text/event-stream",
+async def stream_events(request: Request, client: str = "", last_event_id: str = ""):
+    # client: the page's own id (leader election). Last-Event-ID: the browser
+    # sends it back when it reconnects, and the stream replays what it missed.
+    last = request.headers.get("last-event-id") or last_event_id
+    return StreamingResponse(events.stream(client, last), media_type="text/event-stream",
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 # ---------------------------------------------------------------- lifecycle

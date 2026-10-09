@@ -463,15 +463,18 @@ def test_a_queued_task_can_be_cancelled(fake_claude, monkeypatch):
 
 def test_shutdown_interrupts_and_saves(fake_claude, published):
     running = tasks.create_task("Long", "DORS")
+    pids = Path(config.WORKDIR) / "pids.txt"
     end = time.time() + 10
-    while running["id"] not in tasks.PROCS and time.time() < end:
+    # The fake has really started (it wrote its pid), not just been spawned.
+    while not (running["id"] in tasks.PROCS and pids.exists() and pids.read_text().strip()) \
+            and time.time() < end:
         time.sleep(0.05)
     tasks.shutdown()
     assert running["status"] == "interrompue"
     assert running["output"] == "JARVIS a été fermé pendant la tâche."
     saved = {t["id"]: t for t in store.load(tasks.HISTORY_FILE, [])}
     assert saved[running["id"]]["status"] == "interrompue"
-    pid = int((Path(config.WORKDIR) / "pids.txt").read_text().split()[0])
+    pid = int(pids.read_text().split()[0])
     end = time.time() + 10
     while not gone(pid) and time.time() < end:  # killed, then reaped by its runner
         time.sleep(0.05)

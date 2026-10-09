@@ -425,6 +425,8 @@ def test_nothing_is_sent_before_session_created(jarvis):
     emit(jarvis, {"type": "session.created", "session": {"id": "sess_1", "audio": {"input": {
         "turn_detection": {"type": "semantic_vad", "eagerness": "low"}}}}})
     jarvis.wait_for_function("__jarvis.state.mode === 'live'")
+    # delivery.js tells it at the first pause of the new session.
+    jarvis.wait_for_function("__sent.some(m => m.type === 'response.create')")
     assert types(jarvis) == ["message:input_text", "response.create"]
 
 

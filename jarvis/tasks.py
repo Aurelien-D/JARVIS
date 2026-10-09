@@ -862,6 +862,9 @@ def _on_timeout(task: dict, proc):
 
 
 def _finish(task: dict, status: str, output: str):
+    # Counted before the task reads as finished: whoever sees it ended (a test,
+    # the next task's budget check) sees its cost too.
+    _record_cost(task)
     with _lock:
         if task["status"] in ("cancelled", "interrompue"):  # the cancel or the shutdown won the race
             status, output = task["status"], task["output"]
@@ -870,7 +873,6 @@ def _finish(task: dict, status: str, output: str):
                     ended=task.get("ended") or time.time(), progress="")
     _save_history()
     events.publish("task", public(task))
-    _record_cost(task)
     for hook in list(ON_FINISH):
         try:
             hook(task)
