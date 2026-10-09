@@ -223,7 +223,9 @@ def test_do_not_disturb_for_an_hour(open_page):
     until(lambda: inbox.dnd_until() is not None)
     assert 3500 < inbox.dnd_until() - time.time() <= 3601
     expected = datetime.fromtimestamp(inbox.dnd_until())
-    hour = f"{expected.hour} h {expected.minute:02d}" if expected.minute else f"{expected.hour} h"
+    # strings-fr.fmtTime: no-break spaces, so a time never wraps
+    hour = (f"{expected.hour}\u00a0h\u00a0{expected.minute:02d}" if expected.minute
+            else f"{expected.hour}\u00a0h")
     assert page.text_content("#dndChip button") == f"Ne pas déranger jusqu'à {hour}"
     assert page.get_attribute("#dndToggle", "aria-pressed") == "true"
     assert page.evaluate("__jarvis.state.quiet") is True

@@ -75,7 +75,9 @@ def test_on_device_recognition_with_the_name_as_a_phrase(open_page):
     assert page.evaluate("__rec.phrases.length") == 1
     assert page.evaluate("[__rec.phrases[0].phrase, __rec.phrases[0].boost]") == ["Jarvis", 8.0]
     assert page.evaluate("__jarvis.state.wakeEngine") == "local"
-    assert page.inner_text("#wakeEngine") == "écoute locale"
+    # said once, in the status line (hud.js); #wakeEngine keeps what it doesn't say
+    page.wait_for_function("document.getElementById('statusPill').textContent.endsWith(' · écoute locale')")
+    assert page.text_content("#wakeEngine") == ""
 
 
 def test_google_recognition_without_biasing_when_the_pack_is_unavailable(open_page):
@@ -84,7 +86,7 @@ def test_google_recognition_without_biasing_when_the_pack_is_unavailable(open_pa
     assert page.evaluate("__rec.processLocally") is None
     assert page.evaluate("__rec.phrases") is None  # biasing only works on-device
     assert page.evaluate("__jarvis.state.wakeEngine") == "cloud"
-    assert page.inner_text("#wakeEngine") == "écoute via Google"
+    page.wait_for_function("document.getElementById('statusPill').textContent.endsWith(' · écoute via Google')")
 
 
 def test_the_pack_installs_only_after_a_click(open_page):
@@ -113,7 +115,7 @@ def test_an_on_device_failure_falls_back_to_google(open_page, error):
     page.wait_for_function(f"__recs.length > {count} && __rec.running")
     assert page.evaluate("__rec.processLocally") is None
     assert page.evaluate("__rec.phrases") is None
-    assert page.inner_text("#wakeEngine") == "écoute via Google"
+    page.wait_for_function("document.getElementById('statusPill').textContent.endsWith(' · écoute via Google')")
     assert page.evaluate("__jarvis.state.mode") == "standby"
     assert saved_settings(page).get("wake") is not False  # not a refusal
 
@@ -208,6 +210,7 @@ def test_only_the_leader_page_listens(open_page):
     page.evaluate("__jarvis.bus.emit('server:leader', {type: 'leader', client: 'une-autre-page'})")
     page.wait_for_function("!__rec.running")
     assert page.inner_text("#wakeEngine") == "dans l'autre fenêtre"
+    page.wait_for_function("document.getElementById('statusPill').textContent.endsWith(\" · écoute dans l'autre fenêtre\")")
     page.evaluate("__recs[__recs.length - 1].onresult({resultIndex: 0, results: [Object.assign([{transcript: 'Jarvis'}], {isFinal: true})]})")
     page.wait_for_timeout(200)
     assert page.evaluate("__jarvis.state.mode") == "standby"  # a stopped recognizer is not heard
@@ -282,7 +285,7 @@ def test_the_switch_lives_in_controls_extra_and_is_remembered(open_page):
     toggle = "#controlsExtra #wakeBtn"
     assert page.text_content(toggle) == "Mot d'éveil\u202f: activé"
     assert page.get_attribute(toggle, "aria-pressed") == "true"
-    assert page.inner_text("#wakeEngine") == "écoute via Google"
+    assert page.inner_text("#statusPill").endswith(" · écoute via Google")
     page.click(toggle)
     assert page.evaluate("__jarvis.state.mode") == "off"
     assert not page.evaluate("__rec.running")

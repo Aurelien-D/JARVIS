@@ -14,27 +14,12 @@
 import { $, api, bus, settings, state, touch } from "./core.js";
 import { earcon } from "./audio-fx.js";
 import { addCard, announce, removeCard, toast } from "./hud.js";
-import { T } from "./strings-fr.js";
+import { T, fmtTime } from "./strings-fr.js";
 import { claim, clientId } from "./sse.js";
 import { connect, isLive, requestResponse, sendData, sendNotice } from "./voice.js";
 import { muteWake } from "./wake.js";
 
-const D = T.delivery || {};
-const S = {
-  badge: (n) => `${n} message${n > 1 ? "s" : ""} en attente · cliquez pour ${n > 1 ? "les écouter" : "l'écouter"}`,
-  dnd: D.dnd || ((time) => `Ne pas déranger jusqu'à ${time}`),
-  dndHour: "Ne pas déranger 1 h",
-  dndEnd: "Arrêter « Ne pas déranger »",
-  dndFailed: "« Ne pas déranger » n'a pas pu être enregistré : réessayez.",
-  notifTitle: "Notifications",
-  notifAsk: D.notifAsk || "Voulez-vous une notification Windows quand une tâche se termine ou qu'un rappel arrive ?",
-  notifEnable: D.notifEnable || "Activer",
-  notifLater: D.notifLater || "Plus tard",
-  otherTitle: "Autre fenêtre",
-  otherPage: D.otherPage || "JARVIS est actif dans une autre fenêtre.",
-  useThisPage: D.useThisPage || "Utiliser celle-ci",
-  warning: "Attention",
-};
+const S = T.delivery;  // every word on screen comes from strings-fr.js
 // tasks.py statuses: 'en_file' is still to come, 'interrompue' means JARVIS was
 // closed while it ran ('interrupted': older history files).
 const FINAL = new Set(["done", "error", "interrompue", "interrupted"]);
@@ -145,11 +130,6 @@ async function refreshState() {
   }
   updateQuiet();
   renderDnd();
-}
-
-function fmtTime(date) {
-  const h = date.getHours(), m = date.getMinutes();
-  return m ? `${h} h ${String(m).padStart(2, "0")}` : `${h} h`;
 }
 
 function renderDnd() {
@@ -275,9 +255,12 @@ export function deliver(msg = {}) {
   });
 }
 
-/* In a session: only at a pause, neither of them speaking. */
+/* In a session: only at a pause, neither of them speaking. A session that
+   just opened is not one yet: what monsieur said to open it (the words after
+   « Jarvis », typed text) goes first. */
 function conversing() {
-  return BUSY_PHASES.has(state.phase) || state.responseActive || state.pendingResponse
+  return !state.phase || state.wake || state.pendingText
+    || BUSY_PHASES.has(state.phase) || state.responseActive || state.pendingResponse
     || Date.now() - state.lastActivity < 1500;
 }
 
@@ -447,12 +430,12 @@ export function onTask(tk) {
   else deliver(taskMessage(tk));
 }
 
-function lateText(r) { return r.late_minutes ? ` (en retard de ${r.late_minutes} min)` : ""; }
+function lateText(r) { return r.late_minutes ? S.reminderLate(r.late_minutes) : ""; }
 
 export function onReminder(r) {
   const late = lateText(r);
   const text = r.text || r.title || "";
-  addCard(`Rappel${late}`, text, "warning", r.inbox_id ? { id: `rappel-${r.inbox_id}` } : {});
+  addCard(`${S.reminder}${late}`, text, "warning", r.inbox_id ? { id: `rappel-${r.inbox_id}` } : {});
   if (!isLeader() || !firstTime(r.inbox_id)) return;
   announce(`Rappel : ${text}`, { urgent: true });
   deliver({ kind: "reminder",
@@ -550,7 +533,7 @@ export function syncInbox() {
       for (const it of told) {
         if (it.kind === "reminder") {
           const p = it.payload || {};
-          addCard(`Rappel (${fmtTime(new Date(it.created * 1000))})`, p.text || p.title || "", "warning",
+          addCard(S.reminderAt(fmtTime(new Date(it.created * 1000))), p.text || p.title || "", "warning",
                   { id: `rappel-${it.id}` });
         }
       }

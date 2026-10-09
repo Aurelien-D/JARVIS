@@ -22,7 +22,7 @@
 /* ------------------------------------------------ chips */
 #chips {
   display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
-  max-width: min(62ch, 100%); padding: 0 16px;
+  max-width: min(100ch, 100%); padding: 0 16px;  /* three examples on one or two rows */
 }
 #chips:empty { display: none; }
 /* (#chips only: the topbar's status chips are not buttons) */

@@ -19,7 +19,8 @@ export const state = {
   wake: null,             // { final, command } while a wake word is handled
   pendingText: "",        // typed text waiting for the session to open
   history: [],            // recent exchanges, replayed into a new session
-  queue: [],              // [SYSTEM] messages waiting for the next session
+  queue: [],              // app notices waiting for the next session (voice.sendNotice)
+  confirming: [],         // pending confirmation ids on screen (confirm.js)
   announced: new Set(),   // task ids already read out
   tasks: new Map(),       // task id -> latest task snapshot from the server
   config: { wake_word: true, speech_lang: "fr-FR", idle_minutes: 3 },  // /api/config

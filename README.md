@@ -269,7 +269,7 @@ fichier JSON au format Claude Code, et indique son chemin dans
 | Variable | Défaut | Rôle |
 |---|---|---|
 | `OPENAI_API_KEY` | *(requis)* | Clé API OpenAI pour la voix |
-| `REALTIME_MODEL` | `gpt-realtime` | Modèle vocal OpenAI (`gpt-realtime-mini` coûte moins cher) |
+| `REALTIME_MODEL` | `gpt-realtime-2.1` | Modèle vocal OpenAI (`gpt-realtime-mini` coûte moins cher) |
 | `JARVIS_VOICE` | `ballad` | Voix (ballad = majordome ; ash, echo, verse, cedar, marin...) |
 | `JARVIS_LANGUAGE` | `français` | Langue parlée |
 | `JARVIS_WORKDIR` | dossier utilisateur | Dossier de travail des sessions Claude Code |

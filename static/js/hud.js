@@ -41,6 +41,7 @@ export function idleCountdown(now = Date.now()) {
 }
 
 function wakeEngineSuffix() {
+  if (state.wakeHere === false) return T.status.standbyElsewhere;  // the leader page listens (wake.js)
   const engine = String(state.wakeEngine || state.config?.wake_engine || "").toLowerCase();
   if (/local|device|ondevice/.test(engine)) return T.status.standbyLocal;
   if (/cloud|google|remote|server/.test(engine)) return T.status.standbyCloud;
@@ -234,8 +235,10 @@ function renderTopActions() {
 /* ---------------------------------------------------------- caption */
 const MAX_LINES = 4;
 
-function onUserCaption({ text = "" } = {}) {
-  $("you").textContent = text.trim() ? T.hud.you(text.trim()) : "";
+function onUserCaption({ text = "", dim = false } = {}) {
+  const you = $("you");
+  you.textContent = text.trim() ? T.hud.you(text.trim()) : "";
+  you.classList.toggle("dim", !!dim);  // wake.js: what the wake word is still capturing
 }
 
 /* One line per assistant item; the text is cumulative per item (a delta is

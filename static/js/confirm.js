@@ -2,33 +2,23 @@
    spec §3). The server holds the pending actions (jarvis/confirm.py): a card
    appears when a tool answers needs_confirmation or the server pushes
    'pending', and [Lancer] / [Annuler] post /api/pending/{id}/decide. Locking
-   the PC goes through a 3-second countdown card first, cancelled by Échap. */
+   the PC goes through a 3-second countdown card first, cancelled by Échap
+   (keys.js calls cancelLock) or its button. */
 import { api, bus, state } from "./core.js";
 import * as fx from "./audio-fx.js";
 import * as hud from "./hud.js";
 import * as strings from "./strings-fr.js";
 import { isLive, sendNotice } from "./voice.js";
 
-// T.confirm from strings-fr.js wins; these cover any key it lacks.
-const LOCAL = {
-  title: "Confirmation requise",
-  run: "Lancer",
-  cancel: "Annuler",
-  expiresIn: (s) => `Expire dans ${s} s`,
-  expired: "Demande expirée : rien n'a été lancé.",
-  done: "Lancé.",
-  cancelled: "Annulé, rien n'a été fait.",
-  failed: (reason) => `Échec : ${reason}`,
-  lock: (s) => `Verrouillage dans ${s} s · Échap pour annuler`,
-  lockTitle: "Verrouillage",
-  lockBody: "Le PC va se verrouiller.",
-  lockCancelled: "Verrouillage annulé.",
+// What is shown comes from strings-fr.js (T.confirm); what is said to the
+// voice model or answered for a tool stays here, in plain text.
+const MODEL = {
   lockRefused: "Verrouillage annulé par monsieur.",
   noticeDone: (what, result) => `Monsieur a confirmé à l'écran : ${what} Résultat : ${result}.`,
   noticeCancelled: (what) => `Monsieur a annulé à l'écran : ${what} Rien n'a été fait.`,
 };
-const C = { ...LOCAL, ...(strings.T?.confirm || {}) };
-const CONFIRM_STATUS = strings.T?.status?.confirm || "En attente de votre confirmation";
+const C = { ...strings.T.confirm, ...MODEL };
+const CONFIRM_STATUS = strings.T.status.confirm;
 
 const open = new Map();     // pending id -> { el, extra, detail, countdown, deadline, timer, summary }
 const settled = new Set();  // ids already closed here: late echoes are ignored
@@ -136,8 +126,10 @@ function settle(p) {
   updatePhase();
 }
 
-/* While live, a question waiting on screen is the 'confirm' phase. */
+/* While live, a question waiting on screen is the 'confirm' phase; voice.js
+   comes back to it after each turn (state.confirming). */
 function updatePhase() {
+  state.confirming = [...open.keys()];
   if (open.size && state.mode === "live") {
     if (state.phase === "confirm") return;
     state.phase = "confirm";
@@ -165,16 +157,9 @@ export function lockCountdown(seconds = 3) {
   line.className = "confirm-countdown";
   line.textContent = C.lock(left);
   placeExtra(el, line);
-  const onKey = (e) => {
-    if (e.key !== "Escape") return;
-    e.preventDefault();
-    e.stopImmediatePropagation(); // Échap here cancels the lock, nothing else
-    finish(true);
-  };
   function finish(cancelled) {
     if (!lock) return;
     clearInterval(lock.timer);
-    window.removeEventListener("keydown", onKey, true);
     lock = null;
     line.remove();
     if (cancelled) {
@@ -185,14 +170,20 @@ export function lockCountdown(seconds = 3) {
       resolve(null);
     }
   }
-  lock = { promise, timer: setInterval(() => {
+  lock = { promise, cancel: () => finish(true), timer: setInterval(() => {
     left -= 1;
     if (left <= 0) finish(false);
     else line.textContent = C.lock(left);
   }, 1000) };
-  window.addEventListener("keydown", onKey, true); // capture: before the page's own Échap
   hud.announce(C.lock(left), { urgent: true });
   return promise;
+}
+
+/* Échap during the countdown (keys.js asks first): true when it cancelled one. */
+export function cancelLock() {
+  if (!lock) return false;
+  lock.cancel();
+  return true;
 }
 
 export function init() {

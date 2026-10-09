@@ -299,6 +299,9 @@ def test_sessions_are_bounded():
 def test_denied_tools_can_be_approved(fake_claude, client, published):
     first = wait(tasks.create_task("Nettoyage", "REFUS", profile="complet", voice_session="s9"))
     assert first["permission_denials"]
+    end = time.time() + 5  # the request is made just after the task reads as finished
+    while "approval" not in first and time.time() < end:
+        time.sleep(0.02)
     items = client.get("/api/pending").json()
     assert len(items) == 1 and items[0]["kind"] == "task_approval"
     assert items[0]["summary"] == "Claude demande l'autorisation d'utiliser Bash pour « Nettoyage »."

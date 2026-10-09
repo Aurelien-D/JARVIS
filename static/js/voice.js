@@ -3,7 +3,7 @@
    Other modules follow it through the bus: mode, phase, muted, caption:*,
    turn, tool:*, usage and error (design spec §4 and §10). */
 import { $, api, bus, setMode, state, touch } from "./core.js";
-import { audio, earcon } from "./audio-fx.js";
+import { audio, earcon, registerMic } from "./audio-fx.js";
 import { addCard, addImageCard } from "./hud.js";
 import { showReport } from "./report.js";
 import * as strings from "./strings-fr.js";
@@ -117,7 +117,7 @@ export async function connect({ reconnect = false, pendingText = "", quiet = fal
       if (mic.status === "fulfilled") mic.value.getTracks().forEach(tr => tr.stop());
       return;
     }
-    if (mic.status === "fulfilled") micStream = mic.value;
+    if (mic.status === "fulfilled") { micStream = mic.value; registerMic(micStream); } // muted under earcons outside a session
     if (mic.status === "rejected") throw tag(mic.reason, "mic");
     if (sess.status === "rejected") throw tag(sess.reason, "server");
     const s = sess.value;
@@ -219,7 +219,7 @@ function onSessionCreated(session) {
   if (td && typeof td === "object") turnDetection = td;
   state.retries = 0;
   setMode("live", quietConnect ? "refresh" : "");
-  setPhase("listening");
+  setPhase(restingPhase());
   touch();
   if (!quietConnect) earcon("online");
   quietConnect = false;
@@ -297,7 +297,7 @@ function retryLater() {
   if (state.retries >= 5) {
     state.wantLive = false;
     state.retries = 0;
-    addCard("Connexion perdue", T.error.lost, "warning", { id: "voice-lost" });
+    addCard(T.voice.lostTitle, T.error.lost, "warning", { id: "voice-lost" });
     earcon("error");
     goStandby();
     bus.emit("error", { kind: "lost", message: T.error.lost, retry: () => connect() });
@@ -371,6 +371,12 @@ export function setPhase(phase, label = "") {
   bus.emit("phase", { phase, label });
 }
 
+/* Where a turn comes back to: 'confirm' while a confirmation card waits for
+   monsieur (confirm.js keeps state.confirming), 'listening' otherwise. */
+function restingPhase() {
+  return state.confirming && state.confirming.length ? "confirm" : "listening";
+}
+
 /* How loud JARVIS is right now (0..1), from the speaker's analyser. */
 const outBuf = new Uint8Array(128);
 function outputLevel() {
@@ -392,7 +398,7 @@ function armQuietWatch() {
     quietSince = outputLevel() < 0.01 ? (quietSince || Date.now()) : 0;
     if (quietSince && Date.now() - quietSince >= QUIET_MS) {
       clearInterval(quietTimer);
-      setPhase("listening");
+      setPhase(restingPhase());
     }
   }, 100);
 }
@@ -400,7 +406,7 @@ function armQuietWatch() {
 function backToListening() {
   if (state.mode !== "live" || state.responseActive || toolsRunning) return;
   if (state.phase === "user" || state.phase === "confirm") return;
-  setPhase("listening");
+  setPhase(restingPhase());
 }
 
 /* The HUD draws captions from caption:* events. If nothing on the page
@@ -588,7 +594,7 @@ export function interrupt() {
   send({ type: "output_audio_buffer.clear" });
   if ("speechSynthesis" in window) speechSynthesis.cancel();
   state.pendingResponse = false;
-  if (state.mode === "live") setPhase("listening");
+  if (state.mode === "live") setPhase(restingPhase());
 }
 
 export function setMuted(muted) {
@@ -704,7 +710,7 @@ function onRealtimeError(err) {
     else backToListening();
   }
   // Anything else (a refused image, an invalid item) leaves the running response alone.
-  addCard("Session vocale", `OpenAI signale un problème : ${err.message || err.code || "erreur inconnue"}`,
+  addCard(T.voice.sessionTitle, T.voice.openaiProblem(err.message || err.code || T.voice.unknownError),
     "warning", { id: "realtime-error" });
 }
 
@@ -712,7 +718,7 @@ function onResponseFailed(resp) {
   const e = (resp.status_details && resp.status_details.error) || {};
   const text = T.error.failed(e.message || e.code || e.type || "erreur inconnue");
   earcon("error");
-  addCard("Réponse interrompue", text, "warning", { id: "response-failed" });
+  addCard(T.voice.responseTitle, text, "warning", { id: "response-failed" });
   bus.emit("error", { kind: "response", message: text, detail: e });
 }
 
@@ -732,7 +738,7 @@ export async function onResponseDone(resp) {
   said.clear();
   if (status === "failed") onResponseFailed(resp);
   else if (status === "incomplete" && reason === "content_filter") {
-    addCard("Réponse interrompue", T.error.contentFilter, "warning", { id: "response-filtered" });
+    addCard(T.voice.responseTitle, T.error.contentFilter, "warning", { id: "response-filtered" });
   }
 
   const calls = (resp.output || []).filter(o => o && o.type === "function_call");
@@ -892,10 +898,10 @@ export async function runTool(name, args) {
   if (LOCAL_TOOLS[name]) return LOCAL_TOOLS[name](args);
   if (name === "open_app" || name === "open_url") {
     const label = args.name || args.url || "";
-    addCard("Lancement", `Ouverture de **${label}**${args.monitor ? ` → écran **${args.monitor}**` : ""}…`, "info");
+    addCard(T.voice.launchTitle, T.voice.opening(label, args.monitor), "info");
   }
   const res = await api("/api/tool", { method: "POST", body: { name, arguments: args, session_id: currentSessionId } });
-  if (name === "look_at_screen" && res.image) addImageCard("Écran", res.image);
+  if (name === "look_at_screen" && res.image) addImageCard(T.voice.screen, res.image);
   return res;
 }
 
@@ -918,7 +924,7 @@ async function grabCamera() {
     canvas.height = Math.round(video.videoHeight * scale);
     canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
     const image = canvas.toDataURL("image/jpeg", 0.6);
-    addImageCard("Caméra", image);
+    addImageCard(T.voice.camera, image);
     return { ok: true, image };
   } finally {
     stream.getTracks().forEach(tr => tr.stop());

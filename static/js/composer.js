@@ -8,21 +8,7 @@ import * as strings from "./strings-fr.js";
 import * as voice from "./voice.js";
 
 const { T } = strings;
-const NNBSP = "\u202f"; // French typography: before : ? ! and inside « »
-
-// Wording not (yet) in strings-fr.js.
-const L = {
-  helpTitle: "Ce que je sais faire",
-  helpButton: "? Aide",
-  helpButtonTitle: "Ce que je sais faire (touche ?)",
-  chips: "Suggestions",
-  continueTask: "Continuer la tâche",
-  asTable: "Afficher en tableau",
-  thanks: "Merci, c'est tout",
-  taskSent: (text) => `Tâche confiée à Claude${NNBSP}: «${NNBSP}${text}${NNBSP}»`,
-  taskEmpty: `Écrivez la tâche après /tâche, par exemple${NNBSP}: /tâche compare trois aspirateurs robots`,
-  taskFailed: (why) => `Tâche non lancée${NNBSP}: ${why}`,
-};
+const L = T.composer;  // every word on screen comes from strings-fr.js
 
 // Said to the model (not shown): plain spaces.
 const SUMMARIZE = "Résume ce texte :";
@@ -33,22 +19,8 @@ const ONBOARDED_KEY = "jarvis.onboarded.voice";
 const HINT_MS = 8000;
 const RESULT_CHIPS_MS = 10 * 60e3;
 
-/* Non-breaking narrow spaces where French typography wants them, so "?" never
-   starts a line on its own. */
-const fr = (s) => s.replace(/ ([?!:;%€»])/g, `${NNBSP}$1`).replace(/« /g, `«${NNBSP}`);
-
 /* The help card: every example is a button that asks it for real. */
-const CATEGORIES = [
-  ["Applications et PC", ["Jarvis, ouvre Spotify sur l'écran de gauche", "Baisse le volume à 30 %"]],
-  ["Rappels et routines", ["Rappelle-moi dans 20 minutes de sortir le pain",
-                           "Tous les matins à 8 h, fais-moi un point météo"]],
-  ["Recherche et fichiers", ["Cherche les meilleurs aspirateurs robots sous 400 €",
-                             "Analyse le fichier ventes.xlsx et fais-moi un tableau de bord",
-                             "Quel temps fera-t-il demain à Laon ?"]],
-  ["Vision", ["Regarde mon écran : tu vois l'erreur ?", "Regarde-moi avec la caméra : je suis bien coiffé ?"]],
-  ["Mémoire et journal", ["Retiens que je préfère le thé", "De quoi on a parlé hier ?"]],
-  ["Agenda A.R.E.S", ["Qu'est-ce que j'ai aujourd'hui ?", "Note que je dois rappeler le garage"]],
-].map(([title, list]) => [title, list.map(fr)]);
+const CATEGORIES = () => T.help.categories || [];
 
 let input = null;
 let history = [], historyPos = 0, draft = "";
@@ -59,7 +31,7 @@ let chipsKey = "";
 let introSent = false;
 const resultsSeen = new Set(); // a finished task offers its follow-ups once
 
-const examples = () => (T.help && T.help.examples) || CATEGORIES.flatMap(([, list]) => list);
+const examples = () => (T.help && T.help.examples) || CATEGORIES().flatMap(c => c.examples);
 
 /* ---------------------------------------------------------- sending */
 /* What monsieur typed (or clicked): to the live session, or it opens one. */
@@ -172,7 +144,7 @@ function buildHelp() {
   wrap.className = "aide";
   const grid = document.createElement("div");
   grid.className = "aide-grid";
-  CATEGORIES.forEach(([title, list], i) => {
+  CATEGORIES().forEach(({ title, examples: list }, i) => {
     const section = document.createElement("section");
     section.className = "aide-cat";
     const h = document.createElement("h4");
@@ -196,7 +168,7 @@ function buildHelp() {
   // One shortcut per item, so a line break never splits "Échap : interrompre".
   const keys = document.createElement("ul");
   keys.className = "aide-keys";
-  keys.setAttribute("aria-label", "Raccourcis clavier");
+  keys.setAttribute("aria-label", L.shortcuts);
   for (const part of T.help.shortcuts.split(" · ")) {
     const li = document.createElement("li");
     li.textContent = part;

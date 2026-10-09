@@ -27,22 +27,8 @@ const CALL_RE = /^(?:ok|okay|hey|h[eé]|eh|dis|bonjour)\W*$/i;
 // On-device recognition can't run here (no pack, no biasing, refused): Google's instead.
 const LOCAL_ERRORS = new Set(["language-not-supported", "phrases-not-supported", "service-not-allowed"]);
 const GUARD_MS = 8000;
-const statusSuffix = (s) => String(s || "").replace(/^\s*·\s*/, "");
-const S = {
-  wakeOn: T.controls?.wakeOn || "Mot d'éveil : activé",
-  wakeOff: T.controls?.wakeOff || "Mot d'éveil : désactivé",
-  local: statusSuffix(T.status?.standbyLocal) || "écoute locale",
-  cloud: statusSuffix(T.status?.standbyCloud) || "écoute via Google",
-  paused: "en pause (micro refusé)",
-  elsewhere: "dans l'autre fenêtre",
-  title: "Mot d'éveil",
-  refused: T.error?.wakeRefused
-    || "Micro ou reconnaissance vocale refusés : mot d'éveil en pause. Cliquez sur l'orbe pour parler.",
-  denied: "Micro refusé dans le navigateur : mot d'éveil désactivé. Autorisez le micro (cadenas de la barre "
-    + "d'adresse › Microphone), puis réactivez le mot d'éveil.",
-  installed: "Pack vocal français hors-ligne installé.",
-  capped: "Plafond de dépenses du jour atteint : le mot d'éveil n'ouvre plus de conversation. Cliquez sur l'orbe si besoin.",
-};
+// Every word on screen comes from strings-fr.js.
+const S = { ...T.wake, wakeOn: T.controls.wakeOn, wakeOff: T.controls.wakeOff, refused: T.error.wakeRefused };
 
 let wakeRec = null, restartTimer = null, restartDelay = 300;
 let startedAt = 0, heard = false, trouble = false, quickEnds = 0;
@@ -60,9 +46,13 @@ export function wakeWanted() { return !!SR && !!settings.get("wake", state.confi
 /* local | cloud (null without speech recognition): for the status line and the health check. */
 export function wakeEngine() { return SR ? (localSR ? "local" : "cloud") : null; }
 
+/* The status line says which engine listens (hud.js: ' · écoute locale'),
+   or that the other window does (state.wakeHere false). */
 function publishEngine() {
   state.wakeEngine = wakeEngine();
-  bus.emit("wake:engine", { engine: state.wakeEngine, local: localStatus, listening: !!wakeRec, paused });
+  state.wakeHere = isLeader();
+  bus.emit("wake:engine", { engine: state.wakeEngine, here: state.wakeHere, local: localStatus,
+                            listening: !!wakeRec, paused });
   renderToggle();
 }
 
@@ -352,7 +342,8 @@ function renderToggle() {
   ui.box.hidden = !SR || !(state.mode === "off" || state.mode === "standby");
   ui.toggle.textContent = on ? S.wakeOn : S.wakeOff;
   ui.toggle.setAttribute("aria-pressed", String(on));
-  ui.engine.textContent = !on ? "" : paused ? S.paused : !isLeader() ? S.elsewhere : localSR ? S.local : S.cloud;
+  // Which engine listens is in the status line; here only what it doesn't say.
+  ui.engine.textContent = !on ? "" : paused ? S.paused : !isLeader() ? S.elsewhere : "";
 }
 
 /* After sleep or a lost network, the recognizer may be dead without saying so. */
@@ -384,7 +375,7 @@ export async function init() {
   bus.on("delivery:leader", ({ leader }) => {
     if (!leader) stopWake();
     else if (state.mode === "standby") startWake();
-    renderToggle();
+    publishEngine();
   });
   // Monsieur did speak (or type) after all: not a false wake.
   bus.on("phase", (p) => { if (p && p.phase === "user") disarmGuard(); });

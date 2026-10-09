@@ -5,6 +5,7 @@ import { $, bus, settings, state } from "./core.js";
 import { interrupt, pttDown, pttUp } from "./voice.js";
 import { setSideOpen, toggleMute, uiPhase } from "./hud.js";
 import { focusInput } from "./composer.js";
+import { cancelLock } from "./confirm.js";
 
 /* A field where the keys type text (a checkbox or a button is not one). */
 function typing(el) {
@@ -64,9 +65,14 @@ function closeLayer(el) {
   bus.emit("ui:close", el.id);
 }
 
-/* Échap: 1) close the topmost dialog or drawer; 2) interrupt JARVIS while
-   it speaks or runs a tool; 3) otherwise nothing. */
+/* Échap: 0) cancel a lock-screen countdown; 1) close the topmost dialog or
+   drawer; 2) interrupt JARVIS while it speaks or runs a tool; 3) otherwise nothing. */
 function onEscape(e) {
+  // The lock-screen countdown first: Échap there cancels the lock, nothing else.
+  if (cancelLock()) {
+    e.preventDefault();
+    return;
+  }
   let modal = null;
   try { modal = document.querySelector("dialog:modal"); } catch { /* :modal unsupported */ }
   if (modal) return;  // a modal dialog closes itself on Échap (and fires 'cancel')

@@ -32,6 +32,7 @@ export const T = typeset({
     standby: "En veille · dites « Jarvis » ou cliquez sur l'orbe",
     standbyLocal: " · écoute locale",
     standbyCloud: " · écoute via Google",
+    standbyElsewhere: " · écoute dans l'autre fenêtre",
     wakeOff: "En veille · mot d'éveil désactivé · cliquez sur l'orbe",
     connecting: "Connexion…",
     reconnecting: (n) => `Reconnexion (${n}/5)…`,
@@ -215,6 +216,18 @@ export const T = typeset({
     reminderLate: (minutes) => ` (en retard de ${minutes} min)`,
     reminderAt: (time) => `Rappel (${time})`,
   },
+  // Cards of the voice session (voice.js).
+  voice: {
+    lostTitle: "Connexion perdue",
+    sessionTitle: "Session vocale",
+    openaiProblem: (what) => `OpenAI signale un problème : ${what}`,
+    unknownError: "erreur inconnue",
+    responseTitle: "Réponse interrompue",
+    launchTitle: "Lancement",
+    opening: (name, monitor) => `Ouverture de **${name}**${monitor ? ` → écran **${monitor}**` : ""}…`,
+    screen: "Écran",
+    camera: "Caméra",
+  },
   wake: {
     title: "Mot d'éveil",
     local: "écoute locale",
@@ -374,9 +387,10 @@ export function explainError(err) {
   const msg = String(err.message || src.message || "").trim();
 
   if (ERROR_KINDS[kind]) return T.error[ERROR_KINDS[kind]];
-  // Already explained: one of ours (voice.js explains its own errors), or our
-  // server's own French words (voice.js tags those where: 'server').
-  if (msg && (OURS().has(fr(msg)) || (src.where === "server" && (err.status ?? src.status)))) return fr(msg);
+  // Already explained (voice.js explains its own errors; the server adds
+  // "(OpenAI 429)" to the same words): kept as is, diagnosis included.
+  const bare = msg.replace(/\s*\(OpenAI \d{3}\)\s*$/, "");
+  if (bare && OURS().has(fr(bare))) return fr(msg);
   if (/^(NotAllowedError|SecurityError|PermissionDeniedError)$/.test(name)) return T.error.NotAllowedError;
   if (/^(NotFoundError|OverconstrainedError|DevicesNotFoundError)$/.test(name)) return T.error.NotFoundError;
   if (/^(NotReadableError|TrackStartError)$/.test(name)) return T.error.NotReadableError;

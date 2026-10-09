@@ -124,13 +124,14 @@ function duckMic(ms) {
 }
 
 /* ---------------------------------------------------------- earcons */
-/* earcon(kind, {userInitiated}): true when it played. */
-export function earcon(kind, { userInitiated } = {}) {
+/* earcon(kind, {userInitiated, soft}): true when it played. soft: half as
+   loud (delivery.js: a reminder during quiet hours chimes discreetly). */
+export function earcon(kind, { userInitiated, soft = false } = {}) {
   const notes = EARCONS[kind];
   if (!notes) return false;
   const user = userInitiated ?? inConversation();
   if (!user && isQuiet()) return false;
-  const vol = volume();
+  const vol = volume() * (soft ? 0.5 : 1);
   if (vol <= 0) return false;
   try {
     const ac = audio();
@@ -171,6 +172,7 @@ export function earcon(kind, { userInitiated } = {}) {
 
 /* ---------------------------------------------------------- in step with the phases */
 let phase = null, workingTimer = 0;
+let alertedFor = "";  // the confirmations already announced (confirm.js: state.confirming)
 
 function stopWorking() {
   clearInterval(workingTimer);
@@ -183,7 +185,11 @@ function onPhase({ phase: next = null } = {}) {
   if (next === prev) return;
   if (next !== "tool") stopWorking();
   if (next === "thinking" && prev === "user") earcon("tick");      // speech_stopped
-  else if (next === "confirm") earcon("alert");                     // once per request
+  else if (next === "confirm") {                                    // once per request
+    const key = (state.confirming || []).join(",");
+    if (!key || key !== alertedFor) earcon("alert");
+    alertedFor = key;
+  }
   else if (next === "tool") {
     // a soft tick each second, only if the tool takes more than a second
     workingTimer = setInterval(() => { if (phase === "tool") earcon("working"); else stopWorking(); }, 1000);
