@@ -169,7 +169,7 @@ def _open_when_ready(url: str):
         if _already_running(url):
             break
         time.sleep(0.25)
-    desktop.open_app_window(url)
+    desktop.show_app_window(url)  # a window left from the previous run is reused
 
 
 def _log_to_file_if_windowless():

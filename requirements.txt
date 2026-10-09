@@ -3,3 +3,5 @@ uvicorn>=0.29
 httpx>=0.27
 pydantic>=2.6
 pillow>=10.0
+# Windows only: the icon in the notification area (Quitter, notifications).
+pystray>=0.19.5; sys_platform == 'win32'

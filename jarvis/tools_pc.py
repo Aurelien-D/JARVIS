@@ -14,8 +14,8 @@ TOOLS = [{
     "type": "function",
     "name": "open_app",
     "description": ("Launch an application installed on this PC by name "
-                    "(e.g. 'discord', 'spotify', 'chrome', 'notepad'). "
-                    "Returns whether it was found and started."),
+                    "(e.g. 'discord', 'spotify', 'chrome', 'notepad', Microsoft Store apps, "
+                    "'paramètres', 'calculatrice'). Returns whether it was found and started."),
     "parameters": {
         "type": "object",
         "properties": {
