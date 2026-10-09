@@ -191,7 +191,8 @@ def test_the_report_is_centred_opaque_and_in_french(jarvis):
     assert abs(r["x"] - 24) <= 1 and abs(r["w"] - (800 - 48)) <= 1  # centred, whatever the width
     assert jarvis.evaluate("getComputedStyle(document.getElementById('report')).backgroundColor") == "rgb(7, 20, 30)"
     if jarvis.evaluate("!!window.gridjs"):
-        jarvis.wait_for_selector("#rtable .gridjs-wrapper")
+        # Grid.js fills the rows asynchronously, after the wrapper and footer exist.
+        jarvis.wait_for_selector("#rtable tbody td")
         assert jarvis.get_attribute("#rtable .gridjs-search input", "placeholder") == "Rechercher…"
         footer = jarvis.inner_text("#rtable .gridjs-pagination")
         assert "Précédent" in footer and "Suivant" in footer and "Previous" not in footer
