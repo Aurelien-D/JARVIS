@@ -66,7 +66,8 @@ export function showPending(p) {
   tick(p.id);
   entry.timer = setInterval(() => tick(p.id), 1000);
   hud.announce(`${C.title} : ${entry.summary}`, { urgent: true });
-  fx.earcon?.("alert");
+  // Live, the 'confirm' phase plays the alert (audio-fx.js); otherwise it is ours.
+  if (state.mode !== "live") fx.earcon?.("alert");
   updatePhase();
 }
 

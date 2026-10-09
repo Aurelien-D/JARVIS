@@ -1,7 +1,7 @@
 /* Writing to JARVIS: the text field under the orb, the suggestion chips, the
    "Essayez" hint and the "Ce que je sais faire" help card. Fallback values
    keep it readable with older tokens. */
-#composer { width: min(62ch, 100%); padding: 0 16px; margin-top: 8px; }
+#composer { width: min(62ch, 100%); padding: 0 16px; }  /* spacing: the stage gap (layout.css) */
 #ask { display: flex; gap: 8px; width: 100%; }
 #askInput {
   flex: 1; min-width: 0; height: 40px; padding: 0 16px;
@@ -15,22 +15,23 @@
   color: var(--cyan); font: 600 18px/1 var(--font-hud);
 }
 #ask button:hover, #ask button:focus-visible { background: rgba(64, 220, 255, .14); }
-#askInput:focus-visible, #ask button:focus-visible, .chip:focus-visible, .aide-ex:focus-visible {
+#askInput:focus-visible, #ask button:focus-visible, #chips .chip:focus-visible, .aide-ex:focus-visible {
   outline: 2px solid var(--cyan); outline-offset: 2px; box-shadow: 0 0 0 5px rgba(64, 220, 255, .25);
 }
 
 /* ------------------------------------------------ chips */
 #chips {
   display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
-  max-width: min(62ch, 100%); padding: 0 16px; margin-top: 8px;
+  max-width: min(62ch, 100%); padding: 0 16px;
 }
 #chips:empty { display: none; }
-.chip {
+/* (#chips only: the topbar's status chips are not buttons) */
+#chips .chip {
   min-height: 32px; padding: 4px 14px; border-radius: 16px; cursor: pointer;
   border: 1px solid var(--line-strong, #2a8fb0); background: rgba(6, 14, 24, .78);
   color: var(--text); font: 500 var(--fs-md, 14px)/1.25 var(--font-hud); text-align: center;
 }
-.chip:hover { border-color: var(--cyan); color: var(--cyan); }
+#chips .chip:hover { border-color: var(--cyan); color: var(--cyan); }
 .chip.example::before { content: "«\202f"; color: var(--muted, #7aa7c2); }
 .chip.example::after { content: "\202f»"; color: var(--muted, #7aa7c2); }
 
@@ -65,5 +66,5 @@
 .aide-keys li { white-space: nowrap; }
 
 @media (forced-colors: active) {
-  #askInput, #ask button, .chip, .aide-ex { border: 1px solid ButtonText; }
+  #askInput, #ask button, #chips .chip, .aide-ex { border: 1px solid ButtonText; }
 }

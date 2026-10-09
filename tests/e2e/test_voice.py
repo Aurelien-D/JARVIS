@@ -324,7 +324,9 @@ def test_captions_and_turns_in_order(jarvis):
     history = jarvis.evaluate("__jarvis.state.history.map(h => h.role + ' : ' + h.text)")
     assert history[-3:] == ["monsieur : Quelle heure est-il ?", "JARVIS : Je regarde.", "JARVIS : Il est midi."]
     # Without a HUD drawing captions, the page still shows them, one paragraph per item.
-    assert jarvis.evaluate("document.getElementById('transcript').textContent") == "Je regarde.\nIl est midi."
+    # One caption line per assistant item (hud.js).
+    assert jarvis.evaluate("[...document.querySelectorAll('#transcript .line')].map(l => l.textContent)") == [
+        "Je regarde.", "Il est midi."]
 
 
 def test_unheard_speech_is_marked_and_two_failures_say_so(jarvis):

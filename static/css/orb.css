@@ -1,1 +1,42 @@
-/* Orb: state colours and forced-colours fallback (WP05). */
+/* The orb button and its canvas (design spec §3-4, §7). No CSS filter on the
+   canvas: its glow is drawn in the canvas (a drop-shadow here cost more than
+   half a CPU core in standby). The button is round and clips the canvas, so
+   only the disc answers clicks; its size is set in layout.css. */
+#orbBtn {
+  display: block; position: relative;
+  padding: 0; margin: 0; border: 0; border-radius: 50%;
+  overflow: hidden;
+  background: none; color: inherit; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+#orbBtn:focus-visible { outline-offset: -12px; border-radius: 50%; }
+#orb { display: block; width: 100%; height: 100%; filter: none; }
+/* capture with reduced motion: a steady border instead of a white flash */
+#orbBtn.capture { box-shadow: inset 0 0 0 4px var(--speak); }
+
+/* Pending messages: an amber circle at the orb's top-right, outside its disc. */
+#badge {
+  position: absolute; top: 0; right: 0; z-index: 1;
+  transform: translate(35%, -35%);
+  min-width: 28px; height: 28px; padding: 0 8px;
+  border: 0; border-radius: 999px;
+  background: var(--amber); color: var(--bg);
+  font: 700 var(--fs-md) / 28px var(--font-mono);
+  cursor: pointer;
+}
+#badge[hidden] { display: none; }
+
+/* Windows contrast themes: no canvas, a ring and the state in words. */
+@media (forced-colors: active) {
+  #orb { display: none; }
+  #orbBtn {
+    display: grid; place-items: center;
+    border: 3px solid CanvasText; background: Canvas; color: CanvasText;
+  }
+  #orbBtn::after {
+    content: attr(data-label);
+    padding: 0 14%; color: CanvasText; text-align: center;
+    font: 600 var(--fs-in) / var(--lh-label) var(--font-hud);
+  }
+  #badge { border: 2px solid ButtonText; }
+}

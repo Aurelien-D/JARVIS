@@ -53,7 +53,7 @@ AudioContext.prototype.createOscillator = function () {
   return o;
 };
 """
-ALERT = [880, 660, 880]
+ALERT = [880, 660]  # audio-fx.js EARCONS.alert: long, then short (design spec §4)
 SPIES = FAKE_TTS + FAKE_NOTIFICATION + TONES
 CLIENT_ID = "async () => (await import('/static/js/sse.js')).clientId()"
 IS_LEADER = "async () => (await import('/static/js/delivery.js')).isLeader()"

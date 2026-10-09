@@ -43,7 +43,7 @@ def test_page_loads_as_modules_without_globals(jarvis):
     assert jarvis.evaluate("Object.keys(__jarvis).sort()") == ["api", "bus", "settings", "state", "voice"]
     # The orb is sized to the screen's pixels and actually drawn (its core is opaque).
     jarvis.wait_for_function("""(() => { const c = document.getElementById('orb');
-      return c.width === Math.floor(c.getBoundingClientRect().width * devicePixelRatio)
+      return Math.abs(c.width - c.getBoundingClientRect().width * devicePixelRatio) <= 1  // device pixels, snapped
         && c.getContext('2d').getImageData(c.width / 2, c.height / 2, 1, 1).data[3] > 0; })()""")
 
 
@@ -51,9 +51,9 @@ def test_page_loads_as_modules_without_globals(jarvis):
 
 def test_orb_click_goes_live(jarvis):
     go_live(jarvis)
-    assert "EN LIGNE" in jarvis.inner_text("#statusPill").upper()
+    assert "JE VOUS ÉCOUTE" in jarvis.inner_text("#statusPill").upper()
     assert jarvis.evaluate("__sent.length") == 0  # nothing said on a plain connect
-    assert jarvis.evaluate("document.body.dataset.state") == "live-idle"
+    assert jarvis.evaluate("document.body.dataset.state") == "live-listening"  # spec §4: mode-phase
 
 
 def test_task_result_is_read_out_while_live(jarvis):
@@ -156,11 +156,11 @@ def test_transcripts_carry_over_to_a_reconnection(jarvis, app_server):
     emit(jarvis, {"type": "response.output_audio_transcript.delta", "delta": "Bien noté"})
     emit(jarvis, {"type": "response.output_audio_transcript.done", "transcript": "Bien noté, monsieur."})
     assert "jazz" in jarvis.inner_text("#you")
-    assert jarvis.inner_text("#transcript") == "Bien noté"
+    assert jarvis.inner_text("#transcript") == "Bien noté, monsieur."  # the final transcript wins
     pcs = jarvis.evaluate("__pcs")
     # The connection drops: the status says so at once, while waiting to retry.
     status = jarvis.evaluate("__dc.close(); document.getElementById('statusPill').textContent")
-    assert "reconnexion" in status
+    assert "reconnexion" in status.lower()
     jarvis.wait_for_function(f"__pcs > {pcs} && __jarvis.state.mode === 'live'")
     recent = app_server.sessions[-1]["session"]["instructions"]
     assert "jazz" in recent and "Bien noté" in recent
@@ -174,7 +174,8 @@ def test_connection_error_is_shown(jarvis, monkeypatch):
 
     monkeypatch.setattr(realtime, "mint", refuse)
     jarvis.click("#orbBtn")
-    jarvis.wait_for_function("document.getElementById('statusPill').textContent.includes('clé refusée')")
+    # explained in French (strings-fr.js explainError), not OpenAI's raw text
+    jarvis.wait_for_function("document.getElementById('statusPill').textContent.includes('Clé OpenAI refusée')")
     assert jarvis.evaluate("__jarvis.state.mode") == "standby"
     assert "ERREUR" in jarvis.inner_text("#statusPill").upper()
 
@@ -238,16 +239,18 @@ TONES = """(() => {
 def test_earcons_mark_each_change(jarvis):
     jarvis.evaluate(TONES)
     go_live(jarvis)
-    assert jarvis.evaluate("__tones") == [523, 659, 784]  # online
+    tones = jarvis.evaluate("""async () => Object.fromEntries(Object.entries(
+      (await import('/static/js/audio-fx.js')).EARCONS).map(([k, notes]) => [k, notes.map(n => n.f)]))""")
+    assert jarvis.evaluate("__tones") == tones["online"]
     jarvis.evaluate("__tones.length = 0")
     jarvis.click("#orbBtn")
     jarvis.wait_for_function("__jarvis.state.mode === 'standby'")
-    assert jarvis.evaluate("__tones") == [784, 523]  # back to standby
+    assert jarvis.evaluate("__tones") == tones["sleep"]  # back to standby
     jarvis.evaluate("__tones.length = 0; __jarvis.bus.emit('deliver', {text: 'Test', kind: 'reminder', spoken: 'Test'})")
-    assert jarvis.evaluate("__tones") == [880, 660, 880]  # news while asleep
+    assert jarvis.evaluate("__tones") == tones["alert"]  # news while asleep
     jarvis.evaluate("__tones.length = 0; __say('Jarvis', false)")
     jarvis.wait_for_function("__jarvis.state.mode === 'live'")
-    assert jarvis.evaluate("__tones") == [660, 880, 523, 659, 784]  # wake word, then online
+    assert jarvis.evaluate("__tones") == tones["wake"] + tones["online"]  # wake word, then online
 
 
 # ---------------------------------------------------------------- wake word
@@ -255,7 +258,7 @@ def test_earcons_mark_each_change(jarvis):
 def test_wake_word_flow(jarvis):
     jarvis.wait_for_function("window.__rec && __rec.running")
     assert "EN VEILLE" in jarvis.inner_text("#statusPill").upper()
-    assert "ON" in jarvis.inner_text("#wakeBtn").upper()
+    assert jarvis.get_attribute("#wakeBtn", "aria-pressed") == "true"
 
     jarvis.evaluate("__say('bonjour tout le monde', true)")
     assert jarvis.evaluate("__jarvis.state.mode") == "standby"  # other words are ignored
@@ -282,7 +285,7 @@ def test_wake_word_switch_is_remembered(jarvis, reload_jarvis):
     jarvis.click("#wakeBtn")
     assert jarvis.evaluate("__jarvis.state.mode") == "off"
     assert not jarvis.evaluate("__rec.running")
-    assert "OFF" in jarvis.inner_text("#wakeBtn").upper()
+    assert jarvis.get_attribute("#wakeBtn", "aria-pressed") == "false"
     reload_jarvis()
     assert jarvis.evaluate("__jarvis.state.mode") == "off"
     jarvis.click("#wakeBtn")
@@ -307,6 +310,7 @@ def test_wake_word_refused_falls_back_to_the_orb(jarvis):
     assert jarvis.evaluate("__jarvis.state.mode") == "off"
     # The microphone is still granted: paused, not switched off for good (WP07, test_wake.py).
     assert jarvis.evaluate("__jarvis.settings.get('wake')") is not False
+    assert jarvis.get_attribute("#wakeBtn", "aria-pressed") == "true"
     jarvis.wait_for_selector(".card.warning:has-text(\"Mot d'éveil\")")
     go_live(jarvis)  # the orb still works
 
@@ -368,7 +372,8 @@ def test_card_options(jarvis):
     }""")
     titles = jarvis.evaluate("[...document.querySelectorAll('#cards .card h3 span:first-child')].map(s => s.textContent)")
     # Newest first; the oldest non-sticky cards were dropped, the sticky one stays.
-    assert titles == ["Bref", "Info 7", "Info 6", "Info 5", "Info 4", "Confirmation requise"]
+    assert titles == ["Bref", "Info 7", "Info 6", "Info 5", "Info 4", "Info 3", "Info 2",
+                      "Confirmation requise"]
     assert jarvis.locator("#card-c1").count() == 1
     jarvis.click("#card-c1 .actions button:has-text('Lancer')")
     assert jarvis.evaluate("window.__clicked === true")

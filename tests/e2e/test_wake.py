@@ -225,7 +225,7 @@ def test_an_expired_one_time_permission_pauses_without_switching_off(open_page):
     page.wait_for_function("typeof __perm.onchange === 'function'")
     assert "wake" not in saved_settings(page)  # unchanged in localStorage
     assert page.inner_text("#wakeEngine") == "en pause (micro refusé)"
-    assert page.get_attribute("#wakeToggle", "aria-pressed") == "true"
+    assert page.get_attribute("#wakeBtn", "aria-pressed") == "true"
     # Allowed again (the next prompt answered): listening again by itself.
     page.evaluate("__perm.state = 'granted'; __perm.onchange()")
     listening(page)
@@ -239,7 +239,7 @@ def test_a_real_denial_switches_the_wake_word_off(open_page):
     page.wait_for_function("__jarvis.settings.get('wake') === false")
     assert saved_settings(page)["wake"] is False
     assert page.evaluate("__jarvis.state.mode") == "off"
-    assert page.text_content("#wakeToggle") == "Mot d'éveil : désactivé"
+    assert page.text_content("#wakeBtn") == "Mot d'éveil\u202f: désactivé"
     page.wait_for_selector(".card.warning:has-text(\"mot d'éveil désactivé\")")
 
 
@@ -279,14 +279,14 @@ def test_network_errors_back_off_and_a_result_resets(open_page):
 def test_the_switch_lives_in_controls_extra_and_is_remembered(open_page):
     page = open_page()
     listening(page)
-    toggle = "#controlsExtra #wakeToggle"
-    assert page.text_content(toggle) == "Mot d'éveil : activé"
+    toggle = "#controlsExtra #wakeBtn"
+    assert page.text_content(toggle) == "Mot d'éveil\u202f: activé"
     assert page.get_attribute(toggle, "aria-pressed") == "true"
     assert page.inner_text("#wakeEngine") == "écoute via Google"
     page.click(toggle)
     assert page.evaluate("__jarvis.state.mode") == "off"
     assert not page.evaluate("__rec.running")
-    assert page.text_content(toggle) == "Mot d'éveil : désactivé"
+    assert page.text_content(toggle) == "Mot d'éveil\u202f: désactivé"
     assert page.get_attribute(toggle, "aria-pressed") == "false"
     page.reload()
     wait_ready(page)

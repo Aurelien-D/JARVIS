@@ -324,22 +324,28 @@ function falseWake() {
 }
 
 /* ---------------------------------------------------------- the switch in #controlsExtra */
+/* 'Mot d'éveil : activé/désactivé' (#wakeBtn) and which engine listens (#wakeEngine). */
 function renderToggle() {
   const host = $("controlsExtra");
   if (!host) return;
   if (!ui) {
     const box = document.createElement("span");
     box.id = "wakeExtra";
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.id = "wakeToggle";
-    toggle.className = "ctl";
+    // The page's own #wakeBtn when it has one (index.html), so there is one switch.
+    let toggle = $("wakeBtn");
+    if (!toggle) {
+      toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.id = "wakeBtn";
+      toggle.className = "ctl";
+    }
+    toggle.hidden = false;  // the box shows or hides the pair
     toggle.addEventListener("click", () => { tryInstall(); toggleWake(); });
     const engine = document.createElement("span");
     engine.id = "wakeEngine";
     engine.className = "meta";
-    box.append(toggle, " ", engine);
     host.prepend(box);
+    box.append(toggle, " ", engine);
     ui = { box, toggle, engine };
   }
   const on = wakeWanted();

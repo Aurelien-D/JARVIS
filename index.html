@@ -35,45 +35,49 @@
 </head>
 <body data-state="off-idle">
   <a class="skip" href="#askInput">Aller au champ de message</a>
-  <div class="corner tl"></div><div class="corner tr"></div>
-  <div class="corner bl"></div><div class="corner br"></div>
   <header id="topbar">
-    <span class="brand">◈ J.A.R.V.I.S. — MARK VIII</span>
+    <span class="brand">J.A.R.V.I.S.</span>
     <div id="topChips"><span id="serverChip"></span><span id="dndChip"></span><span id="aresChip"></span><span id="costChip"></span></div>
-    <time id="clock">--:--:--</time>
+    <time id="clock"></time>
     <nav id="topActions" aria-label="Actions"></nav>
   </header>
 
   <section id="cards" aria-label="Affichages de JARVIS"></section>
 
   <main id="stage">
-    <button id="badge" type="button" hidden></button>
-    <button id="orbBtn" type="button" aria-label="Parler à JARVIS"><canvas id="orb" aria-hidden="true"></canvas></button>
-    <div id="statusPill" role="status" aria-live="polite">clique l'orbe pour <b>initialiser</b></div>
+    <div id="orbZone">
+      <div class="orb-wrap">
+        <button id="orbBtn" type="button" aria-label="Parler à JARVIS"><canvas id="orb" aria-hidden="true"></canvas></button>
+        <button id="badge" type="button" hidden></button>
+      </div>
+    </div>
+    <div class="status-row">
+      <div id="statusPill" role="status" aria-live="polite"></div>
+      <div id="statusActions"></div>
+    </div>
     <div id="caption" aria-hidden="true"><p id="you"></p><p id="transcript"></p></div>
     <div id="chips"></div>
     <div id="composer"></div>
-    <div id="controls">
-      <button id="wakeBtn" class="ctl" type="button" hidden></button>
-      <button id="notifBtn" class="ctl" type="button" hidden>activer les notifications</button>
+    <div class="controls-row">
+      <div id="controls" hidden></div>
+      <div id="controlsExtra"><button id="wakeBtn" class="ctl" type="button" aria-pressed="true" hidden></button></div>
     </div>
-    <div id="controlsExtra"></div>
-    <p id="hint">SYSTÈME LOCAL · OPENAI REALTIME · CLAUDE CODE</p>
+    <p id="hint"></p>
   </main>
 
   <aside id="side" aria-label="Panneau latéral">
     <section id="remarques" hidden></section>
     <section id="agenda" hidden></section>
     <section id="tasks">
-      <h2>⟢ Sessions Claude Code</h2>
-      <div id="taskList"><div class="none">Aucune session. Demande une tâche à la voix.</div></div>
+      <h2>Sessions Claude Code</h2>
+      <div id="taskList"><div class="none">Aucune tâche. Dites par exemple «&#x202F;Jarvis, cherche les meilleurs aspirateurs robots sous 400&nbsp;€&#x202F;».</div></div>
     </section>
     <section id="schedules">
-      <h2>⟢ Rappels &amp; routines</h2>
+      <h2>Rappels &amp; routines</h2>
       <div id="scheduleList"></div>
     </section>
     <section id="memory">
-      <h2>⟢ Mémoire</h2>
+      <h2>Mémoire</h2>
       <div id="memoryList"></div>
     </section>
   </aside>
@@ -81,7 +85,7 @@
 
   <dialog id="settingsDialog" class="drawer-dialog" aria-labelledby="settingsTitle"></dialog>
   <dialog id="report" aria-labelledby="rtitle">
-    <div class="rhead"><h2 id="rtitle"></h2><span class="x">✕</span></div>
+    <div class="rhead"><h2 id="rtitle"></h2><button class="x" type="button" aria-label="Fermer le rapport"><span aria-hidden="true">✕</span></button></div>
     <div id="kpis"></div>
     <div id="rchart"></div>
     <div id="rtable"></div>

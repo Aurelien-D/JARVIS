@@ -137,7 +137,7 @@ def test_card_expires(jarvis, monkeypatch):
     card.wait_for()
     assert card.locator(".confirm-countdown").inner_text() in ("Expire dans 5 s", "Expire dans 4 s")
     jarvis.wait_for_selector(".card[data-state='expired']:has-text('Demande expirée : rien n')", timeout=8000)
-    assert card.locator("button").count() == 0
+    assert card.locator(".actions button").count() == 0  # only its close button is left
 
 
 # ---------------------------------------------------------------- confirming by voice

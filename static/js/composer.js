@@ -1,5 +1,5 @@
 /* Writing to JARVIS and finding out what it can do: the text field (Ctrl+J
-   or /), the suggestion chips, the rotating "Essayez" hint, the "Ce que je
+   or /, see keys.js), the suggestion chips, the rotating "Essayez" hint, the "Ce que je
    sais faire" help card (? or the Aide button) and JARVIS introducing itself
    on the very first session (design spec §3, §8, §11). */
 import { $, api, bus, state } from "./core.js";
@@ -249,8 +249,8 @@ function shuffled(list) {
 }
 
 function nothingShown() {
-  const cards = $("cards");
-  return (!cards || !cards.children.length) && !document.querySelector("dialog[open]");
+  const cards = $("cards");  // the HUD keeps its own bar and list in there: count the cards
+  return (!cards || !cards.querySelector(".card")) && !document.querySelector("dialog[open]");
 }
 
 function clearResultChips() {
@@ -339,32 +339,6 @@ function introduceOnce() {
   if (!state.pendingText && !state.wake && !state.queue.length) voice.requestResponse();
 }
 
-/* ---------------------------------------------------------- keys */
-function isTypingTarget(el) {
-  if (!el || el === document.body) return false;
-  if (el.isContentEditable) return true;
-  const tag = el.tagName;
-  if (tag === "TEXTAREA" || tag === "SELECT") return true;
-  return tag === "INPUT" && !["button", "checkbox", "radio", "range", "submit", "reset", "color", "file"]
-    .includes((el.type || "").toLowerCase());
-}
-
-/* Ctrl+J, / and ? (keys.js owns the keyboard map; when it already handled the
-   key, preventDefault says so and this stays out of the way). */
-function onKey(e) {
-  if (e.defaultPrevented || e.altKey || e.metaKey || e.isComposing) return;
-  const typing = isTypingTarget(e.target);
-  if (e.ctrlKey && !e.shiftKey && (e.code === "KeyJ" || (e.key || "").toLowerCase() === "j")) {
-    if (typing && e.target !== input) return;
-    e.preventDefault(); // Chrome's Downloads page otherwise
-    focusInput();
-    return;
-  }
-  if (e.ctrlKey || typing) return;
-  if (e.key === "/") { e.preventDefault(); focusInput(); }
-  else if (e.key === "?") { e.preventDefault(); openHelp({ focus: true }); }
-}
-
 export function init() {
   loadHistory();
   renderComposer();
@@ -387,10 +361,9 @@ export function init() {
   bus.on("server:task", onTask);
   bus.on("ui:compose", (d) => compose(typeof d === "string" ? d : d && d.text, !!(d && d.submit)));
   bus.on("ui:open", (d) => { if (wantsHelp(d)) openHelp({ focus: true }); });
-  window.addEventListener("keydown", onKey);
   // Cards come and go (help, results): the standby examples only show on an empty screen.
   const cards = $("cards");
-  if (cards) new MutationObserver(renderChips).observe(cards, { childList: true });
+  if (cards) new MutationObserver(renderChips).observe(cards, { childList: true, subtree: true });
   setInterval(renderChips, 30e3); // result chips expire
   renderChips();
 }
