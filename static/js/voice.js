@@ -2,7 +2,7 @@
    calls it makes, reconnection, and the idle timeout back to standby.
    Other modules follow it through the bus: mode, phase, muted, caption:*,
    turn, tool:*, usage and error (design spec §4 and §10). */
-import { $, api, bus, setMode, state, touch } from "./core.js";
+import { $, api, bus, setMode, settings, state, touch } from "./core.js";
 import { audio, earcon, registerMic } from "./audio-fx.js";
 import { addCard, addImageCard } from "./hud.js";
 import { showReport } from "./report.js";
@@ -45,6 +45,19 @@ const RESUME_GAP = 60e3;           // timers stood still this long: the PC slept
 const QUIET_MS = 800;              // silence after response.done that means "done speaking"
 const MESSAGE_MARGIN = 2048;       // room left under the data channel's message limit
 const DEFAULT_VAD = { type: "semantic_vad", eagerness: "auto", create_response: true, interrupt_response: true };
+
+/* The microphone chosen in Réglages › Écoute ('ideal': a device unplugged
+   since falls back to the system's default instead of failing). */
+function micDevice() {
+  const id = settings.get("micId", "");
+  return id ? { deviceId: { ideal: id } } : {};
+}
+
+/* Réglages › Écoute: where JARVIS's voice plays ('' = the system's default). */
+export function setOutputDevice(id) {
+  if (typeof remoteAudio.setSinkId !== "function") return Promise.resolve(false);
+  return remoteAudio.setSinkId(id || "").then(() => true, () => false);
+}
 
 export function isLive() { return state.mode === "live" && !!dc && dc.readyState === "open"; }
 export function sessionId() { return currentSessionId; }
@@ -111,7 +124,7 @@ export async function connect({ reconnect = false, pendingText = "", quiet = fal
     const timer = setTimeout(() => timeout.abort(), SESSION_TIMEOUT);
     const [mic, sess] = await Promise.allSettled([
       navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }),
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, ...micDevice() } }),
       api("/api/session", { method: "POST", body: { recent: recentContext(reconnect) }, signal: timeout.signal }),
     ]);
     clearTimeout(timer);

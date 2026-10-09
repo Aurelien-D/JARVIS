@@ -91,8 +91,9 @@ def healthz():
 
 @app.get("/api/config")
 def get_config():
+    # + quiet hours, the daily cap reached, versions (settings.py)
     return {"wake_word": config.WAKE_WORD, "speech_lang": config.SPEECH_LANG,
-            "idle_minutes": config.IDLE_MINUTES}
+            "idle_minutes": config.IDLE_MINUTES, **settings.public_config()}
 
 # ---------------------------------------------------------------- realtime session
 

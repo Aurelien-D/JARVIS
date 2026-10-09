@@ -34,7 +34,7 @@ def app_server(tmp_path_factory):
     import uvicorn
 
     import server
-    from jarvis import config, realtime, tasks
+    from jarvis import config, health, realtime, tasks
 
     data = tmp_path_factory.mktemp("jarvis-data")
     fake_claude = data / "fake_claude.py"
@@ -56,6 +56,11 @@ def app_server(tmp_path_factory):
     mp.setattr(config, "QUIET_HOURS", "")  # same behaviour at any hour (tests set it when needed)
     mp.setattr(realtime, "mint", fake_mint)
     mp.setattr(tasks, "claude_command", lambda: [sys.executable, str(fake_claude)])
+    # An onboarded user with nothing to fix (each test has a fresh data folder),
+    # or the Mise en route would open over every test and the health check would
+    # reach OpenAI: test_settings_ui puts the real ones back where it needs them.
+    mp.setattr(health, "onboarded", lambda: True)
+    mp.setattr(health, "run_checks", lambda refresh=False: [])
 
     port = _free_port()
     srv = uvicorn.Server(uvicorn.Config(server.app, host="127.0.0.1", port=port, log_level="warning"))
