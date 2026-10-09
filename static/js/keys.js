@@ -1,11 +1,15 @@
 /* Keyboard shortcuts (design spec §8; the same table is shown in Aide).
    In-page shortcuts are ignored while the focus is in a text field, except
-   Échap and Ctrl+M. */
+   Échap and Ctrl+M. The global hotkey (any app) arrives from the server as a
+   'hotkey' event. */
 import { $, bus, settings, state } from "./core.js";
-import { interrupt, pttDown, pttUp } from "./voice.js";
-import { setSideOpen, toggleMute, uiPhase } from "./hud.js";
+import { connect, interrupt, pttDown, pttUp, sleep } from "./voice.js";
+import { setSideOpen, toast, toggleMute, uiPhase } from "./hud.js";
 import { focusInput } from "./composer.js";
 import { cancelLock } from "./confirm.js";
+import { isLeader } from "./delivery.js";
+import { toggleWake, wakeWanted } from "./wake.js";
+import { T } from "./strings-fr.js";
 
 /* A field where the keys type text (a checkbox or a button is not one). */
 function typing(el) {
@@ -152,7 +156,34 @@ function onKeyUp(e) {
   }
 }
 
+/* ---------------------------------------------------------- the global hotkey and the tray icon (WP13) */
+/* The server registers Ctrl+Alt+Maj+J with Windows, brings this window to the
+   front and sends 'hotkey': 'toggle' talks or goes back to standby (like the
+   orb), 'talk' (the icon's Parler) only starts, 'wake' turns the wake word on
+   or off. Only the page that speaks acts, and an event replayed after a
+   reconnection (older than a few seconds) must not open the microphone. */
+const HOTKEY_FRESH_S = 8;
+
+export function onShellAction(ev = {}) {
+  const at = Number(ev.at);
+  if (!Number.isFinite(at) || Math.abs(Date.now() / 1000 - at) > HOTKEY_FRESH_S) return;
+  if (!isLeader()) return;
+  if (ev.action === "wake") {
+    toggleWake();
+    toast(wakeWanted() ? T.controls.wakeOn : T.controls.wakeOff);
+    return;
+  }
+  try { window.focus(); } catch { /* not allowed: the server already raised the window */ }
+  const awake = state.mode === "live" || state.mode === "connecting";
+  if (ev.action === "toggle") {
+    if (awake) sleep(); else connect();
+  } else if (ev.action === "talk" && !awake) {
+    connect();
+  }
+}
+
 export function init() {
+  bus.on("server:hotkey", onShellAction);
   // capture phase: seen before any field handler, and early enough for Ctrl+J
   window.addEventListener("keydown", onKeyDown, true);
   window.addEventListener("keyup", onKeyUp, true);

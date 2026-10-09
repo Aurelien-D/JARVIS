@@ -3,6 +3,7 @@
 Modules read these as `config.NAME` at call time (not `from config import`),
 so tests can monkeypatch them.
 """
+import logging
 import os
 import sys
 from pathlib import Path
@@ -20,7 +21,14 @@ def load_env(path: Path = ROOT / ".env"):
     """
     if not path.exists():
         return
-    for line in path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
+    raw = path.read_bytes()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:  # Notepad's « ANSI »: accents would come out mangled
+        text = raw.decode("cp1252", errors="replace")
+        logging.warning("JARVIS: %s n'est pas en UTF-8 : lu en Windows-1252 (enregistrez-le en UTF-8).",
+                        path.name)
+    for line in text.splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             k, v = line.split("=", 1)
