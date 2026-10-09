@@ -23,6 +23,18 @@ def publish(kind: str, data: dict):
             pass
 
 
+def close_streams():
+    """JARVIS is stopping: end every page's stream. A page never hangs up on its
+    own, and the server waits for open connections before it can exit."""
+    with _lock:
+        subscribers = list(_subscribers)
+    for loop, queue in subscribers:
+        try:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+        except RuntimeError:  # that page's loop is gone
+            pass
+
+
 def has_subscribers() -> bool:
     """Is any JARVIS page listening? (otherwise a message needs another way out)"""
     with _lock:
@@ -38,6 +50,8 @@ async def stream():
         while True:
             try:
                 message = await asyncio.wait_for(sub[1].get(), timeout=15)
+                if message is None:  # close_streams()
+                    return
                 yield f"data: {message}\n\n"
             except asyncio.TimeoutError:
                 yield ": ping\n\n"  # keeps the connection (and proxies) alive

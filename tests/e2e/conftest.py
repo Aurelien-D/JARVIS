@@ -64,7 +64,18 @@ def app_server(tmp_path_factory):
     while not srv.started and time.time() < deadline:
         time.sleep(0.05)
     assert srv.started, "le serveur JARVIS n'a pas démarré"
-    yield SimpleNamespace(url=f"http://127.0.0.1:{port}/", sessions=sessions)
+    loop = srv.servers[0].get_loop()
+
+    def drop_connections():
+        """Cut every open connection (the page's event stream included), as a
+        crashed or restarted server would."""
+        def close_all():
+            for conn in list(srv.server_state.connections):
+                conn.transport.close()
+        loop.call_soon_threadsafe(close_all)
+
+    yield SimpleNamespace(url=f"http://127.0.0.1:{port}/", sessions=sessions,
+                          drop_connections=drop_connections)
     srv.should_exit = True
     thread.join(10)
     mp.undo()

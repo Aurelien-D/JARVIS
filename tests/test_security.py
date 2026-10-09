@@ -1,4 +1,5 @@
 import re
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -115,6 +116,8 @@ def test_modules_are_served_as_javascript(client):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/javascript")
     assert client.get("/static/css/tokens.css").headers["content-type"].startswith("text/css")
+    # Revalidated every time, so an update never mixes old and new modules.
+    assert r.headers["cache-control"] == "no-cache"
 
 
 def test_page_loads_only_the_module_entry_point(client):
@@ -128,6 +131,27 @@ def test_page_loads_only_the_module_entry_point(client):
 def test_shutdown_needs_the_token(client, monkeypatch):
     stopped = []
     monkeypatch.setattr(server.tasks, "shutdown", lambda: stopped.append(True))
+    monkeypatch.setattr(server, "SERVER", SimpleNamespace(should_exit=False))
     assert client.post("/api/shutdown").status_code == 401
+    assert client.post("/api/shutdown", headers={**AUTH, "Origin": "https://evil.example"}).status_code == 403
+    assert not stopped and not server.SERVER.should_exit
     assert client.post("/api/shutdown", headers=AUTH).json() == {"ok": True}
     assert stopped == [True]
+    assert server.SERVER.should_exit
+
+
+def test_every_api_route_is_guarded(client):
+    # The guard is app-wide, so routes moved to routers (and those added later) keep it.
+    paths = server.app.openapi()["paths"]
+    assert {"/api/config", "/api/session", "/api/tool", "/api/events", "/api/tasks",
+            "/api/task/{task_id}", "/api/task/{task_id}/cancel", "/api/schedules",
+            "/api/schedules/{item_id}", "/api/memory", "/api/memory/{fact_id}",
+            "/api/shutdown"} <= set(paths)
+    for path, methods in paths.items():
+        if not path.startswith("/api/"):
+            continue
+        url = re.sub(r"\{[^}]+\}", "x", path)
+        for method in methods:
+            assert client.request(method.upper(), url).status_code == 401, (method, path)
+            r = client.request(method.upper(), url, headers={**AUTH, "Host": "evil.example:8788"})
+            assert r.status_code == 403, (method, path)

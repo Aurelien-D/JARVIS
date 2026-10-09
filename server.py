@@ -26,6 +26,7 @@ import time
 from contextlib import asynccontextmanager
 
 import httpx
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -54,7 +55,19 @@ app.middleware("http")(security.guard)
 # module script served that way: pin the types StaticFiles will guess.
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
-app.mount("/static", StaticFiles(directory=config.ROOT / "static"), name="static")
+
+
+class FreshStaticFiles(StaticFiles):
+    """Always revalidate: after an update, a browser keeping some modules from its
+    cache and fetching others would mix two versions and break the page."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", FreshStaticFiles(directory=config.ROOT / "static"), name="static")
 for router in (api_tasks.router, api_schedules.router, api_memory.router, inbox.router,
                settings.router, health.router, usage.router, journal.router, ares.router,
                confirm.router):
@@ -115,6 +128,15 @@ async def stream_events():
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 # ---------------------------------------------------------------- lifecycle
+
+class JarvisServer(uvicorn.Server):
+    async def shutdown(self, sockets=None):
+        # uvicorn waits for open connections before it stops, and a page never
+        # closes its event stream: end the streams first, or every Quit would
+        # wait timeout_graceful_shutdown and log a cancelled request.
+        events.close_streams()
+        await super().shutdown(sockets=sockets)
+
 
 def _request_shutdown():
     tasks.shutdown()
@@ -180,15 +202,16 @@ def main():
     if args.app:
         threading.Thread(target=_open_when_ready, args=(url,), daemon=True).start()
 
-    import uvicorn
     global SERVER
     # A Server object (not uvicorn.run) so Quit and /api/shutdown can stop it cleanly.
-    SERVER = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=config.PORT,
-                                           log_level="warning", timeout_graceful_shutdown=3))
+    SERVER = JarvisServer(uvicorn.Config(app, host="127.0.0.1", port=config.PORT,
+                                         log_level="warning", timeout_graceful_shutdown=3))
     print(f"\n  JARVIS Local -> {url}\n")
     shell.start(url, _request_shutdown)
     try:
         SERVER.run()
+    except KeyboardInterrupt:  # Ctrl+C in the console: uvicorn re-raises it once stopped
+        pass
     finally:
         shell.stop()
 
