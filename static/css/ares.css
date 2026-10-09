@@ -1,1 +1,44 @@
-/* A.R.E.S agenda and remarks (WP15). */
+/* A.R.E.S (WP15, ares.js): the agenda section of the side panel and the
+   A.R.E.S chip in the top bar. The section follows the other side sections
+   (a <details open> whose summary carries the title and the count). */
+#agenda[hidden] { display: none; }
+#agenda > details > summary {
+  display: flex; align-items: center; gap: 8px; min-height: 24px;
+  margin-bottom: 12px; padding: 4px 0 10px; border-bottom: 1px solid var(--line);
+  list-style: none; cursor: pointer;
+}
+#agenda > details > summary::-webkit-details-marker { display: none; }
+#agenda > details > summary::before {
+  content: "▸"; color: var(--muted); font-size: var(--fs-xs); transition: transform .15s ease;
+}
+#agenda > details[open] > summary::before { transform: rotate(90deg); }
+#agenda > details > summary:hover h2 { color: var(--text); }
+#agenda > details > summary h2 {
+  margin: 0; font: 400 var(--fs-xs) / var(--lh-label) var(--font-mono);
+  letter-spacing: .18em; text-transform: uppercase; color: var(--cyan);
+}
+#agenda .agenda-rows { list-style: none; margin: 0; padding: 0; }
+/* line 1: the title (14 px); line 2: when (12 px) */
+#agenda .agenda-item {
+  display: grid; grid-template-columns: minmax(0, 1fr); row-gap: 2px; align-items: start;
+  padding: 6px 0; border-bottom: 1px dashed var(--line);
+}
+#agenda .agenda-item .txt { font-size: var(--fs-md); line-height: var(--lh-body); overflow-wrap: anywhere; }
+#agenda .agenda-item .when {
+  font-family: var(--font-mono); font-size: var(--fs-xs); line-height: var(--lh-body); color: var(--amber);
+}
+#agenda .agenda-item.late .when { color: var(--err); }
+#agenda .agenda-item .tag {
+  display: inline-block; padding: 0 6px; margin-right: 2px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.5; color: var(--muted);
+}
+#agenda .agenda-meta { margin: 8px 0 0; }
+#agenda .agenda-meta:empty { display: none; }
+
+#topChips .ares-chip.up { color: var(--ok); }
+#topChips .ares-chip.down { color: var(--muted); }
+
+@media (forced-colors: active) {
+  #agenda .agenda-item { border-color: CanvasText; }
+}

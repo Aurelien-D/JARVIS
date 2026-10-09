@@ -167,6 +167,7 @@ KNOWN_API = {
     "/api/schedules", "/api/schedules/{item_id}", "/api/memory", "/api/memory/{fact_id}",
     "/api/inbox", "/api/inbox/{item_id}/ack", "/api/presence", "/api/delivery", "/api/dnd",
     "/api/voice/turn", "/api/voice/taint", "/api/pending", "/api/pending/{pending_id}/decide",
+    "/api/journal", "/api/undo/{fact_id}", "/api/ares",  # WP14, WP15
 }
 FOREIGN_ORIGINS = ("https://evil.example", "http://127.0.0.1:9999", "null", "http://localhost.evil.example:8788")
 

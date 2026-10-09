@@ -169,6 +169,11 @@ def run_tool(name: str, args: dict, ctx: ToolCtx | None = None) -> dict:
             return gated
         handler = handlers().get(name)
         if not handler:
+            # A family hidden since the session began (A.R.E.S closed meanwhile)
+            # says why in its own words; its handler never runs.
+            hidden = next((fam for fam in FAMILIES if name in fam.HANDLERS), None)
+            if hidden is not None:
+                return {"ok": False, "error": getattr(hidden, "UNAVAILABLE", f"Outil indisponible : {name}")}
             return {"ok": False, "error": f"Outil inconnu : {name}"}
         out = handler(args, ctx)
         confirm.after_tool(name, args, ctx, out)

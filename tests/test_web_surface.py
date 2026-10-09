@@ -247,11 +247,13 @@ def test_hostile_ids_and_texts_never_name_a_file_holds(client, fake_claude, tmp_
     wait(tasks.TASKS[task["id"]])
     api.post("/api/dnd", json={"minutes": 5})
 
-    allowed = re.compile(r"(inbox|state|memory|schedules|tasks)\.json(\.bak|\.tmp|\.corrompu-[\d-]+)?")
+    allowed = re.compile(r"(inbox|state|memory|schedules|tasks|trash)\.json(\.bak|\.tmp|\.corrompu-[\d-]+)?")
+    day_file = re.compile(r"\d{4}-\d{2}-\d{2}\.jsonl")  # the journal: one file per day, named by the server
     written = [p for p in tmp_path.rglob("*") if p.is_file()]
     inside = [p for p in written if data in p.parents]
     assert {p.name for p in inside} >= {"inbox.json", "memory.json", "schedules.json", "tasks.json", "state.json"}
-    assert [p for p in inside if p.parent != data or not allowed.fullmatch(p.name)] == []
+    assert [p for p in inside if not ((p.parent == data and allowed.fullmatch(p.name))
+                                      or (p.parent == data / "journal" and day_file.fullmatch(p.name)))] == []
     # Outside DATA_DIR: only the fake claude and what it writes in its working folder.
     outside = {p.relative_to(tmp_path).as_posix() for p in written if data not in p.parents}
     assert outside <= {"fake_claude.py", "travail/pids.txt"}, outside
