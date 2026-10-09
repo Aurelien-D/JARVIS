@@ -51,7 +51,7 @@ def _bool(name: str, default: bool) -> bool:
 load_env()
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-REALTIME_MODEL = os.environ.get("REALTIME_MODEL", "gpt-realtime")
+REALTIME_MODEL = os.environ.get("REALTIME_MODEL", "gpt-realtime-2.1")
 VOICE = os.environ.get("JARVIS_VOICE", "ballad")
 LANGUAGE = os.environ.get("JARVIS_LANGUAGE", "français")
 PORT = _int("JARVIS_PORT", 8788)

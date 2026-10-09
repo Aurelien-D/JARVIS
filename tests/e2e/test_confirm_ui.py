@@ -53,6 +53,8 @@ def tool(page, name, args):
 
 
 CARD = ".card.confirm[data-state='pending']"
+# App notices to the model are system items (voice.sendNotice), not "[SYSTEM]" text.
+NOTICES = "__sent.filter(m => m.item && m.item.role === 'system').map(m => m.item.content[0].text)"
 
 
 def shot(page, name):
@@ -97,8 +99,8 @@ def test_card_lancer_posts_decide_and_runs_the_task(jarvis):
     shot(jarvis, "confirm-done")
     started = [t for t in tasks.TASKS.values() if t["profile"] == "complet"]
     assert [t["prompt"] for t in started] == [COMPLET["prompt"]]
-    texts = jarvis.evaluate("__texts()")
-    assert any(t.startswith("[SYSTEM] Monsieur a confirmé à l'écran : Confier à Claude") and
+    texts = jarvis.evaluate(NOTICES)
+    assert any(t.startswith("Monsieur a confirmé à l'écran : Confier à Claude") and
                "tâche lancée" in t for t in texts)
     assert jarvis.evaluate("__jarvis.state.phase") != "confirm"
     assert jarvis.locator(".card.confirm[data-state='pending']").count() == 0
@@ -114,7 +116,7 @@ def test_card_annuler_runs_nothing(jarvis):
     card.locator("button", has_text="Annuler").click()
     jarvis.wait_for_selector(".card[data-state='cancelled']:has-text('Annulé, rien n')")
     assert not [t for t in tasks.TASKS.values() if t["profile"] == "complet"]
-    assert any(t.startswith("[SYSTEM] Monsieur a annulé à l'écran") for t in jarvis.evaluate("__texts()"))
+    assert any(t.startswith("Monsieur a annulé à l'écran") for t in jarvis.evaluate(NOTICES))
 
 
 def test_card_comes_from_the_server_and_survives_a_reload(jarvis, reload_jarvis):

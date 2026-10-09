@@ -8,23 +8,35 @@ code; FAKE_CLAUDE stands in for the `claude` command.
 # page sends on its data channel (window.__sent). window.__emit(ev) plays a
 # Realtime event from OpenAI; window.__types() summarises what was sent.
 # Set window.__sctpMaxMessageSize before connecting to shrink the channel's
-# message limit (default 256 KiB).
+# message limit (default 256 KiB); like a real channel, send() throws above it.
+# OpenAI says session.created once the channel is open: set
+# window.__holdSessionCreated to send it yourself with __emit.
+# The harness plays an already onboarded user (no self-introduction on the
+# first session): tests about it remove 'jarvis.onboarded.voice'.
 FAKE_RTC = r"""
 window.__sent = [];
+try { localStorage.setItem("jarvis.onboarded.voice", "1"); } catch (e) { /* opaque origin */ }
 class FakeDC {
   constructor() { this.readyState = "connecting"; }
-  send(s) { window.__sent.push(JSON.parse(s)); }
+  send(s) {
+    if (s.length > (window.__sctpMaxMessageSize || 262144)) throw new TypeError("message too large");
+    window.__sent.push(JSON.parse(s));
+  }
   close() { this.readyState = "closed"; this.onclose && this.onclose(); }
 }
 class FakePC {
-  constructor() { window.__pcs = (window.__pcs || 0) + 1; this.connectionState = "new"; }
+  constructor() { window.__pcs = (window.__pcs || 0) + 1; window.__pc = this; this.connectionState = "new"; }
   get sctp() { return { maxMessageSize: window.__sctpMaxMessageSize || 262144 }; }
   addTrack() {}
   createDataChannel() { this.dc = new FakeDC(); window.__dc = this.dc; return this.dc; }
   async createOffer() { return { type: "offer", sdp: "fake-offer" }; }
   async setLocalDescription() {}
   async setRemoteDescription() {
-    setTimeout(() => { this.connectionState = "connected"; this.dc.readyState = "open"; this.dc.onopen && this.dc.onopen(); }, 50);
+    setTimeout(() => {
+      this.connectionState = "connected"; this.dc.readyState = "open"; this.dc.onopen && this.dc.onopen();
+      if (!window.__holdSessionCreated) setTimeout(() => this.dc.onmessage && this.dc.onmessage(
+        { data: JSON.stringify({ type: "session.created", session: { id: "sess_fake", object: "realtime.session" } }) }), 10);
+    }, 50);
   }
   close() { this.connectionState = "closed"; }
 }
