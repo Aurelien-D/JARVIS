@@ -2,6 +2,7 @@
 and the error table. The module is pure, so node runs it directly (skipped
 when node is not installed; the browser tests use the same file)."""
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -20,8 +21,11 @@ def run(js: str):
     script = (f"import * as S from {json.dumps(MODULE)};\n"
               f"const out = await (async () => {{ {js} }})();\n"
               "process.stdout.write(JSON.stringify(out));")
+    env = {"TZ": "Europe/Paris", "PATH": ""}
+    if "SYSTEMROOT" in os.environ:  # Windows: without it node can't seed its RNG and aborts
+        env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
     res = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True,
-                         text=True, encoding="utf-8", timeout=30, env={"TZ": "Europe/Paris", "PATH": ""})
+                         text=True, encoding="utf-8", timeout=30, env=env)
     assert res.returncode == 0, res.stderr
     return json.loads(res.stdout)
 

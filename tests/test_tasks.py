@@ -122,6 +122,18 @@ def option(cmd, name):
 
 
 def gone(pid: int) -> bool:
+    if os.name == "nt":  # os.kill(pid, 0) isn't supported on Windows: ask for the exit code
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return True
+        code = ctypes.c_ulong()
+        try:
+            kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+            return code.value != 259  # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
