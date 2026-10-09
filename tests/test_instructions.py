@@ -41,7 +41,8 @@ def test_preambles_only_before_slow_tools():
 def test_every_tool_is_tagged():
     rules = section(instructions.INSTRUCTIONS, "# Outils")
     for name in [t["name"] for fam in (tools, tools.tools_tasks, tools.tools_pc, tools.tools_agenda,
-                                       tools.tools_memory, tools.confirm) for t in fam.TOOLS]:
+                                       tools.tools_memory, tools.confirm, tools.ares, tools.info,
+                                       tools.journal) for t in fam.TOOLS]:
         assert name in rules, name
     assert rules.count("CONFIRMATION D'ABORD") >= 4
     assert "PROACTIF" in rules and "PRÉAMBULE" in rules
@@ -76,3 +77,20 @@ def test_written_for_vous_and_without_english_rules():
     text = instructions.INSTRUCTIONS
     assert "ton fichier" not in text and "Confirme brièvement" not in text
     assert not re.search(r"\b(the|you|please)\b", text, re.I)
+
+
+def test_journal_ares_and_info_rules_reach_the_voice_model(monkeypatch):
+    """Wave 2: each family available adds its own section after the core rules."""
+    from jarvis import ares
+    monkeypatch.setattr(config, "JOURNAL_DAYS", 30)
+    monkeypatch.setattr(config, "ARES", "on")
+    monkeypatch.setattr(ares, "agenda_text", lambda *a, **k: "• Appeler le labo — Aujourd'hui · 14:00")
+    text = instructions.build_instructions()
+    assert "# Journal\n" in text and "recall" in section(text, "# Journal")
+    assert "ares_lire" in section(text, "# A.R.E.S") and "<donnees>" in section(text, "# A.R.E.S")
+    assert "Outil info" in section(text, "# Météo et actualités")
+    names = {t["name"] for t in tools.session_tools()}
+    assert {"recall", "info", "ares_lire", "ares_ajouter", "ares_modifier"} <= names
+    monkeypatch.setattr(config, "ARES", "off")  # Réglages › Système › A.R.E.S : Jamais
+    assert "# A.R.E.S\n" not in instructions.build_instructions()
+    assert "ares_lire" not in {t["name"] for t in tools.session_tools()}

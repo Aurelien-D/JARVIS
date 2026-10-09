@@ -613,6 +613,7 @@ export function init() {
   bus.on("server:inbox", onAcked);
   bus.on("server:leader", onLeader);
   bus.on("server:dnd", onDnd);
+  bus.on("server:config", refreshState);  // quiet hours changed in Réglages: at once, not in 2 min
   bus.on("deliver", deliver);
   bus.on("tool:result", (r) => { if (r && r.name === "schedule") offerNotifications(); });
   bus.on("response:done", onResponseDone);

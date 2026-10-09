@@ -351,36 +351,29 @@ def test_memory_shows_text_with_its_date_on_hover_and_undo(jarvis):
 
 
 def test_editing_appears_only_when_the_server_can_patch(jarvis, reload_jarvis):
-    # This version has no PATCH routes yet (WP14, WP17): no ✎ at all.
-    jarvis.evaluate("f => __jarvis.bus.emit('server:memory', {facts: f})", [{"id": "m9", "text": "Thé vert"}])
-    jarvis.wait_for_timeout(300)
-    assert jarvis.locator("#memoryList .edit").count() == 0
-    # A server that has them (simulated): ✎ edits in place and PATCHes the text.
-    patches = []
-
-    def memory_route(route):
-        if route.request.method == "PATCH":
-            patches.append((route.request.url.rsplit("/", 1)[-1], route.request.post_data_json))
-            route.fulfill(status=404 if "__sonde__" in route.request.url else 200,
-                          json={"detail": "Souvenir inconnu."} if "__sonde__" in route.request.url else {"ok": True})
-        else:
-            route.continue_()
-
-    jarvis.route("**/api/memory/*", memory_route)
-    reload_jarvis()
-    jarvis.wait_for_function("__jarvis.state.synced")
-    jarvis.evaluate("f => __jarvis.bus.emit('server:memory', {facts: f})", [{"id": "m9", "text": "Thé vert"}])
-    edit = jarvis.locator("#memoryList .item .edit")
-    edit.wait_for()
-    assert edit.get_attribute("aria-label") == f"Modifier «{NNBSP}Thé vert{NNBSP}»"
-    edit.click()
-    field = jarvis.locator("#memoryList .edit-form input")
-    assert jarvis.evaluate("document.activeElement === document.querySelector('#memoryList .edit-form input')")
-    field.fill("Thé vert sans sucre")
-    field.press("Enter")
-    jarvis.wait_for_selector("#memoryList .edit-form", state="detached")
-    assert ("m9", {"text": "Thé vert sans sucre"}) in patches
-    assert jarvis.inner_text("#memoryList .item .txt") == "Thé vert sans sucre"
+    """Memory has its PATCH route (WP14): ✎ edits a fact in place, for real.
+    Reminders have none yet (WP17): no ✎ on them."""
+    from jarvis import memory
+    fact = memory.remember("Thé vert")
+    try:
+        reload_jarvis()
+        jarvis.evaluate("__jarvis.bus.emit('server:schedules', {items: [{id: 'r1', kind: 'reminder', "
+                        "title: 'Pain', text: 'Pain', due: Date.now() / 1000 + 600, repeat: 'none'}]})")
+        edit = jarvis.locator("#memoryList .item .edit")
+        edit.wait_for()
+        jarvis.wait_for_selector("#scheduleList .item")
+        assert jarvis.locator("#scheduleList .edit").count() == 0
+        assert edit.get_attribute("aria-label") == f"Modifier «{NNBSP}Thé vert{NNBSP}»"
+        edit.click()
+        field = jarvis.locator("#memoryList .edit-form input")
+        assert jarvis.evaluate("document.activeElement === document.querySelector('#memoryList .edit-form input')")
+        field.fill("Thé vert sans sucre")
+        field.press("Enter")
+        jarvis.wait_for_selector("#memoryList .edit-form", state="detached")
+        jarvis.wait_for_function("document.querySelector('#memoryList .item .txt').textContent === 'Thé vert sans sucre'")
+        assert [f["text"] for f in memory.facts() if f["id"] == fact["id"]] == ["Thé vert sans sucre"]
+    finally:
+        memory.forget_id(fact["id"])
 
 
 def test_sections_are_details_with_counts_and_empty_states(jarvis):

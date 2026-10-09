@@ -17,80 +17,10 @@ import { audio, earcon } from "./audio-fx.js";
 import { T, explainError, fr } from "./strings-fr.js";
 import { SR, toggleWake, wakeEngine, wakeWanted } from "./wake.js";
 import * as voice from "./voice.js";
-import { button, checkHealth, checkRow, h, keyForm, openOnboarding, renderChecks, typeset } from "./onboarding.js";
+import { button, checkHealth, checkRow, h, keyForm, openOnboarding, renderChecks } from "./onboarding.js";
 
 const TS = T.settings;
-const S = typeset({
-  title: "Réglages",
-  close: "Fermer les réglages",
-  nav: "Sections des réglages",
-  loading: "Chargement des réglages…",
-  loadFailed: "Les réglages n'ont pas pu être chargés : vérifiez que JARVIS tourne, puis rouvrez cette fenêtre.",
-  when: {
-    now: "Enregistré.",
-    session: "Enregistré · appliqué à la prochaine conversation.",
-    task: "Enregistré · appliqué à la prochaine tâche.",
-    restart: "Enregistré · redémarrage nécessaire.",
-  },
-  restart: (names) => `Redémarrage nécessaire pour : ${names}. Quittez JARVIS, puis relancez JARVIS.bat.`,
-  sensitiveTag: " (réglage sensible)",
-  confirmTitle: "Réglage sensible",
-  confirmValue: (label, value) => `${label} : ${value}`,
-  confirmOk: "Confirmer la modification",
-  keyReplace: (old) => `La clé OpenAI enregistrée (${old}) sera remplacée.`,
-  cancel: "Annuler",
-  empty: "(vide)",
-  current: (value) => `${value} (valeur actuelle)`,
-  voiceNote: "Les changements de voix et de modèle s'appliquent à la prochaine conversation.",
-  healthTitle: "Bilan de santé",
-  recheck: T.onboarding.buttons.recheck,
-  openOnboarding: "Ouvrir la mise en route",
-  checking: "Vérification…",
-  healthFailed: "Le bilan de santé n'a pas pu être fait : le serveur JARVIS ne répond pas.",
-  hours: { on: "Activées", from: "De", to: "à" },
-  time: { on: "Activé" },
-  days: { lun: "Lun", mar: "Mar", mer: "Mer", jeu: "Jeu", ven: "Ven", sam: "Sam", dim: "Dim" },
-  daysFull: { lun: "lundi", mar: "mardi", mer: "mercredi", jeu: "jeudi", ven: "vendredi", sam: "samedi", dim: "dimanche" },
-  unit: { min: "min", "$": "$", jours: "jours", s: "s" },
-  noSR: "Ce navigateur n'a pas de reconnaissance vocale : le mot d'éveil n'y est pas disponible.",
-  devices: {
-    mic: "Micro des conversations",
-    speaker: "Sortie audio",
-    system: "Par défaut du système",
-    micN: (n) => `Micro ${n}`,
-    speakerN: (n) => `Sortie ${n}`,
-    gone: "Appareil enregistré (débranché)",
-    names: "Afficher les noms des appareils",
-    wakeNote: "Le mot d'éveil écoute toujours le micro par défaut de Windows.",
-    noSink: "Ce navigateur ne permet pas de choisir la sortie audio.",
-    micSaved: "Enregistré · appliqué à la prochaine conversation.",
-  },
-  ptt: "Maintenir Espace pour parler",
-  pttHelp: "En conversation, JARVIS ne vous écoute que tant que vous maintenez Espace (pratique avec un lecteur d'écran).",
-  autostart: "Lancer JARVIS au démarrage de Windows",
-  autostartNA: "Disponible sous Windows seulement.",
-  motion: "Animations",
-  motionAuto: "Selon Windows",
-  motionReduced: "Réduites",
-  motionHelp: "Réduites : l'orbe ne tourne plus et rien ne clignote.",
-  volume: "Volume des sons",
-  volumeValue: (n) => `${n} %`,
-  dataFolder: "Dossier des données",
-  purgeAsk: "Effacer tout le journal des conversations ? C'est définitif.",
-  purgeOk: "Effacer le journal",
-  purged: "Journal effacé.",
-  purgeMissing: "Le journal n'est pas encore disponible dans cette version.",
-  opened: "Dossier ouvert.",
-  about: {
-    jarvis: "JARVIS", claude: "Claude Code", python: "Python", voice: "Modèle vocal",
-    transcribe: "Transcription", claudeModels: "Modèles Claude", browser: "Navigateur", wake: "Mot d'éveil",
-    deadlines: "Échéances", update: "Mise à jour",
-    updateText: "Pour mettre JARVIS à jour, suivez le README, section « Mise à jour ».",
-    checking: "vérification…", unknown: "inconnu",
-    models: (m) => `simple : ${m.simple || "défaut"} · normale : ${m.normale || "défaut"} · complexe : ${m.complexe || "défaut"}`,
-    wakeLocal: "écoute locale", wakeCloud: "écoute via Google", wakeNone: "indisponible dans ce navigateur",
-  },
-});
+const S = TS;  // strings-fr.js, T.settings: one dictionary for the whole page
 const SECTION_ORDER = ["connexion", "voix", "ecoute", "proactivite", "claude", "couts", "systeme", "donnees", "apropos"];
 const DAY_KEYS = ["lun", "mar", "mer", "jeu", "ven", "sam", "dim"];
 

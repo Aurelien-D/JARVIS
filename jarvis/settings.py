@@ -532,6 +532,9 @@ def set_many(changes: dict, confirm: bool = False) -> dict:
             applied.setdefault(key, BY_KEY[key].live)
     if applied.get("hotkey") == NOW:
         _BOOT["hotkey"] = config.HOTKEY  # in effect now: no restart waits for it
+    if "ares" in applied:
+        from . import ares  # late: only this change needs it
+        ares.reset()  # the next look (the pages reload on 'config') asks A.R.E.S again
     if applied:
         logging.info("JARVIS: réglages modifiés : %s", ", ".join(sorted(applied)))
         events.publish("config", {"keys": sorted(applied), "restart": restart_pending()})
@@ -673,9 +676,19 @@ def usage_capped() -> bool:
         return False
 
 
+def hotkey_info() -> dict:
+    """The global hotkey as the help card names it: combo '' for none; active
+    None where it isn't registered by JARVIS (not Windows, or not started)."""
+    active = None
+    if config.IS_WINDOWS and shell.running():
+        active = bool(shell.hotkey_state().get("active"))
+    return {"combo": shell.hotkey_label(), "active": active}
+
+
 def public_config() -> dict:
     """Added to /api/config: what every module of the page may read at start."""
-    return {"quiet_hours": config.QUIET_HOURS, "usage_capped": usage_capped(), "versions": versions()}
+    return {"quiet_hours": config.QUIET_HOURS, "usage_capped": usage_capped(), "versions": versions(),
+            "hotkey": hotkey_info()}
 
 
 def _platform() -> str:

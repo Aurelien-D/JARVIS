@@ -144,7 +144,9 @@ function buildHelp() {
   wrap.className = "aide";
   const grid = document.createElement("div");
   grid.className = "aide-grid";
-  CATEGORIES().forEach(({ title, examples: list }, i) => {
+  // A.R.E.S switched off in Réglages: its examples would only get a refusal.
+  const shown = CATEGORIES().filter(c => !(c.ares && state.ares && state.ares.mode === "off"));
+  shown.forEach(({ title, examples: list }, i) => {
     const section = document.createElement("section");
     section.className = "aide-cat";
     const h = document.createElement("h4");
@@ -169,7 +171,11 @@ function buildHelp() {
   const keys = document.createElement("ul");
   keys.className = "aide-keys";
   keys.setAttribute("aria-label", L.shortcuts);
-  for (const part of T.help.shortcuts.split(" · ")) {
+  // The global hotkey as set in Réglages › Système; none shown when Windows refused it.
+  const hk = state.config && state.config.hotkey;
+  const parts = T.help.shortcuts.split(" · ");
+  if (hk && hk.combo && hk.active !== false) parts.push(T.help.globalKey(hk.combo));
+  for (const part of parts) {
     const li = document.createElement("li");
     li.textContent = part;
     keys.append(li);

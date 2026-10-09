@@ -255,13 +255,13 @@ def test_mcp_file(tmp_path, monkeypatch):
 def test_ares_is_optional(monkeypatch):
     monkeypatch.setattr(config, "ARES", "auto")
     from jarvis import ares
-    monkeypatch.setattr(ares, "available", lambda: False)
+    monkeypatch.setattr(ares, "reachable", lambda: False)
     assert health.check_ares()[0]["level"] == "info"
     monkeypatch.setattr(config, "ARES", "on")
     assert health.check_ares()[0]["level"] == "warning"
-    monkeypatch.setattr(ares, "available", lambda: True)
+    monkeypatch.setattr(ares, "reachable", lambda: True)
     assert health.check_ares()[0]["level"] == "info"
-    monkeypatch.setattr(config, "ARES", "off")
+    monkeypatch.setattr(config, "ARES", "jamais")  # read as ares.py reads it
     assert health.check_ares() == []
 
 

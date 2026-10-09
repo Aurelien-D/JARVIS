@@ -420,12 +420,14 @@ def check_mcp(refresh: bool = False) -> list:
 
 
 def check_ares(refresh: bool = False) -> list:
-    mode = (config.ARES or "auto").strip().lower()
+    from . import ares
+    mode = ares._mode()  # the same reading as ares.py ('jamais', '0'... count as off)
     if mode == "off":
         return []
-    from . import ares
+    if refresh:  # Revérifier: no 30 s pause nor last answer kept
+        ares.reset()
     try:
-        up = bool(ares.available())
+        up = bool(ares.reachable())  # 'on' too: asked for real, not assumed
     except Exception:  # noqa: BLE001 - optional
         up = False
     if up:
@@ -433,6 +435,47 @@ def check_ares(refresh: bool = False) -> list:
     return [item("ares", "warning" if mode == "on" else "info", "A.R.E.S",
                  "A.R.E.S n'est pas joignable (facultatif).",
                  "Dans A.R.E.S : Réglages › Application de bureau, activez le serveur MCP local.")]
+
+
+def _windows() -> bool:
+    return config.IS_WINDOWS  # a function: the tests check the Windows side elsewhere
+
+
+def check_windows(refresh: bool = False) -> list:
+    """The global hotkey, the notification-area icon and the start with Windows
+    (WP13), once JARVIS runs (shell.start, in server.py's main)."""
+    from . import shell
+    if not _windows() or not shell.running():
+        return []
+    out = []
+    wanted = shell.hotkey_label()
+    hotkey = shell.hotkey_state()
+    if hotkey.get("active"):
+        out.append(item("hotkey", "ok", "Raccourci global",
+                        f"{hotkey['combo']} : JARVIS vient au premier plan depuis n'importe quelle application."))
+    elif wanted:
+        out.append(item("hotkey", "warning", "Raccourci global",
+                        f"Le raccourci {wanted} ne fonctionne pas : un autre programme l'utilise déjà.",
+                        "Choisissez-en un autre dans Réglages › Système."))
+    elif str(config.HOTKEY or "").strip().lower() not in shell.OFF:
+        out.append(item("hotkey", "warning", "Raccourci global",
+                        f"Raccourci « {str(config.HOTKEY)[:40]} » invalide.",
+                        "Choisissez-en un autre dans Réglages › Système."))
+    if config.TRAY and not shell.tray_active():
+        out.append(item("tray", "info", "Icône de notification",
+                        "Pas d'icône dans la zone de notification (module pystray absent).",
+                        "Dans le dossier de JARVIS, tapez pip install -r requirements.txt, puis relancez JARVIS."))
+    probe = getattr(desktop, "autostart_enabled", None)
+    if callable(probe):
+        try:
+            on = bool(probe())
+        except Exception:  # noqa: BLE001 - shown as unknown: nothing to say
+            on = None
+        if on is not None:
+            out.append(item("autostart", "info", "Démarrage avec Windows",
+                            "JARVIS démarre avec Windows." if on else
+                            "JARVIS ne démarre pas avec Windows (Réglages › Système pour l'activer)."))
+    return out
 
 
 def check_deadlines(refresh: bool = False) -> list:
@@ -470,7 +513,7 @@ def check_deadlines(refresh: bool = False) -> list:
 # In the order the dialog lists them.
 CHECKS = [check_openai, check_claude, check_hardening, check_permission, check_microphone,
           check_workdir, check_data, check_browser, check_pillow, check_mcp, check_git_bash,
-          check_ares, check_deadlines]
+          check_windows, check_ares, check_deadlines]
 
 
 def _run_one(fn, refresh: bool) -> list:

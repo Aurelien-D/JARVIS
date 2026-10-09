@@ -116,11 +116,15 @@ def test_help_lists_what_jarvis_can_do_and_an_example_asks_it(jarvis):
     jarvis.keyboard.press("?")
     card = jarvis.locator("#cards .card:has-text('Ce que je sais faire')")
     card.wait_for()
+    # A.R.E.S is off in the harness: its examples only show when it is on (test_integration_wave2).
     assert card.locator(".aide-cat h4").all_text_contents() == [
-        "Applications et PC", "Rappels et routines", "Recherche et fichiers", "Vision",
-        "Mémoire et journal", "Agenda A.R.E.S"]
+        "Applications et PC", "Rappels et routines", "Recherche et fichiers", "Météo et actualités",
+        "Vision", "Mémoire et journal"]
+    # The global hotkey comes from Réglages › Système (/api/config), after the page's own keys.
     assert card.locator(".aide-keys").inner_text().replace("\n", " · ") == jarvis.evaluate(
-        "import('/static/js/strings-fr.js').then(m => m.T.help.shortcuts)")
+        "import('/static/js/strings-fr.js').then(m => m.T.help.shortcuts + ' · ' + "
+        "m.T.help.globalKey(__jarvis.state.config.hotkey.combo))")
+    assert jarvis.evaluate("__jarvis.state.config.hotkey.combo")  # 'Ctrl+Alt+Maj+J' by default
     assert jarvis.evaluate("document.activeElement.className") == "aide-ex"  # opened from the keyboard
     example = card.locator("button.aide-ex", has_text="Baisse le volume")
     phrase = example.inner_text()

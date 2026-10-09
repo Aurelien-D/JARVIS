@@ -13,42 +13,11 @@
      on the server (POST /api/undo/{id}).
    Everything shown is text (textContent): nothing in the journal is markup. */
 import { $, TOKEN, api, bus, state } from "./core.js";
-import { T, fmtTime, fr } from "./strings-fr.js";
+import { T, fmtTime } from "./strings-fr.js";
 import { announce, toast } from "./hud.js";
 import { isLive, sendNotice } from "./voice.js";
 
-const J = {
-  title: "Journal",
-  close: "Fermer le journal",
-  day: "Jour affiché",
-  today: "Aujourd'hui",
-  yesterday: "Hier",
-  search: "Rechercher dans le journal",
-  searchHint: "Rechercher…",
-  you: "Vous",
-  jarvis: "JARVIS",
-  system: "Événement",
-  log: "Échanges",
-  emptyDay: "Rien dans le journal ce jour-là.",
-  noMatch: (q) => `Aucun résultat pour « ${q} ».`,
-  matches: (n, q) => `${n === 1 ? "1 résultat" : `${n} résultats`} pour « ${q} », sur tous les jours gardés`,
-  keep: (n) => `Gardé ${n} jours sur ce PC.`,
-  disabled: "Journal désactivé : rien n'est gardé sur ce PC (Réglages › Données).",
-  failed: "Journal indisponible pour le moment : réessayez.",
-  clear: "Effacer l'historique",
-  clearAsk: "Effacer tout le journal de ce PC ? C'est définitif.",
-  clearYes: "Oui, tout effacer",
-  cancel: "Annuler",
-  cleared: "Journal effacé.",
-  clearFailed: (msg) => `Le journal n'a pas pu être effacé : ${msg}`,
-  forgotten: (text) => `Souvenir oublié : « ${text} »`,
-  forgottenMany: (n) => `${n} souvenirs oubliés`,
-  undo: "Annuler",
-  restored: "Souvenir rétabli.",
-  undoFailed: (msg) => `Impossible de le rétablir : ${msg}`,
-  undoNotice: "Monsieur a annulé l'oubli depuis l'écran : le souvenir est de nouveau en mémoire.",
-};
-for (const [k, v] of Object.entries(J)) J[k] = typeof v === "function" ? (...a) => fr(v(...a)) : fr(v);
+const J = T.journal;  // strings-fr.js
 
 const DEBOUNCE_MS = 2000;
 const MAX_WAIT_MS = 10000;        // a long conversation still reaches the disk regularly

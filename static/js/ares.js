@@ -7,24 +7,11 @@
    - Every write JARVIS makes in A.R.E.S shows as a card, whichever way it
      was made: monsieur sees everything done in his organiser.
    Agenda lines are monsieur's own titles, shown as text only. */
-import { $, api, bus, settings } from "./core.js";
-import { T, fmtTime, fr } from "./strings-fr.js";
+import { $, api, bus, settings, state } from "./core.js";
+import { T, fmtTime } from "./strings-fr.js";
 import { makeCard } from "./hud.js";
 
-const A = {
-  title: "Agenda A.R.E.S",
-  count: (n) => `Agenda A.R.E.S · ${n}`,
-  chip: "A.R.E.S",
-  up: "A.R.E.S joignable : agenda, tâches et notes à la voix",
-  down: "A.R.E.S injoignable : activez son serveur MCP local (A.R.E.S › Réglages › Application de bureau)",
-  upShort: "joignable",
-  downShort: "injoignable",
-  snapshot: (time) => `Instantané de ${time}`,
-  reminder: "Rappel",
-  late: "en retard",
-  card: "A.R.E.S",
-};
-for (const [k, v] of Object.entries(A)) A[k] = typeof v === "function" ? (...a) => fr(v(...a)) : fr(v);
+const A = T.ares;  // strings-fr.js
 
 const POLL_MS = 5 * 60e3;  // the server reads A.R.E.S again when its snapshot is older than that
 const FOLD_KEY = "panels.folded";  // shared with panels.js: folded side sections
@@ -85,6 +72,8 @@ function renderChip(data) {
 }
 
 export function render(data = {}) {
+  // What the other modules may read (the help card hides A.R.E.S when it is off).
+  state.ares = { available: !!data.available, mode: data.mode || "auto" };
   renderChip(data);
   if (!section) return;
   const up = !!data.available;

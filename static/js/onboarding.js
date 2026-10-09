@@ -14,72 +14,8 @@ import { audio } from "./audio-fx.js";
 import { SR, wakeEngine, wakeWanted } from "./wake.js";
 import { T, explainError, fr } from "./strings-fr.js";
 
-/* French typography for a whole dictionary (as strings-fr.js does for T). */
-export function typeset(node) {
-  for (const [key, value] of Object.entries(node)) {
-    if (typeof value === "string") node[key] = fr(value);
-    else if (typeof value === "function") node[key] = (...args) => fr(value(...args));
-    else if (value && typeof value === "object") typeset(value);
-  }
-  return node;
-}
-
 const O = T.onboarding;
-const S = typeset({
-  intro: "Quelques vérifications avant de commencer. Ce qui est marqué « À corriger » empêche JARVIS de fonctionner normalement ; le reste est pour information.",
-  close: "Fermer la mise en route",
-  checking: "Vérification…",
-  unchecked: "Non vérifié.",
-  stepsLabel: "Étapes de la mise en route",
-  others: "Autres vérifications",
-  serverDown: "Le serveur JARVIS ne répond pas : relancez JARVIS.bat, puis cliquez sur Revérifier.",
-  key: {
-    label: "Clé OpenAI",
-    input: "Nouvelle clé OpenAI",
-    save: "Enregistrer la clé",
-    replace: "Remplacer la clé",
-    add: "Ajouter la clé",
-    cancel: "Annuler",
-    saved: "Clé enregistrée.",
-    none: "Aucune clé enregistrée.",
-    current: (masked) => `Clé enregistrée : ${masked}`,
-    help: "Créez-la sur platform.openai.com/api-keys. Elle reste sur ce PC (fichier .env) et n'est jamais réaffichée en entier.",
-  },
-  mic: {
-    granted: (n) => (n > 1 ? `Micro autorisé · ${n} micros détectés.` : "Micro autorisé."),
-    prompt: "Le navigateur vous demandera l'autorisation au premier usage : testez-le maintenant.",
-    unknown: "Autorisation du micro inconnue : testez-le.",
-    none: T.error.NotFoundError,
-    denied: T.error.NotAllowedError,
-    meter: "Niveau du micro",
-    listening: "Parlez : la barre doit bouger…",
-    works: "Le micro fonctionne.",
-    silent: "Je n'entends rien : vérifiez le micro choisi (Réglages › Écoute) et qu'il n'est pas coupé.",
-    unsupported: "Ce navigateur ne donne pas accès au micro.",
-  },
-  micKind: "Pour régler la réduction de bruit des conversations.",
-  micKindSaved: "Enregistré · appliqué à la prochaine conversation.",
-  wake: {
-    none: "Ce navigateur n'a pas de reconnaissance vocale : cliquez sur l'orbe ou appuyez sur Espace pour parler.",
-    off: "Mot d'éveil désactivé : cliquez sur l'orbe ou appuyez sur Espace pour parler.",
-    local: "Écoute locale : en veille, rien ne quitte ce PC.",
-    cloud: "Écoute via Google : en veille, le son passe par les serveurs de Google. Le pack français hors ligne s'installe au premier clic sur l'orbe, quand Chrome le propose.",
-    reader: "Avec un lecteur d'écran, sa voix peut déclencher le mot d'éveil ou couper JARVIS : désactivez le mot d'éveil et écrivez dans le champ texte (Ctrl+J), ou activez « Maintenir Espace pour parler » (Réglages › Écoute).",
-  },
-  notif: {
-    granted: "Notifications autorisées : une tâche finie ou un rappel vous est signalé même JARVIS en arrière-plan.",
-    default: "Une notification Windows peut vous signaler une tâche finie ou un rappel.",
-    denied: "Notifications refusées dans le navigateur (cadenas de la barre d'adresse › Notifications).",
-    unsupported: "Ce navigateur n'affiche pas de notifications.",
-    enable: "Activer",
-  },
-  voice: {
-    sample: "Bonjour monsieur. Si vous m'entendez clairement, le son fonctionne.",
-    note: "Voix du navigateur, utilisée pour les annonces hors conversation.",
-    none: "Ce navigateur n'a pas de voix de synthèse.",
-  },
-  finishFailed: "La mise en route n'a pas pu être enregistrée : réessayez.",
-});
+const S = O;  // strings-fr.js, T.onboarding: one dictionary for the whole page
 const STATE_WORD = { ok: O.states.ok, fix: O.states.fix, info: O.states.info, wait: S.checking };
 const ICON = { ok: "✓", fix: "!", info: "i", wait: "…" };
 // Server checks shown in their own step, not under 'Autres vérifications'.

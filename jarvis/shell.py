@@ -335,6 +335,22 @@ def running() -> bool:
     return _state["running"]
 
 
+def tray_active() -> bool:
+    """For the health check: is the notification-area icon there?"""
+    return _tray is not None
+
+
+def hotkey_label(spec=None) -> str:
+    """config.HOTKEY as the keyboard names it ('Ctrl+Alt+Maj+J'); '' for none or an invalid one."""
+    spec = config.HOTKEY if spec is None else spec
+    if str(spec or "").strip().lower() in OFF:
+        return ""
+    try:
+        return label(*parse_hotkey(spec))
+    except ValueError:
+        return ""
+
+
 def notify(title: str, body: str) -> bool:
     """A notification from the tray icon (Windows shows it as a toast).
     False when there is no icon to show it: desktop.toast has other ways."""

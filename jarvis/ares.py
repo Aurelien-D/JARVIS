@@ -197,6 +197,29 @@ def available() -> bool:
         return False
     if mode == "on":
         return True
+    return _probe()
+
+
+def reachable() -> bool:
+    """Does A.R.E.S answer (the health check)? Unlike available(), 'on' doesn't
+    answer yes without asking."""
+    return _mode() != "off" and _probe()
+
+
+def reset():
+    """Réglages changed A.R.E.S's mode: forget what was known (a 30 s pause, the
+    last answer, the agenda), so the next look asks A.R.E.S again."""
+    got = _lock.acquire(timeout=LOCK_WAIT)
+    try:
+        _state.update(protocol=None, session=None, up=False, probed=0.0, down_until=0.0)
+        _agenda.update(text="", at=0.0, ok=False)
+    finally:
+        if got:
+            _lock.release()
+
+
+def _probe() -> bool:
+    """The handshake at most every PROBE_TTL seconds; the last answer otherwise."""
     if _blocked():
         return False
     if time.time() - _state["probed"] < PROBE_TTL:

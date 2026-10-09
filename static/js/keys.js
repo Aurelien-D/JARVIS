@@ -175,11 +175,14 @@ export function onShellAction(ev = {}) {
   }
   try { window.focus(); } catch { /* not allowed: the server already raised the window */ }
   const awake = state.mode === "live" || state.mode === "connecting";
-  if (ev.action === "toggle") {
-    if (awake) sleep(); else connect();
-  } else if (ev.action === "talk" && !awake) {
-    connect();
-  }
+  if (ev.action === "toggle" && awake) { sleep(); return; }
+  if (ev.action !== "toggle" && ev.action !== "talk") return;
+  if (!awake) connect();
+  // Voice-first, never voice-only: the window just came to the front, so the
+  // keyboard is ready too. The composer takes it, so monsieur can speak or type
+  // at once; with 'Maintenir Espace pour parler' the orb does (Espace talks).
+  if (settings.get("ptt", false)) $("orbBtn")?.focus({ preventScroll: true });
+  else focusInput();
 }
 
 export function init() {
