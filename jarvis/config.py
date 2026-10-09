@@ -115,6 +115,7 @@ RESTRICTED = os.environ.get("JARVIS_RESTRICTED", "auto")
 ARES = os.environ.get("JARVIS_ARES", "auto")  # auto | on | off
 ARES_URL = os.environ.get("JARVIS_ARES_URL", "http://127.0.0.1:6178/mcp")
 ARES_MCP_NAME = os.environ.get("JARVIS_ARES_MCP_NAME", "ares")
+ARES_TOKEN = os.environ.get("JARVIS_ARES_TOKEN", "")  # sent as a bearer token if A.R.E.S ever asks for one
 
 # ---------------------------------------------------------------- proactivity
 QUIET_HOURS = os.environ.get("JARVIS_QUIET_HOURS", "22:30-07:30")

@@ -41,6 +41,7 @@ _replay: deque = deque(maxlen=REPLAY_SIZE)  # (id, message)
 _seq = int(time.time() * 1000)
 _closing = threading.Event()
 _clients: dict = {}  # client id -> _Presence
+HOOKS: list = []  # fn(kind, data) after each publish (journal.py notes tasks and reminders)
 _leader = None
 _leader_live = False
 _CLIENT_RE = re.compile(r"^[\w-]{1,64}$")
@@ -102,6 +103,11 @@ def publish(kind: str, data: dict) -> int:
         # this event in its replay or in its queue, never both, never neither.
         for sub in _subscribers:
             _send(sub, (event_id, message))
+    for hook in list(HOOKS):
+        try:
+            hook(kind, data)
+        except Exception:  # noqa: BLE001 - a listener must never break the push
+            logging.exception("JARVIS: écouteur d'événements en échec (%s)", kind)
     return event_id
 
 

@@ -59,7 +59,7 @@ export const T = typeset({
     remember: "Je retiens…",
     forget: "J'oublie…",
     get_status: "Je fais le point…",
-    info: (a) => (a && /actu|news/i.test(a.kind || a.topic || "") ? "Je consulte l'actualité…" : "Je consulte la météo…"),
+    info: (a) => (a && /actu|news/i.test(a.type || a.kind || a.topic || "") ? "Je consulte l'actualité…" : "Je consulte la météo…"),
     infoWeather: "Je consulte la météo…",
     infoNews: "Je consulte l'actualité…",
     ares_lire: "Je consulte A.R.E.S…",

@@ -15,11 +15,16 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from fakes import FAKE_CLAUDE, FAKE_RTC, FAKE_SR, SDP_ANSWER
 
 CHROMIUM = os.environ.get("JARVIS_E2E_CHROMIUM", "/opt/pw-browsers/chromium")
+
+
+def _no_network(request):
+    raise httpx.ConnectError("pas de réseau dans les tests", request=request)
 
 
 def _free_port() -> int:
@@ -34,7 +39,7 @@ def app_server(tmp_path_factory):
     import uvicorn
 
     import server
-    from jarvis import config, realtime, tasks
+    from jarvis import config, info, realtime, tasks
 
     data = tmp_path_factory.mktemp("jarvis-data")
     fake_claude = data / "fake_claude.py"
@@ -56,6 +61,9 @@ def app_server(tmp_path_factory):
     mp.setattr(config, "QUIET_HOURS", "")  # same behaviour at any hour (tests set it when needed)
     mp.setattr(realtime, "mint", fake_mint)
     mp.setattr(tasks, "claude_command", lambda: [sys.executable, str(fake_claude)])
+    # Not monsieur's real A.R.E.S nor the internet (test_journal_ui brings fakes).
+    mp.setattr(config, "ARES", "off")
+    mp.setattr(info, "TRANSPORT", httpx.MockTransport(_no_network))
 
     port = _free_port()
     srv = uvicorn.Server(uvicorn.Config(server.app, host="127.0.0.1", port=port, log_level="warning"))

@@ -17,10 +17,12 @@ TOOLS = [{
 }, {
     "type": "function",
     "name": "forget",
-    "description": "Delete remembered facts matching an id or words.",
+    "description": ("Delete one remembered fact, by its id or by words found in it. If several "
+                    "facts match, nothing is deleted and they come back as 'ambiguous': ask "
+                    "monsieur which one, then call again with its id."),
     "parameters": {
         "type": "object",
-        "properties": {"query": {"type": "string"}},
+        "properties": {"query": {"type": "string", "description": "The fact's id, or words from it"}},
         "required": ["query"],
     },
 }]
@@ -29,10 +31,12 @@ CLIENT_TOOLS: set = set()
 
 
 def _forget(a: dict, ctx) -> dict:
-    gone = memory.forget(a.get("query", ""))
-    if not gone:
-        return {"ok": False, "error": "Rien de tel dans ma mémoire."}
-    return {"ok": True, "forgotten": [f["text"] for f in gone]}
+    out = memory.forget(a.get("query", ""))
+    if not out.get("ok"):
+        return out
+    # The ids let the page offer 'Annuler' (POST /api/undo/{id}).
+    return {"ok": True, "forgotten": [f["text"] for f in out["forgotten"]],
+            "ids": [f["id"] for f in out["forgotten"]]}
 
 
 HANDLERS = {
