@@ -11,6 +11,13 @@ let opener = null;  // where the focus was: it goes back there on close
 // Numbers the French way: '1 037', '12,5' (design spec §5).
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? fmtNumber(v) : v);
 
+// ApexCharts writes series names, categories and values into its legend and
+// tooltip as HTML: from the model, a label never carries a character that
+// opens a tag or leaves an attribute, and a value is a number or nothing.
+const label = (v) => String(v ?? "").replace(/</g, "‹").replace(/>/g, "›")
+  .replace(/"/g, "”").replace(/'/g, "’").replace(/`/g, "ʼ");
+const value = (v) => (v !== null && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null);
+
 export function showReport(r) {
   const rep = $("report");
   $("rtitle").textContent = r.title || "Rapport";
@@ -29,9 +36,12 @@ export function showReport(r) {
   if (_apex) { _apex.destroy(); _apex = null; }
   chartEl.innerHTML = "";
   const c = r.chart;
-  if (c && window.ApexCharts && (c.series || []).length) {
+  const series = (Array.isArray(c?.series) ? c.series : []).filter(s => s && typeof s === "object")
+    .map(s => ({ name: label(s.name), data: (Array.isArray(s.data) ? s.data : []).map(value) }));
+  const categories = (Array.isArray(c?.categories) ? c.categories : []).map(label);
+  if (c && window.ApexCharts && series.length) {
     const donut = c.type === "donut";
-    const nSeries = donut ? (c.categories || []).length : c.series.length;
+    const nSeries = donut ? categories.length : series.length;
     const opts = {
       chart: { type: c.type || "line", height: 280, background: "transparent",
                toolbar: { show: false }, foreColor: "#7aa7c2",  // --muted
@@ -43,11 +53,11 @@ export function showReport(r) {
       dataLabels: { enabled: false },
       legend: { show: nSeries > 1, labels: { colors: "#cfeaff" } },
       tooltip: { theme: "dark" },
-      series: donut ? c.series[0].data : c.series,
+      series: donut ? series[0].data : series,
     };
-    if (donut) opts.labels = c.categories || [];
+    if (donut) opts.labels = categories;
     else {
-      opts.xaxis = { categories: c.categories || [] };
+      opts.xaxis = { categories };
       opts.yaxis = { labels: { formatter: num } };
     }
     opts.tooltip.y = { formatter: num };

@@ -90,6 +90,8 @@ class T:
     approval = "Approuvé par monsieur : exécute maintenant l'action refusée."
     nothing_to_approve = "Rien à approuver pour cette tâche."
     queued = "En file d'attente…"
+    no_web_resume = ("Une recherche web ne reprend pas une session qui a eu accès à vos fichiers : "
+                     "nouvelle session.")
     starting = "Démarrage…"
 
 
@@ -199,7 +201,7 @@ def posix(path) -> str:
     text = str(path)
     drive = re.match(r"^([A-Za-z]):(?:[\\/]|$)(.*)$", text)
     if drive:
-        rest = drive.group(2).replace("\\", "/").strip("/")
+        rest = re.sub(r"[\\/]+", "/", drive.group(2)).strip("/")  # a doubled separator counts once
         return f"/{drive.group(1).lower()}/{rest}".rstrip("/")
     if config.IS_WINDOWS:
         text = text.replace("\\", "/")
@@ -304,6 +306,15 @@ def violations(profile: str, tools) -> list:
 
 
 # ---------------------------------------------------------------- processes
+
+# JARVIS's own secrets (.env is copied into os.environ): a full-access task
+# running commands could otherwise read them and show them in its output.
+SECRET_ENV = ("OPENAI_API_KEY",)
+
+
+def child_env() -> dict:
+    return {k: v for k, v in os.environ.items() if k.upper() not in SECRET_ENV}
+
 
 def _spawn_options() -> dict:
     if config.IS_WINDOWS:
@@ -478,7 +489,11 @@ def create_task(title: str, prompt: str, profile: str | None = DEFAULT_PROFILE,
         task["allowed_tools"] = list(allowed_tools)
     if continue_task:
         prev = _find_resumable(continue_task)
-        if prev:
+        if prev and profile == "recherche" and normalize_profile(prev.get("profile")) != "recherche":
+            # A web task never resumes a session that saw monsieur's files or
+            # memory: a page met along the way could have it sent out.
+            task["note"] = T.no_web_resume
+        elif prev:
             task["resume"], task["resumed_from"] = prev["session_id"], prev["id"]
         else:
             task["note"] = "Aucune tâche précédente à reprendre : nouvelle session."
@@ -661,7 +676,7 @@ def _attempt(task: dict, model: str, flags: list) -> _Outcome:
         proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace", cwd=_workdir(),
-            **_spawn_options(),
+            env=child_env(), **_spawn_options(),
         )
     except FileNotFoundError:
         if not Path(_workdir()).is_dir():
@@ -783,6 +798,12 @@ def _on_stream_event(task: dict, event: dict):
                 continue
             if block.get("type") == "tool_use":
                 name, args = block.get("name", ""), block.get("input") or {}
+                bad = violations(task["profile"], [name])
+                if bad and not task.get("sandbox_violation"):  # used without being announced
+                    task["sandbox_violation"] = bad
+                    proc = PROCS.get(task["id"])
+                    if proc:
+                        kill_tree(proc)
                 task["steps"] += 1
                 _track_write(task, block.get("id"), name, args)
                 _progress(task, describe_tool(name, args))

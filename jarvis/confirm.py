@@ -3,14 +3,15 @@
 Every tool call goes through gate() before it runs. A risky call is parked
 here and the model gets needs_confirmation instead:
 - a full-access Claude task, or a full-access routine;
-- once untrusted content entered the voice session (screen, web news, notes,
-  journal, a task result), a link to an unknown site or a clipboard write;
+- once untrusted content entered the voice session (screen, clipboard, web
+  news, notes, journal, a task result), a link to an unknown site or a
+  clipboard write;
 - a finished task's denied tools, which monsieur may approve (tasks.approve).
 
 A parked action then runs with the arguments stored here, never new ones, and
 only on a UI button (POST /api/pending/{id}/decide) or through confirm_action,
 which counts only if monsieur spoke or typed in that voice session AFTER the
-action was parked: the model cannot confirm its own request. Pending actions
+action was last asked: the model cannot confirm its own request. Pending actions
 live in memory and expire after PENDING_TTL seconds.
 
 Voice sessions are identified by an id minted with each ephemeral key
@@ -117,10 +118,17 @@ def _session(sid: str) -> dict:
     return record
 
 
-def new_session() -> str:
+def new_session(continues: bool = False) -> str:
+    """continues: the new session carries the last exchanges of the previous one
+    (a reconnection, the 55-minute refresh): what JARVIS said there about
+    outside content comes along, so its taint does too."""
     sid = uuid.uuid4().hex
     with _lock:
-        _session(sid)
+        previous = max(SESSIONS.values(), key=lambda r: r["created"], default=None)
+        record = _session(sid)
+        if continues and previous and previous["tainted"]:
+            record["tainted"] = True
+            record["reasons"] = list(previous["reasons"])
     return sid
 
 
@@ -156,6 +164,8 @@ def after_tool(name: str, args: dict, ctx, out):
         return
     if name in ("look_at_screen", "recall"):
         mark_tainted(sid, name)
+    elif name == "system_control" and args.get("action") == "read_clipboard":
+        mark_tainted(sid, "presse-papiers")  # often copied from a web page
     elif name == "info" and "actu" in str(args.get("type") or args.get("kind") or "").lower():
         mark_tainted(sid, "actualités")
     elif name == "ares_lire" and _mentions_notes(args, out):
@@ -224,7 +234,9 @@ def _clip(text, limit: int) -> str:
 
 
 def _domain(url: str) -> str:
-    text = url.strip()
+    # A browser reads a backslash as '/' in a web address: evil.example\@youtube.com
+    # goes to evil.example, where urlsplit alone would answer youtube.com.
+    text = url.strip().replace("\\", "/")
     if "://" not in text and ":" not in text.split("/", 1)[0]:
         text = "https://" + text  # 'youtube.com/x' is opened as https
     try:
@@ -258,12 +270,13 @@ def _park(name: str, args: dict, sid, summary: str, detail: str, kind: str = "to
                      and p["name"] == name and p["args"] == args), None)
         if same is None:  # the same request asked twice gets one card
             same = {"id": uuid.uuid4().hex[:10], "sid": sid, "name": name, "args": copy.deepcopy(args),
-                    "summary": summary, "detail": detail, "created": now,
+                    "summary": summary, "detail": detail, "created": now, "asked": now,
                     "expires": now + max(5, config.PENDING_TTL), "kind": kind, "task_id": task_id,
                     "state": "pending", "result": None}
             PENDING[same["id"]] = same
             fresh = True
-        else:
+        else:  # asked again: the "oui" must come after this latest question
+            same["asked"] = now
             fresh = False
     _announce(expired)
     if fresh:
@@ -318,7 +331,7 @@ def decide(pending_id: str, decision, voice_session: str | None = None, by_voice
 
     From a UI button any open request can be decided. By voice, the request
     must come from the same session and, for 'oui', monsieur must have spoken
-    or typed after it was parked.
+    or typed after it was last asked (asking again needs a new answer).
     """
     decision = str(decision or "").strip().lower()
     if decision not in ("oui", "non"):
@@ -336,7 +349,7 @@ def decide(pending_id: str, decision, voice_session: str | None = None, by_voice
         elif by_voice and (not voice_session or p["sid"] != voice_session):
             error = T.refused
         elif (by_voice and decision == "oui"
-              and not SESSIONS.get(voice_session, {}).get("last_turn", 0) > p["created"]):
+              and not SESSIONS.get(voice_session, {}).get("last_turn", 0) > p.get("asked", p["created"])):
             error = T.refused
         else:  # claim it now: a second click or call can't run it twice
             p["state"] = "running" if decision == "oui" else "cancelled"

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from starlette.routing import Mount
 
 import server
 from jarvis import config, realtime, security
@@ -140,6 +141,36 @@ def test_shutdown_needs_the_token(client, monkeypatch):
     assert server.SERVER.should_exit
 
 
+def served_routes(routes=None, prefix=""):
+    """{path: methods} of everything the app serves, routers included, whether
+    this FastAPI flattens included routers or keeps them as one route each.
+    A mount is {"MOUNT"}; a route with no HTTP method (a websocket) is {"WEBSOCKET"}."""
+    found: dict = {}
+    for route in server.app.routes if routes is None else routes:
+        inner = getattr(route, "original_router", None)
+        if inner is not None:
+            context = getattr(route, "include_context", None)
+            for path, methods in served_routes(inner.routes, prefix + (getattr(context, "prefix", "") or "")).items():
+                found.setdefault(path, set()).update(methods)
+        elif isinstance(route, Mount):
+            found.setdefault(prefix + route.path, set()).add("MOUNT")
+        else:
+            found.setdefault(prefix + route.path, set()).update(getattr(route, "methods", None) or {"WEBSOCKET"})
+    return found
+
+
+# Every /api route this version has, the new ones included: one that disappears
+# from the sweep (renamed, moved under another prefix) must be noticed here.
+KNOWN_API = {
+    "/api/config", "/api/session", "/api/tool", "/api/events", "/api/shutdown",
+    "/api/tasks", "/api/task/{task_id}", "/api/task/{task_id}/log", "/api/task/{task_id}/cancel",
+    "/api/schedules", "/api/schedules/{item_id}", "/api/memory", "/api/memory/{fact_id}",
+    "/api/inbox", "/api/inbox/{item_id}/ack", "/api/presence", "/api/delivery", "/api/dnd",
+    "/api/voice/turn", "/api/voice/taint", "/api/pending", "/api/pending/{pending_id}/decide",
+}
+FOREIGN_ORIGINS = ("https://evil.example", "http://127.0.0.1:9999", "null", "http://localhost.evil.example:8788")
+
+
 def test_every_api_route_is_guarded(client):
     # The guard is app-wide, so routes moved to routers (and those added later) keep it.
     paths = server.app.openapi()["paths"]
@@ -155,3 +186,68 @@ def test_every_api_route_is_guarded(client):
             assert client.request(method.upper(), url).status_code == 401, (method, path)
             r = client.request(method.upper(), url, headers={**AUTH, "Host": "evil.example:8788"})
             assert r.status_code == 403, (method, path)
+
+
+def test_token_host_and_origin_guard_holds_on_every_api_route(client, monkeypatch):
+    """The sweep walks the app's own routing table (not only the OpenAPI schema),
+    so a route added later, even hidden from the schema, is checked too."""
+    stopped = []
+    monkeypatch.setattr(server.tasks, "shutdown", lambda: stopped.append(True))
+    served = served_routes()
+    assert KNOWN_API <= set(served), sorted(KNOWN_API - set(served))
+    assert {p for p in server.app.openapi()["paths"] if p.startswith("/api/")} <= set(served)
+    checked = 0
+    for path, methods in sorted(served.items()):
+        if not path.startswith("/api/"):
+            continue
+        url = re.sub(r"\{[^}]+\}", "x", path)
+        for method in sorted(methods - {"HEAD", "OPTIONS"}):
+            where = (method, path)
+            # No token, a wrong one, an empty one: 401 (the page reloads for a new one).
+            assert client.request(method, url).status_code == 401, where
+            assert client.request(method, url, headers={"X-Jarvis-Token": "nope"}).status_code == 401, where
+            assert client.request(method, url, headers={"X-Jarvis-Token": ""}).status_code == 401, where
+            assert client.request(method, f"{url}?token=nope").status_code == 401, where
+            # The right token from a foreign Host (DNS rebinding): 403.
+            for host in ("evil.example:8788", "evil.example", "127.0.0.1.evil.example:8788"):
+                r = client.request(method, url, headers={**AUTH, "Host": host})
+                assert r.status_code == 403, (*where, host)
+            # The right token sent by another site's page: 403.
+            for origin in FOREIGN_ORIGINS:
+                r = client.request(method, url, headers={**AUTH, "Origin": origin})
+                assert r.status_code == 403, (*where, origin)
+                assert client.request(method, url, headers={"Origin": origin}).status_code == 403, (*where, origin)
+            checked += 1
+    assert checked >= len(KNOWN_API)
+    assert not stopped  # nothing got through to /api/shutdown
+
+
+def test_only_the_page_and_the_api_are_served_holds():
+    """Outside /api/ there is no token check: only the page, the health probe and
+    the static files may live there. FastAPI's /docs and /redoc would run
+    unpinned CDN scripts in JARVIS's origin, where they could read the token."""
+    served = served_routes()
+    assert all("WEBSOCKET" not in m for m in served.values()), "the guard is an HTTP middleware only"
+    others = {path: methods for path, methods in served.items() if not path.startswith("/api/")}
+    assert others == {"/": {"GET"}, "/healthz": {"GET"}, "/static": {"MOUNT"}}
+
+
+def test_page_is_refused_to_a_foreign_host_or_origin_holds(client):
+    for host in ("evil.example:8788", "127.0.0.1.evil.example"):
+        r = client.get("/", headers={"Host": host})
+        assert r.status_code == 403 and security.TOKEN not in r.text
+    for origin in FOREIGN_ORIGINS:
+        r = client.get("/", headers={"Origin": origin})
+        assert r.status_code == 403 and security.TOKEN not in r.text
+    for path in ("/openapi.json", "/docs", "/redoc"):
+        assert client.get(path).status_code == 404
+
+
+def test_static_files_never_reach_outside_their_folder_holds(client):
+    # Only the status and a yes/no are asserted: a failure never prints what was served.
+    for url in ("/static/../.env", "/static/%2e%2e/.env", "/static/..%2f.env", "/static/js/../../.env",
+                "/static/..%5c.env", "/static/../index.html", "/static/../jarvis/config.py"):
+        r = client.get(url)
+        leaked = "OPENAI_API_KEY" in r.text or "__JARVIS_TOKEN__" in r.text
+        assert r.status_code in (400, 404), (url, r.status_code)
+        assert not leaked, url

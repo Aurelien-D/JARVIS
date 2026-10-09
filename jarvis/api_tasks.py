@@ -23,6 +23,9 @@ def list_tasks():
 @router.post("/api/tasks")
 def create_task(body: TaskIn):
     """A task typed by monsieur (composer): no voice model, no OpenAI cost."""
+    if tasks.normalize_profile(body.profile) == "complet":
+        # Full access always goes through the confirmation card (voice or button).
+        raise HTTPException(400, "L'accès complet passe par une confirmation : demandez-le à JARVIS.")
     try:
         first_line = (body.prompt.strip().splitlines() or [""])[0][:60]
         task = tasks.create_task(body.title or first_line, body.prompt, profile=body.profile,

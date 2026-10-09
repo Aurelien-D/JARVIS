@@ -112,16 +112,30 @@ export function md(text) {
   if (usesMarked()) {
     if (!linkHook) {
       // A link opens beside JARVIS, never in its window: the HUD and the
-      // voice session would be gone with it.
+      // voice session would be gone with it. Only web and mail links stay
+      // links (not tel:, file:, relative or JARVIS's own URLs); the others
+      // keep their text. SVG links (tagName "a") follow the same rules.
       DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-        if (node.tagName === "A" && node.getAttribute("href")) {
-          node.setAttribute("target", "_blank");
-          node.setAttribute("rel", "noopener noreferrer");
+        const tag = String(node.nodeName || "").toLowerCase();
+        if (tag !== "a" && tag !== "area") return;
+        for (const name of ["href", "xlink:href"]) {
+          if (!node.hasAttribute(name)) continue;
+          if (/^(https?|mailto):/i.test(node.getAttribute(name).trim())) {
+            node.setAttribute("target", "_blank");
+            node.setAttribute("rel", "noopener noreferrer");
+          } else {
+            node.removeAttribute(name);
+          }
         }
       });
       linkHook = true;
     }
-    return DOMPurify.sanitize(marked.parse(text));
+    // No forms, inputs or inline styles: injected text could draw a fake
+    // password box inside a card even without running any script.
+    return DOMPurify.sanitize(marked.parse(text), {
+      FORBID_TAGS: ["form", "input", "button", "textarea", "select", "option", "style", "iframe"],
+      FORBID_ATTR: ["style"],
+    });
   }
   return mdLite(text); // offline fallback
 }

@@ -150,6 +150,9 @@ def explain(r: httpx.Response) -> str:
     elif status >= 500:
         key = "server"
     else:
+        # OpenAI may quote the key back: the page shows (and logs) this text.
+        if config.OPENAI_API_KEY:
+            message = message.replace(config.OPENAI_API_KEY, "sk-…")
         short = message.strip()[:160]
         reason = f" : {short}" if short else ""
         return f"{ERRORS['other']}{reason} (OpenAI {status})"

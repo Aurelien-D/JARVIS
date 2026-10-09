@@ -49,7 +49,9 @@ async def lifespan(app: FastAPI):
     scheduler.stop()
 
 
-app = FastAPI(title="JARVIS Local", lifespan=lifespan)
+# No /docs, /redoc or /openapi.json: they sit outside /api/ (no token) and the
+# docs pages run unpinned CDN scripts in this origin, where they could read the token.
+app = FastAPI(title="JARVIS Local", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.middleware("http")(security.guard)
 # The Windows registry can map .js to text/plain, and browsers refuse to run a
 # module script served that way: pin the types StaticFiles will guess.
@@ -104,8 +106,9 @@ def create_session(body: SessionIn | None = None):
         data = realtime.mint(body.recent if body else "")
     except realtime.MintError as exc:
         raise HTTPException(exc.status, exc.detail) from None
+    # A session that picks up the last exchanges also keeps their taint (confirm.py).
     return {"client_secret": data["value"], "model": config.REALTIME_MODEL,
-            "session_id": confirm.new_session()}
+            "session_id": confirm.new_session(continues=bool(body and body.recent.strip()))}
 
 # ---------------------------------------------------------------- tools & live events
 

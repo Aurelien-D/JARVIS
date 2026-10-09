@@ -815,7 +815,11 @@ export async function onResponseDone(resp) {
       }
       if (out && out.image) {
         const item = await imageMessage(out.image, call.name === "look_at_camera" ? "low" : "high");
-        if (item) { images.push(item); out = { ok: true, note: IMAGE_NOTE }; }
+        if (item) {
+          images.push(item);
+          out = { ok: true, note: IMAGE_NOTE };
+          if (call.name === "look_at_camera") reportTaint("caméra");  // the screen is tainted server-side
+        }
         else out = { ok: false, error: T.error.image };
       }
       bus.emit("tool:result", { name: call.name, callId: call.call_id, args, result: out });
