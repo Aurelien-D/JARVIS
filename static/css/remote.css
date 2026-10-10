@@ -61,3 +61,26 @@
 /* ---- notify: B1 */
 
 /* ---- siri: B3 */
+/* Siri keys under each device on the PC, and the iPhone's « Assistant
+   raccourci » screen (siri-ui.js): long keys and URLs wrap anywhere, so the
+   screen never scrolls sideways at 360 px. */
+.siri-title { margin-top: 4px; }
+.siri-keys { list-style: none; display: grid; gap: 6px; width: 100%; }
+.siri-key {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px;
+  padding: 6px 0; border-top: 1px solid var(--line); font-size: var(--fs-sm); min-width: 0;
+}
+.siri-key-text { min-width: 0; overflow-wrap: anywhere; color: var(--muted); }
+.siri-key-text .mono { color: var(--text); }
+.siri-screen { width: min(560px, calc(100vw - 24px)); max-height: 88vh; overflow-y: auto; overflow-x: hidden; }
+.siri-body { display: grid; gap: 10px; min-width: 0; }
+.siri-row { display: grid; gap: 4px; min-width: 0; }
+.siri-label { margin: 0; }
+.siri-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 100%; }
+.siri-value {
+  flex: 1 1 220px; min-width: 0; padding: 6px 10px; overflow-wrap: anywhere; word-break: break-all;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); color: var(--cyan);
+  user-select: all; -webkit-user-select: all;
+}
+.siri-steps { margin: 0; padding-left: 1.4em; display: grid; gap: 6px; overflow-wrap: anywhere; }
+.siri-recipe .set-sub { margin-top: 6px; }
