@@ -204,7 +204,7 @@ def test_data_files_have_fixed_names_under_data_dir_holds():
     """Every store.save/store.load names its file with a module constant (a bare
     file name), and every path built on DATA_DIR appends a literal: no file
     name is ever made from a request, a tool argument or the model."""
-    names = set()
+    names, joined = set(), set()
     for source in SOURCES:
         tree = ast.parse(source.read_text(encoding="utf-8"))
         consts = _module_strings(tree)
@@ -226,7 +226,12 @@ def test_data_files_have_fixed_names_under_data_dir_holds():
                 right = node.right
                 assert isinstance(right, ast.Constant) and re.fullmatch(r"[\w.-]+", str(right.value)), \
                     f"chemin construit sur DATA_DIR : {source.name}:{node.lineno}"
+                joined.add(right.value)
     assert {"inbox.json", "state.json", "memory.json", "schedules.json", "tasks.json"} <= names
+    # Remote access: the switch and the devices through store, the audit trail and
+    # its alerts as literal names under DATA_DIR (never a name from a request).
+    assert {"remote.json", "devices.json"} <= names
+    assert {"remote-audit.jsonl", "remote-audit.1.jsonl", "remote-alerts.jsonl", "remote-alerts.1.jsonl"} <= joined
 
 
 HOSTILE = ["../../evil", "..%2F..%2Fevil", "/tmp/evil", "C:\\evil", "..\\..\\evil", "evil\x00.json", "%00"]
@@ -277,7 +282,10 @@ def test_hostile_ids_and_texts_never_name_a_file_holds(client, fake_claude, tmp_
 # ---------------------------------------------------------------- 6. logs
 
 
-_SECRET_NAMES = {"OPENAI_API_KEY", "TOKEN", "client_secret", "Authorization", "full_prompt"}
+# + remote access (A1): a device or pairing secret, a page token, a cookie. Names
+# and substrings of string constants: a log text may not even say "cookie".
+_SECRET_NAMES = {"OPENAI_API_KEY", "TOKEN", "client_secret", "Authorization", "full_prompt",
+                 "secret", "page_token", "pair_secret", "cookie"}
 
 
 def _names(node) -> set:
