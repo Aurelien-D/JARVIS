@@ -232,7 +232,20 @@ def test_data_files_have_fixed_names_under_data_dir_holds():
     # Remote access: the switch and the devices through store, the audit trail and
     # its alerts as literal names under DATA_DIR (never a name from a request).
     assert {"remote.json", "devices.json"} <= names
+    # The ntfy topic (B1): one fixed file through store, never .env.
+    assert "ntfy.json" in names
     assert {"remote-audit.jsonl", "remote-audit.1.jsonl", "remote-alerts.jsonl", "remote-alerts.1.jsonl"} <= joined
+
+
+def test_the_ntfy_topic_lives_in_its_data_file_only_holds():
+    """B1: the topic is made into data/ntfy.json through store, under a module
+    constant; notify.py never writes .env nor the environment."""
+    from jarvis import notify
+    assert notify.NTFY_FILE == "ntfy.json"
+    tree = ast.parse((ROOT / "jarvis" / "notify.py").read_text(encoding="utf-8"))
+    names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | \
+        {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    assert not names & {"ENV_FILE", "write_key", "environ", "putenv", "open", "write_text", "write_bytes"}
 
 
 HOSTILE = ["../../evil", "..%2F..%2Fevil", "/tmp/evil", "C:\\evil", "..\\..\\evil", "evil\x00.json", "%00"]
@@ -285,8 +298,9 @@ def test_hostile_ids_and_texts_never_name_a_file_holds(client, fake_claude, tmp_
 
 # + remote access (A1): a device or pairing secret, a page token, a cookie. Names
 # and substrings of string constants: a log text may not even say "cookie".
+# + ntfy (B1): the topic is the address of monsieur's notifications.
 _SECRET_NAMES = {"OPENAI_API_KEY", "TOKEN", "client_secret", "Authorization", "full_prompt",
-                 "secret", "page_token", "pair_secret", "cookie"}
+                 "secret", "page_token", "pair_secret", "cookie", "topic"}
 
 
 def _names(node) -> set:

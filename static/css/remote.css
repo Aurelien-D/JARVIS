@@ -59,5 +59,23 @@
 }
 
 /* ---- notify: B1 */
+/* Réglages › Notifications (notify-settings.js): the topic wraps anywhere, so
+   the drawer never scrolls sideways at 360 px; one tap selects it whole, for a
+   manual copy where the clipboard is refused. */
+.nt-root { display: grid; min-width: 0; }
+.nt-block { min-width: 0; }
+.nt-block .set-sub:first-child { margin-top: 0; }
+.nt-topic-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 100%; }
+.nt-topic-value {
+  flex: 1 1 220px; min-width: 0; padding: 6px 10px; overflow-wrap: anywhere; word-break: break-all;
+  -webkit-user-select: all; user-select: all;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); color: var(--text);
+}
+.nt-server { overflow-wrap: anywhere; }
+.nt-state { font: 600 var(--fs-user) / var(--lh-label) var(--font-hud); color: var(--ok); }
+.nt-state.nt-off { color: var(--amber); }
+.nt-last { overflow-wrap: anywhere; }
+.nt-last:empty { display: none; }
+.nt-guide { display: grid; gap: 6px; padding-left: 1.4em; max-width: 62ch; }
 
 /* ---- siri: B3 */
