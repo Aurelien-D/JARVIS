@@ -2,7 +2,7 @@
    calls it makes, reconnection, and the idle timeout back to standby.
    Other modules follow it through the bus: mode, phase, muted, caption:*,
    turn, tool:*, usage and error (design spec §4 and §10). */
-import { $, api, bus, setMode, settings, state, touch } from "./core.js";
+import { $, api, bus, isIOS, setMode, settings, state, touch } from "./core.js";
 import { audio, earcon, registerMic } from "./audio-fx.js";
 import { addCard, addImageCard } from "./hud.js";
 import { showReport } from "./report.js";
@@ -134,6 +134,8 @@ export async function connect({ reconnect = false, pendingText = "", quiet = fal
   state.endRequested = false;
   quietConnect = quiet;
   if (!state.wake) stopWake(); // a wake word keeps listening for the rest of the sentence
+  // The phone and iOS: never a recognizer beside the session's microphone, even mid wake word.
+  if (state.remote || isIOS()) stopWake();
   setMode("connecting", quiet ? "refresh" : "");
   try {
     // The microphone and the session key at the same time: the wait is the longest of the two.

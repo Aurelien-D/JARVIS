@@ -5,12 +5,16 @@
    - The page has its own id and tells the server when it gains or loses the
      focus or a voice session, so the server can pick the one page that speaks
      (delivery.isLeader).
-   - While the server can't be reached, #serverChip says so. */
+   - While the server can't be reached, #serverChip says so (on the paired
+     iPhone, a stopped JARVIS reads « JARVIS est fermé sur le PC »).
+   - Every PING_SECONDS the server sends a 'ping' frame (no id): it arrives
+     here as server:ping. */
 import { $, TOKEN, api, bus, state } from "./core.js";
 import { T } from "./strings-fr.js";
 
 const SERVER_DOWN = T.status?.serverDown || "Serveur JARVIS déconnecté · reconnexion…";
 const SERVER_CLOSED = T.status?.serverClosed || "JARVIS est fermé · relancez JARVIS.bat";
+const PC_CLOSED = T.delivery?.pcClosed || "JARVIS est fermé sur le PC";
 const ID_KEY = "jarvis.client";
 
 let es = null;
@@ -20,6 +24,7 @@ let reopenTimer = null, reopenDelay = 3000;
 let lastPresence = "";
 let opened = 0;
 let closed = false;  // « Quitter JARVIS »: the server said it stops
+let closedText = SERVER_CLOSED;
 
 /* This page's id. Kept across a reload (sessionStorage), but taken out of
    storage while the page lives and put back when it goes: a duplicated tab
@@ -80,16 +85,18 @@ function reopenLater() {
 function setServerChip(down) {
   const chip = $("serverChip");
   if (!chip) return;
-  chip.textContent = down ? (closed ? SERVER_CLOSED : SERVER_DOWN) : "";
+  chip.textContent = down ? (closed ? closedText : SERVER_DOWN) : "";
   chip.className = down ? "chip err" : "chip";
   chip.hidden = !down;
 }
 
 /* « Quitter JARVIS »: the chip says so (not « reconnexion… »). The stream
    keeps trying, slowly: a relaunched JARVIS reloads this page (its new
-   token answers 401 to the old one, see onerror). */
-export function serverClosed() {
+   token answers 401 to the old one, see onerror). remote: the paired
+   iPhone, where there is no JARVIS.bat to relaunch. */
+export function serverClosed({ remote = false } = {}) {
   closed = true;
+  closedText = remote ? PC_CLOSED : SERVER_CLOSED;
   reopenDelay = 30000;
   setServerChip(true);
 }
@@ -97,6 +104,7 @@ export function serverClosed() {
 /* Focus and voice session, for the server's choice of leader. claim: monsieur
    asked for this page ('Utiliser celle-ci'). */
 export function presence({ claim = false } = {}) {
+  if (state.remote) return Promise.resolve();  // the phone is in no election (the server ignores it too)
   const body = {
     client: CLIENT,
     focused: document.visibilityState === "visible" && document.hasFocus(),

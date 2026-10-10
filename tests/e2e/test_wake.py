@@ -28,6 +28,12 @@ const realQuery = navigator.permissions.query.bind(navigator.permissions);
 navigator.permissions.query = async (d) => (d && d.name === "microphone") ? window.__perm : realQuery(d);
 """
 
+# iPadOS: a "Mac" with a touch screen (core.isIOS counts it as iOS).
+IPAD = r"""
+Object.defineProperty(Navigator.prototype, "platform", { get: () => "MacIntel", configurable: true });
+Object.defineProperty(Navigator.prototype, "maxTouchPoints", { get: () => 5, configurable: true });
+"""
+
 
 def wait_ready(page):
     page.wait_for_function("window.__jarvis && __jarvis.state.ready && __jarvis.state.synced")
@@ -303,3 +309,17 @@ def test_the_switch_lives_in_controls_extra_and_is_remembered(open_page):
     page.click("#orbBtn")  # hidden while live (the live controls take over)
     page.wait_for_function("__jarvis.state.mode === 'live'")
     assert not page.is_visible("#wakeExtra")
+
+
+def test_no_wake_word_on_an_ipad(open_page):
+    """iPadOS calls itself a Mac with a touch screen: still iOS, so no wake word,
+    no switch, and the orb opens a session without any recognizer (spec 4.12)."""
+    page = open_page(IPAD)
+    page.wait_for_timeout(3000)  # past the start-up wait
+    assert page.evaluate("navigator.platform") == "MacIntel"
+    assert page.evaluate("__recs.length") == 0
+    assert page.evaluate("__jarvis.state.mode") == "off"
+    assert not page.is_visible("#wakeBtn")
+    page.click("#orbBtn")
+    page.wait_for_function("__jarvis.state.mode === 'live'")
+    assert page.evaluate("__recs.length") == 0

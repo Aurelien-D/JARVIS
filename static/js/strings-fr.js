@@ -252,6 +252,8 @@ export const T = typeset({
     snoozed: (time) => `Rappel reporté : ${time}.`,
     snoozeFailed: (why) => `Report impossible : ${why}`,
     briefing: "Briefing du matin",
+    // The paired iPhone when JARVIS stops on the PC (sse.serverClosed).
+    pcClosed: "JARVIS est fermé sur le PC",
   },
   // ---- WP10 + WP11 (panels.js, taskview.js, report.js) -------------------
   // The report window (report.js): its table, chart and ApexCharts' toolbar.

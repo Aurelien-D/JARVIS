@@ -262,7 +262,11 @@ def test_remote_stream_never_becomes_leader_holds():
     asyncio.run(scenario())
 
 
-def test_remote_stream_drops_pc_control_events_holds():
+def test_remote_stream_drops_pc_control_events_holds(monkeypatch):
+    # PHONE is no paired device here: A1's real floor would replay nothing to it,
+    # and this proof is about what a replay may hold, so it starts from zero.
+    monkeypatch.setattr(remote, "replay_floor", lambda caller: 0)
+
     async def scenario():
         pc = await opened("page-pc")
         phone = await opened("", PHONE)

@@ -39,10 +39,15 @@ window.__jarvis = { state: core.state, bus: core.bus, api: core.api, voice, sett
 // « Quitter JARVIS » (the tray, /api/shutdown): the voice session ends now (it
 // goes straight to OpenAI and would run on, billed, with every tool failing),
 // the wake word lets the microphone go, and the window closes (Chrome allows
-// it for the --app window; elsewhere the chip says JARVIS is closed).
+// it for the --app window; elsewhere the chip says JARVIS is closed). The
+// paired iPhone keeps its page: the chip says JARVIS is closed on the PC.
 core.bus.on("server:shutdown", () => {
   wake.shutDown();
   try { voice.sleep(); } catch (err) { reportError(err); }
+  if (core.state.remote) {
+    sse.serverClosed({ remote: true });
+    return;
+  }
   sse.serverClosed();
   try { window.close(); } catch { /* not this page's to close */ }
 });
