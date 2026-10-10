@@ -219,7 +219,7 @@ def test_fire_with_no_page_goes_to_the_inbox_first_then_notifies(monkeypatch):
     assert kind == "reminder" and inbox_then == ["Sortir le pain"]
     (item,) = inbox.pending()
     assert item["kind"] == "reminder" and data["inbox_id"] == item["id"]
-    assert notified == [(("Rappel", "Sortir le pain"), {"kind": "reminder"})]
+    assert notified == [(("Rappel", "Sortir le pain"), {"kind": "reminder", "via": "pc"})]
 
 
 def test_fire_with_a_page_open_does_not_notify(published, monkeypatch):

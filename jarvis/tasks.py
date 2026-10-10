@@ -478,11 +478,13 @@ def _money(usd: float) -> str:
 def create_task(title: str, prompt: str, profile: str | None = DEFAULT_PROFILE,
                 complexity: str = "normale", continue_task: str | None = None,
                 origin: str = "voix", voice_session: str | None = None,
-                allowed_tools: list | None = None) -> dict:
+                allowed_tools: list | None = None, *, via: str = "pc") -> dict:
     """Start a task (or queue it when MAX_CONCURRENT_TASKS already run).
 
+    origin: the channel (voix, clavier, routine, approbation, briefing).
     voice_session: the voice session that asked (confirm.py ties approvals to it).
     allowed_tools: approval of denied tools (approve() only).
+    via: who asked, the origin string of remote.Caller ("pc", "app:d_…", "siri:k_…").
     """
     prompt = (prompt or "").strip()
     if not prompt:
@@ -495,7 +497,7 @@ def create_task(title: str, prompt: str, profile: str | None = DEFAULT_PROFILE,
     task = {
         "id": uuid.uuid4().hex[:8], "title": (title or "Tâche").strip()[:80],
         "prompt": prompt, "profile": profile, "complexity": complexity,
-        "model": config.MODELS[complexity], "origin": origin,
+        "model": config.MODELS[complexity], "origin": origin, "via": str(via or "pc"),
         "status": "running", "output": "", "progress": T.starting, "steps": 0,
         "started": time.time(), "ended": None,
         "session_id": None, "resume": None, "resumed_from": None, "cost_usd": None,
@@ -982,7 +984,7 @@ def approve(task_id: str) -> dict:
     return create_task(task["title"], T.approval, profile=task["profile"],
                        complexity=task.get("complexity", "normale"), continue_task=task_id,
                        origin="approbation", voice_session=task.get("voice_session"),
-                       allowed_tools=names)
+                       allowed_tools=names, via=task.get("via") or "pc")
 
 
 def shutdown():

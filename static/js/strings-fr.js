@@ -686,6 +686,22 @@ export const T = typeset({
     // The global hotkey (Réglages › Système), when one works on this PC.
     globalKey: (combo) => `${combo} : depuis n'importe où`,
   },
+  // JARVIS on iPhone: one block per package, each edited by its owner only.
+  // ---- remote: owned by A4
+  remote: {
+  },
+  // ---- pair: owned by A4
+  pair: {
+  },
+  // ---- notify: owned by B1
+  notify: {
+  },
+  // ---- siri: owned by B3
+  siri: {
+  },
+  // ---- ios: owned by B2
+  ios: {
+  },
 });
 
 // The Mise en route says a missing or refused microphone in the error table's words.

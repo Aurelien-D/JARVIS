@@ -50,7 +50,7 @@ let dndToggle = null;
 let dndShown = null;  // the label on screen, so a refresh doesn't steal the focus
 
 /* ---------------------------------------------------------- leader */
-export function isLeader() { return !leaderId || leaderId === clientId(); }
+export function isLeader() { return !state.remote && (!leaderId || leaderId === clientId()); }  // the phone never leads
 
 /* Resolves once the server has said which page speaks (or after ms). */
 export function leaderKnown(ms = 2000) {

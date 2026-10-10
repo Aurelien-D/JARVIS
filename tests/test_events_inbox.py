@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 import server
-from jarvis import config, desktop, events, inbox, security, store
+from jarvis import config, desktop, events, inbox, remote, security, store
 
 BASE = "http://127.0.0.1:8788"
 AUTH = {"X-Jarvis-Token": security.TOKEN}
@@ -176,7 +176,7 @@ def test_the_http_route_passes_the_page_id_and_last_event_id():
     async def scenario():
         ids = [events.publish("memory", {"n": n}) for n in range(3)]
         scope = {"type": "http", "method": "GET", "path": "/api/events", "query_string": b"",
-                 "headers": [(b"last-event-id", str(ids[0]).encode())]}
+                 "headers": [(b"last-event-id", str(ids[0]).encode())], "state": {"caller": remote.PC}}
         response = await server.stream_events(Request(scope), client="page-http")
         stream = response.body_iterator
         assert (await anext(stream)).startswith("retry:")

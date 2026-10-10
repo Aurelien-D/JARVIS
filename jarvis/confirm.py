@@ -35,8 +35,9 @@ MAX_SESSIONS = 20
 DETAIL_MAX = 4000  # characters of the action shown on its card
 KEEP_DECIDED_S = 600  # a decided request still answers "déjà traitée" this long
 
-SESSIONS: dict = {}  # sid -> {created, last_turn, tainted, reasons}
+SESSIONS: dict = {}  # sid -> {created, last_turn, tainted, reasons, origin}
 # id -> {id, sid, name, args, summary, detail, created, expires, kind, task_id, state, result}
+# (+ via, button_only, launch_from, remote_kind for remote origins)
 PENDING: dict = {}
 _lock = threading.RLock()
 
@@ -120,7 +121,7 @@ def _session(sid: str) -> dict:
     return record
 
 
-def new_session(continues: bool = False, sources=None) -> str:
+def new_session(continues: bool = False, sources=None, origin: str = "pc") -> str:
     """continues: the new session carries the last exchanges of earlier ones
     (a reconnection, the 55-minute refresh, a page refilled from the journal):
     what JARVIS said there about outside content comes along, so its taint
@@ -128,25 +129,37 @@ def new_session(continues: bool = False, sources=None) -> str:
     page tracks them ("" for a line refilled from the journal); any of them
     tainted, or unknown here (JARVIS restarted since, or forgot it), taints the
     new one. Without sources, the previous session stands for them (none
-    known: JARVIS restarted, the lines' taint is unknown)."""
+    known: JARVIS restarted, the lines' taint is unknown). origin: who opened
+    it ("pc", "app:d_…"), the origin string of remote.Caller."""
     sid = uuid.uuid4().hex
     with _lock:
         if sources is None:
-            origins = [max(SESSIONS.values(), key=lambda r: r["created"], default=None)]
+            carried = [max(SESSIONS.values(), key=lambda r: r["created"], default=None)]
         else:
-            origins = [SESSIONS.get(str(s or "")[:64]) for s in sources]
+            carried = [SESSIONS.get(str(s or "")[:64]) for s in sources]
         record = _session(sid)
+        record["origin"] = str(origin or "pc")
         if continues:
             reasons = []
-            for origin in origins:
-                if origin is None:
+            for prior in carried:
+                if prior is None:
                     reasons.append("conversation reprise")
-                elif origin["tainted"]:
-                    reasons += origin["reasons"] or ["conversation reprise"]
+                elif prior["tainted"]:
+                    reasons += prior["reasons"] or ["conversation reprise"]
             if reasons:
                 record["tainted"] = True
                 record["reasons"] = list(dict.fromkeys(reasons))[-10:]
     return sid
+
+
+def check_session(sid: str | None, origin: str) -> str | None:
+    """Why this origin may not use that voice session (French), or None when it may."""
+    return None
+
+
+def cancel_for_origin(origin: str) -> int:
+    """Cancel the open requests of a revoked origin; returns how many (never through decide)."""
+    return 0
 
 
 def mark_turn(sid: str | None):
@@ -213,7 +226,7 @@ def gate(name: str, args: dict, ctx) -> dict | None:
             "expires_in": max(0, round(pending["expires"] - _now())), "consigne": T.ask}
 
 
-def needs_confirmation(name: str, args: dict, sid=None) -> bool:
+def needs_confirmation(name: str, args: dict, sid=None, origin: str = "pc") -> bool:
     """Would gate() park this call? (a handler reached anyway came through decide())"""
     return _rule(name, args or {}, sid) is not None
 
@@ -302,6 +315,11 @@ def public(p: dict) -> dict:
     keep = ("id", "name", "kind", "summary", "detail", "created", "expires", "task_id", "state", "result")
     out = {k: p.get(k) for k in keep}
     out["expires_in"] = max(0, round(p["expires"] - _now())) if p["state"] == "pending" else 0
+    # Who raised it and who may launch it (a remote origin's request is button only).
+    out["via"] = p.get("via") or "pc"
+    out["button_only"] = bool(p.get("button_only", False))
+    out["launch_from"] = p.get("launch_from")
+    out["remote_kind"] = p.get("remote_kind")
     return out
 
 
@@ -370,7 +388,8 @@ def open_items() -> list:
     return sorted(items, key=lambda p: p["created"])
 
 
-def decide(pending_id: str, decision, voice_session: str | None = None, by_voice: bool = False) -> dict:
+def decide(pending_id: str, decision, voice_session: str | None = None, by_voice: bool = False,
+           origin: str = "pc") -> dict:
     """Run ('oui') or drop ('non') a parked action.
 
     From a UI button any open request can be decided. By voice, the request

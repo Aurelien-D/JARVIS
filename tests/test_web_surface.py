@@ -20,7 +20,17 @@ from starlette.requests import Request
 from test_tasks import FAKE_CLAUDE, wait
 
 import server
-from jarvis import config, confirm, events, inbox, memory, realtime, security, tasks
+from jarvis import (
+    config,
+    confirm,
+    events,
+    inbox,
+    memory,
+    realtime,
+    remote,
+    security,
+    tasks,
+)
 
 BASE = "http://127.0.0.1:8788"
 AUTH = {"X-Jarvis-Token": security.TOKEN}
@@ -116,7 +126,7 @@ def test_event_stream_requires_the_token_holds(client):
 async def _replay_all(client_id: str) -> str:
     """Everything the route replays to a page that says it saw nothing (Last-Event-ID: 0)."""
     scope = {"type": "http", "method": "GET", "path": "/api/events", "query_string": b"",
-             "headers": [(b"last-event-id", b"0")]}
+             "headers": [(b"last-event-id", b"0")], "state": {"caller": remote.PC}}
     response = await server.stream_events(Request(scope), client=client_id)
     stream = response.body_iterator
     frames = []

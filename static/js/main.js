@@ -19,15 +19,20 @@ import * as usage from "./usage.js";
 import * as ares from "./ares.js";
 import * as remarques from "./remarques.js";
 import * as delivery from "./delivery.js";
+import * as remoteSettings from "./remote-settings.js";
+import * as notifySettings from "./notify-settings.js";
+import * as siriUi from "./siri-ui.js";
+import * as ios from "./ios.js";
 import * as voice from "./voice.js";
 import * as sse from "./sse.js";
 import * as wake from "./wake.js";
 
 // core first (it loads the server config); sse once every listener is on the
-// bus; wake last, as it settles the page into standby.
+// bus; wake last, as it settles the page into standby. The iPhone modules
+// (remote access, notifications, Siri, iOS) start after Réglages and delivery.
 const MODULES = [core, strings, audioFx, orb, hud, keys, composer, panels, taskview, report,
                  confirm, journal, settingsUi, onboarding, usage, ares, remarques, delivery,
-                 voice, sse, wake];
+                 remoteSettings, notifySettings, siriUi, ios, voice, sse, wake];
 
 window.__jarvis = { state: core.state, bus: core.bus, api: core.api, voice, settings: core.settings };
 

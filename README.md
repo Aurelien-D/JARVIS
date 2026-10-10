@@ -258,12 +258,14 @@ Ensuite, dites **« Jarvis »**… et parlez !
   (`off` pour arrêter).
 - **L'icône JARVIS** dans la zone de notification (près de l'horloge) offre :
   Ouvrir JARVIS, Parler, Mot d'éveil (activer ou couper), Ne pas déranger 1 h,
-  Démarrer avec Windows et **Quitter JARVIS**.
+  Accès à distance (activer ou couper), Démarrer avec Windows et
+  **Quitter JARVIS**.
 - Pour quitter : icône JARVIS → **Quitter JARVIS**. Les tâches Claude en cours
   sont alors arrêtées (elles apparaissent « Interrompue »), la conversation en
   cours se termine et la fenêtre JARVIS se ferme.
 - Pendant qu'une tâche Claude tourne, JARVIS empêche le PC de se mettre en
   veille.
+- JARVIS sur l'iPhone : guide à venir.
 
 ---
 
@@ -282,6 +284,7 @@ ou au prochain démarrage de JARVIS.
 | **Proactivité** | Briefing du matin (heure, jours, actualités), heures calmes, votre ville, rouvrir la fenêtre quand un rappel arrive |
 | **Claude Code** | Mode de permission, dossier de travail, connecteurs MCP en plus, modèle Claude par complexité (haiku, sonnet, opus), durée maximale (10 min), plafond par tâche (2 $), tâches en même temps (3) |
 | **Coûts** | Plafond de dépense par jour et les 30 derniers jours |
+| **Accès à distance** | Activer ou couper l'accès depuis l'iPhone, associer un iPhone, accès complet depuis l'iPhone, activité récente |
 | **Système** | Lancer JARVIS au démarrage de Windows, raccourci global, navigateur, icône de notification, A.R.E.S (Automatique, Toujours, Jamais), animations, volume des sons |
 | **Données** | Dossier des données (Ouvrir le dossier data, Purger le journal), conservation du journal (30 jours) |
 | **À propos** | Versions de JARVIS et de Claude Code, modèles utilisés, mot d'éveil, échéances OpenAI |
@@ -724,6 +727,14 @@ relancer JARVIS.
 | `JARVIS_ARES_URL` | `http://127.0.0.1:6178/mcp` | — | Adresse du serveur MCP d'A.R.E.S |
 | `JARVIS_ARES_MCP_NAME` | `ares` | — | Nom d'A.R.E.S dans `claude mcp add` (voir « Coexistence avec A.R.E.S ») |
 | `JARVIS_ARES_TOKEN` | *(aucun)* | — | Jeton envoyé à A.R.E.S, si une version future en demande un |
+| `JARVIS_REMOTE_HOST` | *(aucune)* | — | Nom Tailscale exact du PC (ex. `jarvis-pc.tail0000.ts.net`) ; vide : le nom détecté et confirmé dans Réglages › Accès à distance |
+| `JARVIS_REMOTE_LOGINS` | *(aucun)* | — | Comptes Tailscale autorisés, séparés par des virgules ; vide : le compte confirmé dans Réglages › Accès à distance |
+| `JARVIS_REMOTE_PORT` | `8789` | — | Port local utilisé seulement par Tailscale Serve (différent de `JARVIS_PORT`) |
+| `JARVIS_SIRI_MODEL` | *(automatique)* | — | Modèle texte du raccourci Siri ; vide : choisi automatiquement |
+| `JARVIS_NTFY` | `0` | — | Notifications ntfy sur l'iPhone |
+| `JARVIS_NTFY_SERVER` | `https://ntfy.sh` | — | Adresse du serveur ntfy |
+| `JARVIS_NTFY_ONLY_AWAY` | `0` | — | Notifications ntfy seulement quand vous n'êtes pas devant le PC |
+| `JARVIS_NTFY_REMINDER_TEXT` | `0` | — | Mettre le texte du rappel dans la notification |
 
 ---
 

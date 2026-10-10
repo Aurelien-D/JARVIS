@@ -41,6 +41,7 @@ NOW, SESSION, TASK, RESTART = "now", "session", "task", "restart"
 
 SECTIONS = [("connexion", "Connexion"), ("voix", "Voix"), ("ecoute", "Écoute"),
             ("proactivite", "Proactivité"), ("claude", "Claude Code"), ("couts", "Coûts"),
+            ("distance", "Accès à distance"),
             ("systeme", "Système"), ("donnees", "Données"), ("apropos", "À propos")]
 
 # Built-in Realtime voices; the voice is fixed once JARVIS has spoken in a session.

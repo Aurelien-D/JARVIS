@@ -18,6 +18,9 @@ thread-safely.
   others then explain why they can't take over yet.
 - Deliverable events (reminders, task results, briefings, warnings) go to the
   inbox before any page sees them, so nothing is lost when no page is open.
+- Remote pages (a paired iPhone, see remote.py) get their own stream ids, never
+  take part in the election and never hear the PC's controls ('leader',
+  'hotkey', publish_pc); at most MAX_REMOTE_STREAMS stay open per device.
 """
 import asyncio
 import json
@@ -31,6 +34,9 @@ from collections import deque
 REPLAY_SIZE = 200
 QUEUE_SIZE = 500
 PING_SECONDS = 15
+MAX_REMOTE_STREAMS = 4  # per device: a fifth closes the oldest
+# publish() writes {"type": kind, ...} first: these PC controls never reach a remote stream.
+_PC_ONLY = ('{"type": "leader"', '{"type": "hotkey"')
 
 _lock = threading.Lock()
 _elect_lock = threading.Lock()  # one election at a time, so 'leader' events go out in order
@@ -48,11 +54,24 @@ _CLIENT_RE = re.compile(r"^[\w-]{1,64}$")
 
 
 class _Sub:
-    __slots__ = ("loop", "queue", "client")
+    __slots__ = ("loop", "queue", "client", "caller")
 
-    def __init__(self, loop, client):
-        self.loop, self.client = loop, client
+    def __init__(self, loop, client, caller=None):
+        self.loop, self.client, self.caller = loop, client, caller  # caller None: a PC page
         self.queue = asyncio.Queue(maxsize=QUEUE_SIZE)
+
+
+def _is_remote(caller) -> bool:
+    return caller is not None and bool(caller.remote)
+
+
+def _device(caller) -> str:
+    return caller.device_id or caller.kind
+
+
+def _delivers(sub, message: str) -> bool:
+    """A remote stream never gets the PC's controls."""
+    return not (_is_remote(sub.caller) and message.startswith(_PC_ONLY))
 
 
 class _Presence:
@@ -92,17 +111,31 @@ def _send(sub, item):
 
 def publish(kind: str, data: dict) -> int:
     """Push an event to every open page; returns its id."""
+    return _push(kind, data, pc_only=False)
+
+
+def publish_pc(kind: str, data: dict) -> int:
+    """Push an event to the PC's pages only (pairing, devices, remote alerts):
+    never to a remote stream, never replayed. The inbox and HOOKS still see it."""
+    return _push(kind, data, pc_only=True)
+
+
+def _push(kind: str, data: dict, pc_only: bool) -> int:
     global _seq
     data = _record(kind, data)
     message = json.dumps({"type": kind, **data}, ensure_ascii=False)
     with _lock:
         _seq += 1
         event_id = _seq
-        _replay.append((event_id, message))
+        if not pc_only:
+            _replay.append((event_id, message))
         # Scheduled under the lock: a stream that subscribes now either has
         # this event in its replay or in its queue, never both, never neither.
         for sub in _subscribers:
-            _send(sub, (event_id, message))
+            if pc_only and _is_remote(sub.caller):
+                continue
+            if _delivers(sub, message):
+                _send(sub, (event_id, message))
     for hook in list(HOOKS):
         try:
             hook(kind, data)
@@ -121,20 +154,34 @@ def _record(kind: str, data: dict) -> dict:
         return data
 
 
-def close_streams():
-    """JARVIS is stopping: end every page's stream. A page never hangs up on its
-    own, and the server waits for open connections before it can exit."""
-    _closing.set()
+def close_streams(match=None) -> int:
+    """End the streams whose caller matches (match(caller) -> bool; a PC page's
+    caller may be None); returns how many. With no match JARVIS is stopping: end
+    every page's stream, and any opened from now on. A page never hangs up on
+    its own, and the server waits for open connections before it can exit."""
+    if match is None:  # only a shutdown: a revocation must not end the PC's streams for good
+        _closing.set()
     with _lock:
-        subscribers = list(_subscribers)
+        subscribers = [sub for sub in _subscribers if match is None or match(sub.caller)]
     for sub in subscribers:
         _send(sub, None)
+    return len(subscribers)
 
 
-def has_subscribers() -> bool:
-    """Is any JARVIS page listening? (otherwise a message needs another way out)"""
+def has_subscribers(match=None) -> bool:
+    """Is any JARVIS page of the PC listening? (otherwise a message needs another
+    way out: an open phone stream never silences the PC's toasts). With match:
+    any stream whose caller matches."""
     with _lock:
-        return bool(_subscribers)
+        if match is None:
+            return any(not _is_remote(sub.caller) for sub in _subscribers)
+        return any(match(sub.caller) for sub in _subscribers)
+
+
+def current_id() -> int:
+    """The last event id given out (a paired device replays nothing before it)."""
+    with _lock:
+        return _seq
 
 
 def _parse_id(value, current: int):
@@ -147,17 +194,32 @@ def _parse_id(value, current: int):
     return n if 0 <= n <= current else None
 
 
-async def stream(client_id: str = "", last_event_id=None):
+async def stream(client_id: str = "", last_event_id=None, caller=None):
     """One page's event stream. client_id is the page's own id (sse.js); with
-    last_event_id, the buffered events after it are replayed first."""
-    client = client_id if client_id and _CLIENT_RE.match(client_id) else f"anon-{uuid.uuid4().hex[:12]}"
-    sub = _Sub(asyncio.get_running_loop(), client)
+    last_event_id, the buffered events after it are replayed first. caller: the
+    remote.Caller of the request (None or PC: a page of this PC)."""
+    remote_page = _is_remote(caller)
+    if remote_page:
+        # Its own namespace: a phone can never take a PC page's id, nor its presence.
+        client = f"r-{_device(caller)}-{uuid.uuid4().hex[:8]}"
+    else:
+        client = client_id if client_id and _CLIENT_RE.match(client_id) else f"anon-{uuid.uuid4().hex[:12]}"
+    sub = _Sub(asyncio.get_running_loop(), client, caller)
+    oldest = []
     with _lock:
         after = _parse_id(last_event_id, _seq)
-        backlog = [item for item in _replay if after is not None and item[0] > after]
+        backlog = [item for item in _replay
+                   if after is not None and item[0] > after and _delivers(sub, item[1])]
+        if remote_page:  # this one makes MAX_REMOTE_STREAMS: the oldest of that device go
+            same = [s for s in _subscribers if _is_remote(s.caller) and _device(s.caller) == _device(caller)]
+            oldest = same[:max(0, len(same) - (MAX_REMOTE_STREAMS - 1))]
         _subscribers.append(sub)
-        _join(client)
-    _elect()
+        if not remote_page:  # a remote page never joins the election
+            _join(client)
+    for old in oldest:
+        _send(old, None)
+    if not remote_page:
+        _elect()
     try:
         if _closing.is_set():
             return
@@ -166,9 +228,10 @@ async def stream(client_id: str = "", last_event_id=None):
         for event_id, message in backlog:
             last = event_id
             yield f"id: {event_id}\ndata: {message}\n\n"
-        # Who speaks, even if it didn't change (no id: not part of the replay).
-        current = json.dumps({"type": "leader", **leader_info()})
-        yield f"data: {current}\n\n"
+        if not remote_page:
+            # Who speaks, even if it didn't change (no id: not part of the replay).
+            current = json.dumps({"type": "leader", **leader_info()})
+            yield f"data: {current}\n\n"
         while not _closing.is_set():
             try:
                 item = await asyncio.wait_for(sub.queue.get(), timeout=PING_SECONDS)
@@ -185,8 +248,10 @@ async def stream(client_id: str = "", last_event_id=None):
     finally:
         with _lock:
             _subscribers.remove(sub)
-            _leave(client)
-        _elect()
+            if not remote_page:
+                _leave(client)
+        if not remote_page:
+            _elect()
 
 # ---------------------------------------------------------------- the leader page
 

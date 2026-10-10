@@ -536,9 +536,10 @@ def items() -> list:
 
 def add(kind: str, title: str, text: str, at: str | None = None, delay_minutes=None,
         repeat: str = "none", profile: str = "recherche", complexity: str = "normale",
-        days=None, allow_complet: bool = False) -> dict:
+        days=None, allow_complet: bool = False, *, via: str = "pc") -> dict:
     """A new reminder or routine. allow_complet: only past confirm.gate (the
-    voice tool, once monsieur said "oui"); every other caller is refused."""
+    voice tool, once monsieur said "oui"); every other caller is refused.
+    via: who asked, the origin string of remote.Caller ("pc", "app:d_…")."""
     text = (text or "").strip()
     if not text:
         raise ValueError(T.empty)
@@ -561,7 +562,7 @@ def add(kind: str, title: str, text: str, at: str | None = None, delay_minutes=N
         "title": (title or text).strip()[:80], "text": text[:4000], "due": due, "repeat": repeat,
         "profile": profile,
         "complexity": complexity if complexity in config.MODELS else "normale",
-        "created": time.time(),
+        "created": time.time(), "via": str(via or "pc"),
     }
     _shape_repeat(item, day_list)
     with store.LOCK:
@@ -846,12 +847,13 @@ def tick(now: float | None = None):
 
 def _fire(item: dict, late: float, now: float | None = None):
     now = time.time() if now is None else now
+    via = item.get("via") or "pc"  # who set it (older items: the PC)
     if item.get("kind") == "task":
         tasks.create_task(item.get("title", ""), item.get("text", ""), profile=item.get("profile", "recherche"),
-                          complexity=item.get("complexity", "normale"), origin="routine")
+                          complexity=item.get("complexity", "normale"), origin="routine", via=via)
         return
     payload = {"id": item["id"], "title": item.get("title", ""), "text": item.get("text", ""),
-               "late_minutes": int(late // 60) if late > LATE_S else 0}
+               "late_minutes": int(late // 60) if late > LATE_S else 0, "via": via}
     try:
         _remember_fired(payload, now)
     except Exception:  # noqa: BLE001 - snooze is a convenience: the reminder still goes out
@@ -863,7 +865,7 @@ def _fire(item: dict, late: float, now: float | None = None):
         logging.exception("JARVIS: boîte de réception indisponible pour un rappel")
     events.publish("reminder", payload)
     if not events.has_subscribers():
-        inbox.notify_offline("Rappel", payload["text"] or payload["title"], kind="reminder")
+        inbox.notify_offline("Rappel", payload["text"] or payload["title"], kind="reminder", via=via)
 
 
 def _skip(item: dict):

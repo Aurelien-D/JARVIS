@@ -75,7 +75,7 @@ def add(kind: str, payload: dict) -> dict:
             if item.get("ref") == ref and now - item.get("created", 0) < DEDUPE_SECONDS:
                 return item
         item = {"id": uuid.uuid4().hex[:12], "kind": kind, "payload": payload,
-                "created": now, "acked": None, "ref": ref}
+                "created": now, "acked": None, "ref": ref, "via": payload.get("via") or "pc"}
         items.append(item)
         store.save(FILE, items[-MAX_ITEMS:])
     return item
@@ -86,8 +86,9 @@ def _prune(items: list, now: float) -> list:
             and now - i.get("created", 0) < KEEP_DAYS * 86400]
 
 
-def pending(now: float | None = None) -> list:
-    """Not yet told, from the last 24 hours, oldest first."""
+def pending(now: float | None = None, via: str | None = "pc") -> list:
+    """Not yet told, from the last 24 hours, oldest first. via: whose items
+    (None: every origin); every item is returned so far."""
     now = time.time() if now is None else now
     items = [i for i in store.load(FILE, []) if isinstance(i, dict) and i.get("id")
              and not i.get("acked") and now - i.get("created", 0) < REPLAY_HOURS * 3600]
@@ -184,7 +185,7 @@ def _attention() -> str:
         return "ok"
 
 
-def notify_offline(title: str, body: str, kind: str = "reminder") -> bool:
+def notify_offline(title: str, body: str, kind: str = "reminder", via: str = "pc") -> bool:
     """No JARVIS page open: one native notification instead (the message
     stays in the inbox for the next page). A reminder monsieur set always
     notifies; anything else waits out quiet hours and a busy screen. Returns

@@ -70,7 +70,7 @@ def _schedule(a: dict, ctx) -> dict:
                          repeat=a.get("repeat") or "none",
                          profile=a.get("profile") or "recherche",
                          complexity=a.get("complexity") or "normale",
-                         days=a.get("days"), allow_complet=allowed)
+                         days=a.get("days"), allow_complet=allowed, via=getattr(ctx, "origin", "pc"))
     return {"ok": True, "scheduled": scheduler.describe(item)}
 
 

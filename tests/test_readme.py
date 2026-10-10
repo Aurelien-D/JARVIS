@@ -147,7 +147,7 @@ def test_shortcut_table_is_the_keyboard_map():
 def test_reglages_sections_are_real():
     titles = {title for _, title in settings.SECTIONS}
     # A.R.E.S has Réglages of its own (« A.R.E.S › Réglages › Application de bureau »).
-    for name in re.findall(r"(?<!A\.R\.E\.S › )Réglages › (Claude Code|À propos|[A-ZÉ][\wéèû]+)", FLAT):
+    for name in re.findall(r"(?<!A\.R\.E\.S › )Réglages › (Claude Code|À propos|Accès à distance|[A-ZÉ][\wéèû]+)", FLAT):
         assert name in titles, name
     table = raw_section("## 🎛️ Réglages")
     rows = set(re.findall(r"^\| \*\*(.+?)\*\* \|", table, re.MULTILINE))

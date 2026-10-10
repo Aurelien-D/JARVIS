@@ -24,8 +24,10 @@ from . import (ares, confirm, info, journal, scheduler, tasks, tools_agenda, too
 
 @dataclass
 class ToolCtx:
-    """Who is calling: the voice session that asked (None for internal calls)."""
+    """Who is calling: the voice session that asked (None for internal calls) and
+    the origin string of the caller ("pc", "app:d_…", "siri:k_…", see remote.Caller)."""
     session_id: str | None = None
+    origin: str = "pc"
 
 
 # ---------------------------------------------------------------- core family
@@ -166,8 +168,9 @@ def families() -> list:
     return [fam for fam in FAMILIES if fam.available()]
 
 
-def session_tools() -> list:
-    """Every tool schema for a new voice session."""
+def session_tools(scope: str = "pc") -> list:
+    """Every tool schema for a new voice session (scope: the caller's kind; the
+    same list for every scope so far)."""
     return [tool for fam in families() for tool in fam.TOOLS]
 
 

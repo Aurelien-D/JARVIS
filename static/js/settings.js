@@ -1,6 +1,8 @@
 /* Réglages (WP12): a modal <dialog> styled as a right drawer, one section at
    a time: Connexion · Voix · Écoute · Proactivité · Claude Code · Coûts ·
-   Système · Données · À propos.
+   Accès à distance · Système · Données · À propos.
+   - Other modules add a section of their own with registerSection() (the
+     remote access and notification sections).
    - Server settings come from /api/settings (schema and values) and are
      saved one field at a time; each says when it takes effect: at once, at
      the next conversation, at the next task, or after a restart.
@@ -21,7 +23,8 @@ import { button, checkHealth, checkRow, h, keyForm, openOnboarding, renderChecks
 
 const TS = T.settings;
 const S = TS;  // strings-fr.js, T.settings: one dictionary for the whole page
-const SECTION_ORDER = ["connexion", "voix", "ecoute", "proactivite", "claude", "couts", "systeme", "donnees", "apropos"];
+const SECTION_ORDER = ["connexion", "voix", "ecoute", "proactivite", "claude", "couts", "distance", "notifications",
+                       "systeme", "donnees", "apropos"];
 const DAY_KEYS = ["lun", "mar", "mer", "jeu", "ven", "sam", "dim"];
 const SELECT_SETTLE_MS = 800;  // a list looked through with the arrow keys is saved once it settles
 
@@ -168,7 +171,7 @@ function control(entry, id) {
   return { node: input, input, read: () => input.value.trim(), write: (v) => { input.value = v ?? ""; } };
 }
 
-function field(entry) {
+export function field(entry) {
   const id = `set-${entry.key}`;
   const wrap = h("div", { class: `set-field set-kind-${entry.type}`, "data-key": entry.key });
   const ctl = control(entry, id);
@@ -283,7 +286,7 @@ function confirmChange(entry, value) {
                       danger, ok: S.confirmOk });
 }
 
-function askConfirm({ title, text, value = "", danger = "", ok }) {
+export function askConfirm({ title, text, value = "", danger = "", ok }) {
   const d = ui.confirm;
   d.querySelector("h3").textContent = title;
   d.querySelector(".set-confirm-text").textContent = text;
@@ -549,6 +552,15 @@ function sectionApropos() {
   return [dl];
 }
 
+/* Sections built by other modules: id -> build(ctx), which returns the nodes
+   under the heading (ctx below). The built-in BUILDERS win over them. */
+const registered = new Map();
+export function registerSection(id, build) { registered.set(id, build); }
+
+function sectionCtx() {
+  return { model, field, entriesOf, askConfirm, say, h, button, api, remote: state.remote };
+}
+
 const BUILDERS = {
   connexion: sectionConnexion,
   voix: () => [h("p", { class: "set-note", text: S.voiceNote }), ...entriesOf("voix").map(field)],
@@ -564,7 +576,8 @@ const BUILDERS = {
 function renderSection(id) {
   const panel = ui.panels.get(id);
   if (!panel || !model) return;
-  const kids = (BUILDERS[id] || (() => entriesOf(id).map(field)))();
+  const custom = registered.get(id);
+  const kids = BUILDERS[id] ? BUILDERS[id]() : custom ? custom(sectionCtx()) : entriesOf(id).map(field);
   panel.replaceChildren(heading(id), ...kids);
   if (id === "couts") bus.emit("settings:section", { id, el: panel.querySelector("#settingsUsage") });
   if (id === "connexion") loadHealth(false);
