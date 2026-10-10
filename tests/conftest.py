@@ -1,4 +1,5 @@
 import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -33,6 +34,13 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setitem(desktop._launched, "at", None)  # no window "still coming up" from another test
     tasks.TASKS.clear()
     yield
+    # A task still running would finish during a later test and publish there
+    # (seen on the slower Windows CI): stop it and let its thread end here.
+    for task in tasks.running():
+        tasks.cancel(task["id"])
+    end = time.time() + 10
+    while (tasks._active or tasks._waiting) and time.time() < end:
+        time.sleep(0.02)
     tasks.TASKS.clear()
 
 

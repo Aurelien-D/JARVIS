@@ -251,7 +251,9 @@ def test_the_voice_alone_reaching_the_cap_stops_new_tasks(client, fake_claude, m
     assert r.status_code == 400 and "Plafond du jour atteint (1,00 $)" in r.json()["detail"]
     assert not tasks.TASKS
     monkeypatch.setattr(config, "DAILY_BUDGET_USD", 5.0)  # raised in Réglages: tasks start again
-    assert tasks.create_task("X", "x")["status"] in tasks.ACTIVE
+    task = tasks.create_task("X", "x")
+    assert task["status"] in tasks.ACTIVE
+    wait(task)  # finished here, not during a later test (its events would land there)
 
 # ---------------------------------------------------------------- what the page reads
 
@@ -281,7 +283,8 @@ def test_each_change_is_pushed_to_the_pages(pushed, monkeypatch):
     monkeypatch.setattr(config, "DAILY_BUDGET_USD", 1.0)
     usage.add_claude(0.4)
     usage.add_realtime(audio_out(10_000), "gpt-realtime-2.1")
-    assert [p["type"] for p in pushed] == ["usage", "usage"]
+    pushed[:] = [p for p in pushed if p["type"] == "usage"]  # only this test's own pushes
+    assert len(pushed) == 2
     assert pushed[0]["today"]["total_usd"] == 0.4 and pushed[0]["capped"] is False
     assert pushed[1]["today"]["total_usd"] == pytest.approx(1.04) and pushed[1]["capped"] is True
     assert pushed[1]["budget"] == 1.0
