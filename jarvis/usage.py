@@ -6,7 +6,8 @@ data/usage.json holds one entry per local date (the PC's clock), 90 days kept:
                                  "audio_in", "audio_cached", "audio_out",
                                  "image_in", "image_cached", "transcribe_in",
                                  "transcribe_out", "transcribe_seconds", "usd"},
-                    "claude": {"usd", "tasks"}}}
+                    "claude": {"usd", "tasks"},
+                    "text": {"in", "cached", "cache_write", "out", "calls", "usd"}}}
 
 - The voice (OpenAI Realtime): the page adds up the usage of every
   response.done and of every transcription of what monsieur said, and posts
@@ -19,6 +20,9 @@ data/usage.json holds one entry per local date (the PC's clock), 90 days kept:
   together. Once reached, /api/config says usage_capped: the wake word no
   longer opens a paid conversation (a click still can, after a confirmation)
   and no new Claude task starts (tasks._check_budget).
+- Siri's text model (raccourci.py, OpenAI Responses): each call's usage is
+  priced here (add_text, TEXT_PRICES) under "text", present only once Siri
+  spoke that day. It counts in spent_today and the cap like the rest.
 - A paired iPhone (remote.py) reports its voice usage the same way, but a page
   away from home could lie: its reports are bounded per post and by the time
   elapsed since each voice session it opened today (REMOTE_*), and what it was
@@ -62,6 +66,22 @@ PRICES = {
 DEFAULT_MODEL = "gpt-realtime-2.1"
 TOKEN_CLASSES = ("text_in", "text_cached", "text_out", "audio_in", "audio_cached", "audio_out",
                  "image_in", "image_cached")
+
+# Siri's text models (raccourci.MODELS), USD per 1M tokens, read on
+# developers.openai.com/api/docs/pricing and the model pages on 2026-10-10.
+# 'cached' and 'cache_write' are parts of the input. gpt-6-luna lists cache
+# writes at 0.125 $; the others list none, so a write costs their input rate.
+# Reasoning tokens are billed as output.
+TEXT_PRICES = {
+    "gpt-6-luna": {"in": 0.10, "cached": 0.01, "cache_write": 0.125, "out": 0.50},
+    "gpt-5.6-luna": {"in": 0.20, "cached": 0.02, "cache_write": 0.20, "out": 1.20},
+    "gpt-5.4-nano": {"in": 0.20, "cached": 0.02, "cache_write": 0.20, "out": 1.25},
+    "gpt-4.1-nano": {"in": 0.10, "cached": 0.025, "cache_write": 0.10, "out": 0.40},
+}
+TEXT_CLASSES = ("in", "cached", "cache_write", "out")
+# A model missing from the table (JARVIS_SIRI_MODEL) is priced as the dearest
+# entry: the cap errs on the safe side.
+TEXT_DEFAULT_MODEL = max(TEXT_PRICES, key=lambda m: (TEXT_PRICES[m]["out"], TEXT_PRICES[m]["in"]))
 
 # Transcription of what monsieur says, billed apart at the ASR model's rate:
 # per minute, or per 1M tokens for the models that report tokens.
@@ -145,6 +165,33 @@ def realtime_classes(usage: dict) -> dict:
     return out
 
 
+def resolve_text_model(model: str) -> str:
+    """The TEXT_PRICES entry for a model name: itself, its dated snapshot's
+    model, else the dearest entry."""
+    model = str(model or "")
+    snapshot = _SNAPSHOT.fullmatch(model)
+    model = snapshot.group(1) if snapshot else model
+    return model if model in TEXT_PRICES else TEXT_DEFAULT_MODEL
+
+
+def text_classes(usage: dict) -> dict:
+    """A Responses API usage -> token counts per billing class. Cached and
+    cache-write tokens are parts of input_tokens (never more than it)."""
+    if not isinstance(usage, dict):
+        raise ValueError("objet attendu")
+    details = _part(usage, "input_tokens_details")
+    total_in = _count(usage.get("input_tokens"))
+    cached = min(_count(details.get("cached_tokens")), total_in)
+    written = min(_count(details.get("cache_write_tokens")), total_in - cached)
+    return {"in": total_in - cached - written, "cached": cached, "cache_write": written,
+            "out": _count(usage.get("output_tokens"))}
+
+
+def text_cost(classes: dict, model: str) -> float:
+    prices = TEXT_PRICES[resolve_text_model(model)]
+    return sum(classes.get(k, 0) * prices[k] for k in TEXT_CLASSES) / 1e6
+
+
 def realtime_cost(classes: dict, model: str) -> float:
     prices = PRICES[resolve_model(model)]
     return sum(classes.get(k, 0) * prices.get(k, 0) for k in TOKEN_CLASSES) / 1e6
@@ -211,6 +258,11 @@ def _entry(raw) -> dict:
     realtime = {k: _num(rt.get(k)) for k in (*TOKEN_CLASSES, "transcribe_in", "transcribe_out",
                                              "transcribe_seconds", "usd")}
     entry = {"realtime": realtime, "claude": {"usd": _num(cl.get("usd")), "tasks": int(_num(cl.get("tasks")))}}
+    tx = raw.get("text") if isinstance(raw.get("text"), dict) else {}
+    text = {k: _num(tx.get(k)) for k in (*TEXT_CLASSES, "usd")}
+    text["calls"] = int(_num(tx.get("calls")))
+    if text["usd"] or text["calls"]:  # only once Siri spoke that day: the other days keep their shape
+        entry["text"] = text
     remote = _remote(raw.get("remote"))
     if remote:  # only once a paired device used the voice: the PC's days keep their shape
         entry["remote"] = remote
@@ -232,6 +284,8 @@ def _change(fn, publish: bool = True) -> dict:
         fn(entry)
         entry["realtime"]["usd"] = round(entry["realtime"]["usd"], 6)
         entry["claude"]["usd"] = round(entry["claude"]["usd"], 6)
+        if "text" in entry:
+            entry["text"]["usd"] = round(entry["text"]["usd"], 6)
         data[key] = entry
         oldest = (today - timedelta(days=KEEP_DAYS - 1)).isoformat()
         data = {k: v for k, v in data.items() if _DAY.fullmatch(str(k)) and k >= oldest}
@@ -293,6 +347,26 @@ def add_claude(usd) -> None:
         entry["claude"]["usd"] += usd
         entry["claude"]["tasks"] += 1
     _change(apply)
+
+
+def add_text(model: str, usage) -> float:
+    """One call of Siri's text model (raccourci.py): its Responses usage,
+    priced at TEXT_PRICES (an unknown model as the dearest); returns the USD.
+    A missing or unreadable usage still counts the call, at 0 tokens."""
+    try:
+        classes = text_classes(usage if usage is not None else {})
+    except ValueError:
+        classes = dict.fromkeys(TEXT_CLASSES, 0)
+    usd = text_cost(classes, model)
+
+    def apply(entry):
+        text = entry.setdefault("text", {**dict.fromkeys(TEXT_CLASSES, 0), "calls": 0, "usd": 0})
+        for k, v in classes.items():
+            text[k] += v
+        text["calls"] += 1
+        text["usd"] += usd
+    _change(apply)
+    return usd
 
 
 # ---------------------------------------------------------------- a paired iPhone's voice
@@ -375,8 +449,13 @@ def claude_spent_today() -> float:
     return _day(_today().isoformat())["claude"]["usd"]
 
 
+def text_spent_today() -> float:
+    """Siri's text model today."""
+    return _day(_today().isoformat()).get("text", {}).get("usd", 0.0)
+
+
 def spent_today() -> float:
-    return realtime_spent_today() + claude_spent_today()
+    return realtime_spent_today() + claude_spent_today() + text_spent_today()
 
 
 def daily_cap() -> float:
@@ -393,14 +472,23 @@ def over_daily_cap() -> bool:
     return cap > 0 and spent_today() >= cap
 
 
+def _text_usd(entry: dict) -> float:
+    return entry.get("text", {}).get("usd", 0.0)
+
+
 def _figures(key: str, entry: dict) -> dict:
-    voice, claude = entry["realtime"]["usd"], entry["claude"]["usd"]
-    return {"date": key, "realtime_usd": round(voice, 6), "claude_usd": round(claude, 6),
-            "claude_tasks": entry["claude"]["tasks"], "total_usd": round(voice + claude, 6)}
+    """One day as the page shows it. Siri's text part, once Siri spoke that day,
+    is apart (text_usd) and inside the total."""
+    voice, claude, text = entry["realtime"]["usd"], entry["claude"]["usd"], _text_usd(entry)
+    out = {"date": key, "realtime_usd": round(voice, 6), "claude_usd": round(claude, 6),
+           "claude_tasks": entry["claude"]["tasks"], "total_usd": round(voice + claude + text, 6)}
+    if "text" in entry:
+        out["text_usd"] = round(text, 6)
+    return out
 
 
 def _capped(entry: dict, cap: float) -> bool:
-    return cap > 0 and entry["realtime"]["usd"] + entry["claude"]["usd"] >= cap
+    return cap > 0 and entry["realtime"]["usd"] + entry["claude"]["usd"] + _text_usd(entry) >= cap
 
 
 def summary(days: int = 30) -> dict:

@@ -13,13 +13,17 @@
      md() nor markup strings: the PC page holds the token that runs tasks.
    - Hooks for other packages: each device row has an empty
      [data-slot="siri"] element and the phone view a [data-slot="raccourci"]
-     one; the bus says when they are drawn ("remote:devices", "remote:phone"). */
+     one; the bus says when they are drawn ("remote:devices", "remote:phone").
+   - B3 fills each device's Siri slot here: [Créer une clé Siri], its keys
+     and [Révoquer]; the phone's « Assistant raccourci » is siri-ui.js. */
 import { api, bus } from "./core.js";
 import { T, explainError, fmtElapsed, fmtRelative, fmtTime, fr } from "./strings-fr.js";
 import { button, h } from "./onboarding.js";
 import { askConfirm, registerSection, showSection } from "./settings.js";
 
 const R = T.remote;
+const S = T.siri;
+const MAX_SIRI_KEYS = 2;  // devices.MAX_SIRI_KEYS
 // qrcode-generator, pinned with its integrity hash and loaded only when pairing opens.
 const QR = {
   src: "https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js",
@@ -559,7 +563,7 @@ function unwatch(v) {
 /* ---------------------------------------------------------- PC: 5. devices */
 function renderDevices(v) {
   const list = Array.isArray(v.st.devices) ? v.st.devices : [];
-  draw(v, "devices", list, () => {
+  draw(v, "devices", [list, v.siri], () => {
     const out = [heading(R.devicesTitle)];
     if (!list.length) { out.push(h("p", { class: "set-help rm-none", text: R.noDevices })); return out; }
     const rows = list.map(d => deviceRow(v, d));
@@ -586,6 +590,7 @@ function deviceRow(v, d) {
   });
   const seen = d.last_seen ? R.lastSeen(fmtRelative(Number(d.last_seen) * 1000)) : R.neverSeen;
   const slot = h("div", { class: "rm-device-extra", "data-slot": "siri", "data-device": id });
+  slot.append(...siriKeys(v, d));
   const li = h("li", { class: "rm-device", "data-device": id },
     h("div", { class: "rm-device-head" }, h("strong", { class: "rm-device-name", text: name }), rename),
     meta,
@@ -636,6 +641,78 @@ async function revoke(v, d) {
     refresh(v);
   } catch (err) {
     note(v, "devices", explainError(err), true);
+  }
+}
+
+/* ---------------------------------------------------------- PC: 5b. Siri keys (B3) */
+/* Under a device: its active Siri keys with [Révoquer], [Créer une clé Siri]
+   and what the last action said. The secret never comes to the PC page: it
+   waits on the server for this iPhone's own « Assistant raccourci ». */
+function siriKeys(v, d) {
+  const id = String(d.id || "");
+  const safe = id.replace(/[^\w-]/g, "");
+  const keys = (Array.isArray(d.siri_keys) ? d.siri_keys : []).filter(k => k && !k.revoked);
+  const said = v.siri[id];
+  const create = button(said?.busy ? S.creating : S.create, () => createSiriKey(v, d), "ctl");
+  create.id = `rm-siri-create-${safe}`;
+  create.disabled = !!said?.busy || keys.length >= MAX_SIRI_KEYS;
+  const out = [h("p", { class: "set-label siri-title", text: S.title })];
+  if (keys.length) {
+    out.push(h("ul", { class: "siri-keys", "aria-label": S.title }, ...keys.map((k) => {
+      const kid = String(k.id || "");
+      const created = k.created ? dateLong(k.created) : "";
+      const revoke = button(S.revoke, () => revokeSiriKey(v, d, k), "ctl");
+      revoke.id = `rm-siri-revoke-${kid.replace(/[^\w-]/g, "")}`;
+      revoke.setAttribute("aria-label", S.revokeLabel(created));
+      const used = k.last_used ? S.keyUsed(fmtRelative(Number(k.last_used) * 1000)) : S.keyUnused;
+      return h("li", { class: "siri-key", "data-key": kid },
+        h("span", { class: "siri-key-text" }, h("span", { class: "mono", text: S.keyLabel(kid) }),
+          " · ", created ? S.keyCreated(created) : "", created ? " · " : "", used),
+        revoke);
+    })));
+  } else {
+    out.push(h("p", { class: "set-help", text: S.createHelp }));
+  }
+  out.push(h("div", { class: "set-actions" }, create));
+  if (keys.length >= MAX_SIRI_KEYS) out.push(h("p", { class: "set-help", text: S.maxKeys(String(MAX_SIRI_KEYS)) }));
+  if (said?.text) {
+    out.push(h("p", { class: said.error ? "set-status err siri-said" : "set-status siri-said", role: "status",
+                      text: said.text }));
+  }
+  return out;
+}
+
+function siriSay(v, id, text, error = false, busy = false) {
+  v.siri = { ...v.siri, [id]: { text, error, busy } };
+  renderDevices(v);
+}
+
+async function createSiriKey(v, d) {
+  const id = String(d.id || "");
+  siriSay(v, id, "", false, true);
+  try {
+    const r = await api(`/api/remote/devices/${encodeURIComponent(id)}/siri-key`, { method: "POST" });
+    if (v !== view) return;
+    siriSay(v, id, S.created(fmtTime(new Date(Number(r.handoff_until) * 1000))));
+    refresh(v);
+  } catch (err) {
+    if (v === view) siriSay(v, id, explainError(err), true);
+  }
+}
+
+async function revokeSiriKey(v, d, k) {
+  const id = String(d.id || "");
+  const ok = await askConfirm({ title: S.revokeTitle, text: S.revokeAsk, ok: S.revoke });
+  if (!ok) return;
+  try {
+    await api(`/api/remote/siri-keys/${encodeURIComponent(String(k.id || ""))}`, { method: "DELETE" });
+    if (v !== view) return;
+    v.st.devices = (v.st.devices || []).map(x => (x.id === d.id ? {
+      ...x, siri_keys: (x.siri_keys || []).map(y => (y.id === k.id ? { ...y, revoked: true } : y)) } : x));
+    siriSay(v, id, S.revoked);
+    refresh(v);
+  } catch (err) {
+    if (v === view) siriSay(v, id, explainError(err), true);
   }
 }
 
@@ -833,7 +910,8 @@ async function forgetNow(v) {
 function build(ctx) {
   if (view) unwatch(view);
   const root = h("div", { class: "rm-root" }, h("p", { class: "set-loading", role: "status", text: R.loading }));
-  view = { root, ctx, st: null, serve: null, blocks: null, notes: {}, editing: new Set(), tick: 0, poll: 0 };
+  view = { root, ctx, st: null, serve: null, blocks: null, notes: {}, editing: new Set(), tick: 0, poll: 0,
+           siri: {} };
   (ctx.remote ? loadPhone : loadPc)(view);
   return [root];
 }
