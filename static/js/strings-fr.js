@@ -46,6 +46,7 @@ export const T = typeset({
     tasks: (n, elapsed) => (n === 1 ? ` · 1 tâche en cours (${elapsed})` : ` · ${n} tâches en cours`),
     toolElapsed: (s) => ` (${s} s)`,
     serverDown: "Serveur JARVIS déconnecté · reconnexion…",
+    serverClosed: "JARVIS est fermé · relancez JARVIS.bat",
     error: "Erreur",
   },
   tool: {
@@ -229,8 +230,17 @@ export const T = typeset({
     notifTitle: "Notifications",
     warning: "Attention",
     reminder: "Rappel",
-    reminderLate: (minutes) => ` (en retard de ${minutes} min)`,
+    // 45 → « 45 min », 135 → « 2 h 15 », 2880 → « 2 jours » (a reminder missed over a weekend)
+    lateBy: (minutes) => {
+      const m = Math.max(1, Math.round(Number(minutes) || 0));
+      if (m < 60) return `${m} min`;
+      if (m < 1440) return m % 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}` : `${m / 60} h`;
+      const d = Math.round(m / 1440);
+      return `${d} jour${d > 1 ? "s" : ""}`;
+    },
+    reminderLate: (minutes) => ` (en retard de ${T.delivery.lateBy(minutes)})`,
     reminderAt: (time) => `Rappel (${time})`,
+    reminderDueAt: (time, minutes) => `Rappel de ${time} (en retard de ${T.delivery.lateBy(minutes)})`,
     // WP17: the buttons of a reminder that went off, and the local briefing's card
     snoozed: (time) => `Rappel reporté : ${time}.`,
     snoozeFailed: (why) => `Report impossible : ${why}`,
@@ -596,7 +606,10 @@ export const T = typeset({
     warnText: (pct, spent, cap) => `${pct}${NBSP}% du plafond du jour : environ ${spent} sur ${cap}. `
       + "Modifiable dans Réglages › Coûts.",
     capTitle: "Plafond du jour atteint",
-    capText: (spent, cap) => `Environ ${spent} dépensés aujourd'hui, pour un plafond de ${cap}. `
+    // claude: the Claude part when there is one (an API-price estimate, not billed on a claude.ai plan).
+    capText: (spent, cap, claude = "") => `Environ ${spent} estimés aujourd'hui, pour un plafond de ${cap}. `
+      + (claude ? `Dont Claude ≈ ${claude} : une estimation au tarif de l'API, non facturée avec un abonnement `
+        + "claude.ai, que le plafond compte quand même. " : "")
       + "Le mot d'éveil n'ouvre plus de conversation et aucune nouvelle tâche Claude ne démarre. "
       + "Un clic sur l'orbe reste possible, après confirmation.",
     openSettings: "Réglages › Coûts",

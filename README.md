@@ -260,7 +260,8 @@ Ensuite, dites **« Jarvis »**… et parlez !
   Ouvrir JARVIS, Parler, Mot d'éveil (activer ou couper), Ne pas déranger 1 h,
   Démarrer avec Windows et **Quitter JARVIS**.
 - Pour quitter : icône JARVIS → **Quitter JARVIS**. Les tâches Claude en cours
-  sont alors arrêtées (elles apparaissent « Interrompue »).
+  sont alors arrêtées (elles apparaissent « Interrompue »), la conversation en
+  cours se termine et la fenêtre JARVIS se ferme.
 - Pendant qu'une tâche Claude tourne, JARVIS empêche le PC de se mettre en
   veille.
 

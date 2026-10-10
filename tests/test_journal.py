@@ -188,6 +188,23 @@ def test_tasks_and_reminders_leave_a_line():
     assert {r["role"] for r in rows} == {"system"}
 
 
+def test_the_morning_briefing_leaves_its_text_for_recall():
+    # « redis-moi le briefing » after a reload: its text lives nowhere else once told.
+    brief = ("Bonjour monsieur. Nous sommes samedi 10 octobre. Aujourd'hui à Laon : éclaircies, de 9 à 16 °C. "
+             "Dans A.R.E.S : 2 éléments aujourd'hui. Vos rappels du jour : 18 h, Appeler maman. Bonne journée.")
+    events.publish("briefing", {"id": "briefing-2026-10-10", "title": "Briefing du matin", "text": brief,
+                                "queued": False, "capped": False})
+    events.publish("briefing", {"id": "vide", "text": ""})  # nothing to keep
+    (row,) = journal.read_day(date.today().isoformat())
+    assert row["text"] == "Briefing du matin : " + brief and row["source"] == "briefing"
+    out = journal.recall({"query": "briefing", "date": "aujourd'hui"})
+    (snippet,) = out["snippets"]
+    assert snippet["text"].endswith("Appeler maman. Bonne journée.")  # whole, not cut at 300 characters
+    assert "DONNÉES" in out["note"]
+    events.publish("briefing", {"id": "long", "text": "x" * 5000})
+    assert max(len(r["text"]) for r in journal.read_day(date.today().isoformat())) == journal.BRIEFING_SNIPPET
+
+
 def test_no_private_prompt_reaches_the_journal(monkeypatch):
     """The full prompt (with memory) and the voice session stay out: only the title is noted."""
     events.publish("task", {"id": "t9", "title": "Analyse", "status": "running",

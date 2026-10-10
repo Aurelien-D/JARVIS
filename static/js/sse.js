@@ -10,6 +10,7 @@ import { $, TOKEN, api, bus, state } from "./core.js";
 import { T } from "./strings-fr.js";
 
 const SERVER_DOWN = T.status?.serverDown || "Serveur JARVIS déconnecté · reconnexion…";
+const SERVER_CLOSED = T.status?.serverClosed || "JARVIS est fermé · relancez JARVIS.bat";
 const ID_KEY = "jarvis.client";
 
 let es = null;
@@ -18,6 +19,7 @@ let lastEventId = "";
 let reopenTimer = null, reopenDelay = 3000;
 let lastPresence = "";
 let opened = 0;
+let closed = false;  // « Quitter JARVIS »: the server said it stops
 
 /* This page's id. Kept across a reload (sessionStorage), but taken out of
    storage while the page lives and put back when it goes: a duplicated tab
@@ -42,6 +44,9 @@ export function listenEvents() {
   if (lastEventId) params.set("last_event_id", lastEventId);
   const source = es = new EventSource(`/api/events?${params}`);
   source.onopen = () => {
+    // JARVIS relaunched while this page stayed open (its window couldn't
+    // close): a fresh page brings the wake word and the panels back.
+    if (closed) { location.reload(); return; }
     reopenDelay = 3000;
     setServerChip(false);
     opened++;
@@ -75,9 +80,18 @@ function reopenLater() {
 function setServerChip(down) {
   const chip = $("serverChip");
   if (!chip) return;
-  chip.textContent = down ? SERVER_DOWN : "";
+  chip.textContent = down ? (closed ? SERVER_CLOSED : SERVER_DOWN) : "";
   chip.className = down ? "chip err" : "chip";
   chip.hidden = !down;
+}
+
+/* « Quitter JARVIS »: the chip says so (not « reconnexion… »). The stream
+   keeps trying, slowly: a relaunched JARVIS reloads this page (its new
+   token answers 401 to the old one, see onerror). */
+export function serverClosed() {
+  closed = true;
+  reopenDelay = 30000;
+  setServerChip(true);
 }
 
 /* Focus and voice session, for the server's choice of leader. claim: monsieur

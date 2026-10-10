@@ -144,6 +144,9 @@ def test_the_cap_stops_the_wake_word_and_asks_before_a_click(jarvis, app_server)
     jarvis.wait_for_function("__jarvis.state.config.usage_capped === true")
     card = jarvis.wait_for_selector("#card-usage-cap")
     assert "Plafond du jour atteint" in card.inner_text()
+    # Claude's part is an API-price estimate: the card says it isn't billed on a claude.ai plan.
+    assert "estimés aujourd'hui" in card.inner_text() and f"Dont Claude ≈ 0,12{NBSP}$" in card.inner_text()
+    assert "non facturée avec un abonnement claude.ai" in card.inner_text()
     assert chip(jarvis) == f"Aujourd'hui ≈ 0,42{NBSP}$ · plafond atteint"
     minted = len(app_server.sessions)
     # The wake word: refused, and it says why.

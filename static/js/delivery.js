@@ -206,10 +206,12 @@ function onDnd(ev) {
 }
 
 /* ---------------------------------------------------------- delivering */
-/* whole: what is spoken is the whole message (nothing left for a session). */
+/* whole: what is spoken is the whole message (nothing left for a session).
+   briefing: it holds the morning briefing (alone, or among missed messages). */
 function message({ text = "", kind = "info", priority = "normal", spoken = "", notice = "", data, label = "",
-                   inboxIds = [], count = 1, whole = false } = {}) {
-  return { text, kind, priority, spoken, notice, data, label, inboxIds: [...inboxIds], count, whole: !!whole };
+                   inboxIds = [], count = 1, whole = false, briefing = false } = {}) {
+  return { text, kind, priority, spoken, notice, data, label, inboxIds: [...inboxIds], count, whole: !!whole,
+           briefing: !!briefing || kind === "briefing" };
 }
 
 function ack(ids) {
@@ -271,10 +273,13 @@ export function deliver(msg = {}) {
     return;
   }
   speak(m.spoken).then((said) => {
-    if (said) {
+    // A briefing's teaser (« appelez-moi quand vous voudrez l'entendre ») is
+    // no telling: it stays in the inbox until the session tells it
+    // (onResponseDone), so a reload or a reopened window still has it.
+    if (said && !(keep && m.briefing)) {
       ack(m.inboxIds);  // he heard it; the full text may still wait in the queue
       m.inboxIds = [];
-    } else if (!keep) {
+    } else if (!said && !keep) {
       queue(m);  // blocked (no click yet) or no voice: told at the next session
     }
   });
@@ -561,12 +566,26 @@ function onAcked(ev) {
 }
 
 /* ---------------------------------------------------------- missed while no page was open */
+/* When a reminder from the inbox was due: it went off late (the PC asleep),
+   or went off on time with no page open (its inbox time is then the due time). */
+function dueOf(item) {
+  const p = item.payload || {};
+  const created = Number(item.created) || Date.now() / 1000;
+  return new Date((created - 60 * (Number(p.late_minutes) || 0)) * 1000);
+}
+
+function reminderTitle(item) {
+  const late = Number((item.payload || {}).late_minutes) || 0;
+  const at = fmtTime(dueOf(item));
+  return late ? S.reminderDueAt(at, late) : S.reminderAt(at);
+}
+
 function describe(item) {
   const p = item.payload || {};
   const at = fmtTime(new Date((item.created || Date.now() / 1000) * 1000));
   if (item.kind === "reminder") {
     const text = p.text || p.title || "";
-    return { spoken: `rappel : ${text}`, full: `Rappel de ${at} : ${text}` };
+    return { spoken: `rappel : ${text}`, full: `${reminderTitle(item)} : ${text}` };
   }
   if (item.kind === "task") {
     const title = p.title || "sans titre", word = STATUS_WORD[p.status] || "en échec";
@@ -599,7 +618,12 @@ function missedMessage(items) {
     notice: `Pendant votre absence : ${n} message${n > 1 ? "s" : ""}.`,
     inboxIds: items.map(it => it.id),
     count: n,
+    briefing: items.some(isBriefing),
   };
+}
+
+function isBriefing(it) {
+  return it.kind === "briefing" || (it.kind === "task" && (it.payload || {}).origin === "briefing");
 }
 
 /* What no page has told yet (last 24 h), as one message. */
@@ -618,10 +642,13 @@ export function syncInbox() {
       ack(warnings.map(it => it.id));
       const told = fresh.filter(it => it.kind !== "warning");
       for (const it of told) {
+        const p = it.payload || {};
         if (it.kind === "reminder") {
-          const p = it.payload || {};
-          addCard(S.reminderAt(fmtTime(new Date(it.created * 1000))), p.text || p.title || "", "warning",
+          addCard(reminderTitle(it), p.text || p.title || "", "warning",
                   { id: `rappel-${it.id}`, actions: reminderActions(p.id, it.id) });
+        } else if (it.kind === "briefing" && (p.text || p.summary)) {
+          // Not told yet (a reload, a reopened window): its card is back too.
+          addCard(S.briefing, String(p.text || p.summary), "info", { id: `briefing-${it.id}` });
         }
       }
       if (told.length) deliver(missedMessage(told));

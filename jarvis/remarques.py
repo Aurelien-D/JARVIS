@@ -37,6 +37,7 @@ RECENT_S = 24 * 3600
 VOICE_AGAIN_S = 12 * 3600
 KEEP_ENTRIES = 100
 FAILED = ("error", "interrompue", "interrupted")
+INTERRUPTED = ("interrompue", "interrupted")  # JARVIS was closed during it: nothing failed
 _KEY = re.compile(r"^[\w-]{1,64}$")
 
 _lock = threading.Lock()
@@ -54,6 +55,15 @@ class T:
     failed_why = "Échec il y a moins de 24 heures, sans nouvel essai depuis."
     failed_action = "Relancer ?"
     failed_voice = "Une tâche Claude a échoué ces dernières 24 heures : proposez de la relancer."
+    interrupted = "La tâche « {title} » a été interrompue (JARVIS fermé)."
+    interrupted_why = "Interrompue il y a moins de 24 heures, sans nouvel essai depuis."
+    interrupted_voice = ("Une tâche Claude a été interrompue par la fermeture de JARVIS ces dernières "
+                         "24 heures : proposez de la relancer.")
+    interrupted_capped_why = ("Interrompue il y a moins de 24 heures. Plafond du jour atteint : aucune tâche "
+                              "Claude ne démarre avant demain, ou avant de relever le plafond dans Réglages › Coûts.")
+    interrupted_capped_voice = ("Une tâche Claude a été interrompue par la fermeture de JARVIS ces dernières "
+                                "24 heures, mais le plafond de dépense du jour est atteint : ne proposez pas de "
+                                "la relancer aujourd'hui.")
     failed_capped_why = ("Échec il y a moins de 24 heures. Plafond du jour atteint : aucune tâche Claude "
                          "ne démarre avant demain, ou avant de relever le plafond dans Réglages › Coûts.")
     failed_capped_voice = ("Une tâche Claude a échoué ces dernières 24 heures, mais le plafond de dépense "
@@ -112,13 +122,17 @@ def detect(now: float | None = None) -> list:
                     "action": {"type": "compose", "label": T.overdue_action, "text": T.overdue_prompt}})
     task = _failed_task(now)
     if task:
-        remark = {"key": f"tache-{task['id']}"[:64], "kind": "question",
-                  "text": T.failed.format(title=str(task.get("title"))[:80]),
-                  "why": T.failed_why, "voice": T.failed_voice,
-                  "action": {"type": "retry", "label": T.failed_action, "task": task["id"],
-                             "title": str(task.get("title"))[:80]}}
+        title = str(task.get("title"))[:80]
+        if task.get("status") in INTERRUPTED:
+            text, why, voice = T.interrupted.format(title=title), T.interrupted_why, T.interrupted_voice
+            capped_why, capped_voice = T.interrupted_capped_why, T.interrupted_capped_voice
+        else:
+            text, why, voice = T.failed.format(title=title), T.failed_why, T.failed_voice
+            capped_why, capped_voice = T.failed_capped_why, T.failed_capped_voice
+        remark = {"key": f"tache-{task['id']}"[:64], "kind": "question", "text": text, "why": why, "voice": voice,
+                  "action": {"type": "retry", "label": T.failed_action, "task": task["id"], "title": title}}
         if _capped():  # a retry would be refused today (tasks._check_budget)
-            remark.update(why=T.failed_capped_why, voice=T.failed_capped_voice, action=None)
+            remark.update(why=capped_why, voice=capped_voice, action=None)
         out.append(remark)
     missed = [r for r in scheduler.recent_fired(RECENT_S / 3600, now) if r.get("late_minutes")]
     if missed:

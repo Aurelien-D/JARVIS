@@ -147,7 +147,7 @@ function renderAlerts(tot, lv) {
   if (!shown && settings.get("usageAlert", "") === key) return;
   settings.set("usageAlert", key);
   const cap = num(server.budget);
-  const text = lv === "cap" ? U.capText(money(tot.total), money(cap))
+  const text = lv === "cap" ? U.capText(money(tot.total), money(cap), tot.claude > 0 ? money(tot.claude) : "")
     : U.warnText(Math.floor(tot.total / cap * 100), money(tot.total), money(cap));
   addCard(lv === "cap" ? U.capTitle : U.warnTitle, text, "warning",
           { id, actions: [{ label: U.openSettings, onClick: openCosts }] });

@@ -225,7 +225,9 @@ _TIME = re.compile(
     r"(?: ?(?:minutes?|min|mn))?"
     r"(?: (?P<frac>et demie?|et quart|moins le quart|moins (?P<less>\d{1,2}|" + _WORDS_RE + r")))?"
     r"(?: (?P<part>du matin|du soir|de l'apres-midi|de l'apres midi|de la nuit))?(?![\w/])")
-_NOON = re.compile(r"\b(?P<w>midi|minuit)(?: (?P<frac>et demie?|et quart|moins le quart|moins (?P<less>\d{1,2}|"
+# Not the 'midi' of 'apres-midi' / 'apres midi' (an afternoon, not noon).
+_NOON = re.compile(r"\b(?P<w>(?<!apres[- ])midi|minuit)"
+                   r"(?: (?P<frac>et demie?|et quart|moins le quart|moins (?P<less>\d{1,2}|"
                    + _WORDS_RE + r")))?\b")
 _MONTHS_FOLDED = [_fold(m) for m in MONTHS]
 _WEEKDAY = r"(?P<wd>lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)"
@@ -417,6 +419,10 @@ def compute_due(at: str | None = None, delay_minutes=None, now: datetime | None 
         return due if due > now else due + timedelta(days=1)
     due = None
     if re.match(r"\d{4}-\d{2}-\d{2}", at):
+        # The tool contract is local time: a trailing 'Z' is read as local, the
+        # same on Python 3.10 (which refuses it) as on 3.11+ (which reads UTC).
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}[T ][\d:.]+[Zz]", at):
+            at = at[:-1]
         try:
             due = datetime.fromisoformat(at)
         except ValueError:
@@ -823,7 +829,12 @@ def tick(now: float | None = None):
         try:
             _fire(item, late=now - item["due"], now=now)
         except Exception as exc:  # noqa: BLE001 - one bad item must not stop the others
-            logging.exception("JARVIS: échec du déclenchement de %s", item.get("id"))
+            if isinstance(exc, ValueError) and item.get("kind") == "task":
+                # A refusal (the daily cap, say), not a bug: one line, no traceback
+                # in data/jarvis.log at every routine of the day.
+                logging.info("JARVIS: routine %s non lancée : %s", item.get("id"), exc)
+            else:
+                logging.exception("JARVIS: échec du déclenchement de %s", item.get("id"))
             if item.get("kind") == "task":
                 _warn(T.failed.format(title=item.get("title", ""), why=exc), f"routine-{item['id']}-{int(now)}")
     for item in skipped:

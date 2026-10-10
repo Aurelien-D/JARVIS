@@ -87,11 +87,31 @@ def test_hour_and_delay_errors_are_french():
     ("le 5", datetime(2026, 11, 5, 9, 0)),                   # the 5th has passed: next month
     ("12/10 à 9h30", datetime(2026, 10, 12, 9, 30)),
     ("dans 3 jours à 9 h", datetime(2026, 10, 12, 9, 0)),
+    # 'après-midi' is an afternoon: its 'midi' is not noon.
+    ("cet après-midi", datetime(2026, 10, 9, 14, 0)),
+    ("cet après-midi à 4 h", datetime(2026, 10, 9, 16, 0)),
+    ("à 15 h cet après-midi", datetime(2026, 10, 9, 15, 0)),
+    ("à 4 h de l'après-midi", datetime(2026, 10, 9, 16, 0)),
+    ("demain après-midi", datetime(2026, 10, 10, 14, 0)),
+    ("demain après-midi à 3 h", datetime(2026, 10, 10, 15, 0)),
+    ("demain apres midi a 15h", datetime(2026, 10, 10, 15, 0)),
+    ("samedi après-midi à 15 h", datetime(2026, 10, 10, 15, 0)),
+    ("mardi après-midi", datetime(2026, 10, 13, 14, 0)),
+    ("demain à midi", datetime(2026, 10, 10, 12, 0)),
 ])
 def test_plain_french_is_understood(at, expected):
     """Acceptance: 'dans un quart d'heure' → now + 15 min; 'mardi prochain à
     9 h' → the next Tuesday at 09:00 (frozen clock: Friday 9 October 10:00)."""
     assert scheduler.compute_due(at, now=FRIDAY) == expected
+
+
+def test_an_iso_time_ending_in_z_is_local_time_on_every_python():
+    # Python 3.10's fromisoformat refuses 'Z'; 3.11+ reads it as UTC (2 h off
+    # on a French PC in summer). The tool contract is local time: both read it so.
+    assert scheduler.compute_due("2026-10-12T09:00:00Z", now=FRIDAY) == datetime(2026, 10, 12, 9, 0)
+    assert scheduler.compute_due("2026-10-12 09:00z", now=FRIDAY) == datetime(2026, 10, 12, 9, 0)
+    with pytest.raises(ValueError):
+        scheduler.compute_due("2026-10-12Z", now=FRIDAY)
 
 
 def test_repeats_skip_ahead():
@@ -234,14 +254,28 @@ def test_routine_missed_by_more_than_two_hours_is_skipped_and_rescheduled(publis
     assert [e["text"] for e in published if e["type"] == "reminder"] == ["Vieux"]
 
 
-def test_routine_that_cannot_start_says_why(published, monkeypatch):
+def test_routine_that_cannot_start_says_why(published, monkeypatch, caplog):
     def refuse(*a, **k):
         raise ValueError("Plafond du jour atteint (2,00 $).")
     monkeypatch.setattr(tasks, "create_task", refuse)
     scheduler.add("task", "Veille", "veille", delay_minutes=1)
+    caplog.set_level(logging.INFO)
     scheduler.tick(time.time() + 120)
     (warning,) = [e for e in published if e["type"] == "warning"]
     assert warning["text"] == "Routine « Veille » non lancée : Plafond du jour atteint (2,00 $)."
+    # An expected refusal: one INFO line, no ERROR with a traceback (data/jarvis.log all day long).
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert any("non lancée : Plafond du jour atteint" in r.getMessage() and not r.exc_info for r in caplog.records)
+
+
+def test_a_routine_that_breaks_unexpectedly_is_still_logged_with_its_traceback(published, monkeypatch, caplog):
+    def broken(*a, **k):
+        raise KeyError("profil")
+    monkeypatch.setattr(tasks, "create_task", broken)
+    scheduler.add("task", "Veille", "veille", delay_minutes=1)
+    scheduler.tick(time.time() + 120)
+    assert [r for r in caplog.records if r.levelno == logging.ERROR and r.exc_info]
+    assert [e for e in published if e["type"] == "warning"]
 
 # ---------------------------------------------------------------- resilience
 
@@ -458,7 +492,8 @@ def test_full_access_routine_keeps_its_instruction_and_frequency(published):
 
 
 def test_briefing_runs_once_in_the_morning(published, monkeypatch):
-    from jarvis import briefing
+    from jarvis import briefing, health
+    monkeypatch.setattr(health, "onboarded", lambda: True)  # the briefing waits for the Mise en route
     ran = []
     monkeypatch.setattr(briefing, "run", lambda now=None: ran.append(now))
     monkeypatch.setattr(config, "BRIEFING_TIME", "08:00")

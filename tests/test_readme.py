@@ -171,7 +171,7 @@ def test_onboarding_steps_in_order():
     steps = re.findall(r'"([^"]+)"', re.search(r"steps: \[([^\]]+)\]", STRINGS_JS).group(1))
     text = FLAT[FLAT.index("### La Mise en route"):FLAT.index("### Au quotidien")]
     at = [text.find(f"**{step}**") for step in steps]
-    assert -1 not in at, dict(zip(steps, at))
+    assert -1 not in at, dict(zip(steps, at, strict=True))
     assert at == sorted(at)
 
 

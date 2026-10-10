@@ -6,7 +6,7 @@ always give the same French text.
 
 - Only on the days of BRIEFING_DAYS ('lun-ven' by default), once, between
   BRIEFING_TIME and four hours later (switched on in the afternoon, JARVIS
-  doesn't brief about the morning).
+  doesn't brief about the morning), and never before the Mise en route is done.
 - The text goes to the inbox first, then to the pages ('briefing'). During
   quiet hours or « Ne pas déranger » it is marked queued: the page keeps it
   behind the badge instead of saying it. With no page open, one native
@@ -24,7 +24,7 @@ import re
 import threading
 from datetime import datetime, timedelta
 
-from . import ares, config, events, inbox, info, scheduler, store, tasks, usage
+from . import ares, config, events, health, inbox, info, scheduler, store, tasks, usage
 
 STATE_FILE = "state.json"  # 'briefing_date' is ours
 WINDOW = timedelta(hours=4)
@@ -223,6 +223,10 @@ def maybe_run(now: float):
     today = current.date().isoformat()
     claimed = (str(config.DATA_DIR), today)
     if _done["day"] == claimed:
+        return
+    # A first launch: the Mise en route comes first, not an empty briefing on
+    # top of it. The day is not claimed: the briefing follows once it is done.
+    if not health.onboarded():
         return
     with store.LOCK:
         state = store.load(STATE_FILE, {})

@@ -47,6 +47,21 @@ def test_a_failed_task_suggests_a_retry_until_it_is_retried():
     assert remarques.items(NOW) == []
 
 
+@pytest.mark.parametrize("status", ["interrompue", "interrupted"])
+def test_a_task_cut_short_by_quitting_is_called_interrupted_not_failed(status, monkeypatch):
+    # Monsieur closed JARVIS during the task: nothing failed, it is still worth a retry.
+    add_task("t1", "Longue tâche", status=status, output="JARVIS a été fermé pendant la tâche.")
+    (r,) = remarques.items(NOW)
+    assert r["text"] == "La tâche « Longue tâche » a été interrompue (JARVIS fermé)."
+    assert "échou" not in r["text"] + r["why"] + r["voice"].lower()
+    assert r["why"] == "Interrompue il y a moins de 24 heures, sans nouvel essai depuis."
+    assert r["action"] == {"type": "retry", "label": "Relancer ?", "task": "t1", "title": "Longue tâche"}
+    monkeypatch.setattr(remarques, "_capped", lambda: True)
+    monkeypatch.setattr(remarques, "_last", {"items": None})
+    (r,) = remarques.items(NOW)
+    assert r["action"] is None and "Plafond du jour atteint" in r["why"] and "échou" not in r["why"]
+
+
 @pytest.mark.parametrize("extra", [{"ended": NOW - 25 * 3600}, {"status": "done"}, {"status": "cancelled"},
                                    {"origin": "approbation"}])
 def test_no_retry_suggestion_for_old_successful_or_approval_tasks(extra):

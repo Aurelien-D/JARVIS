@@ -773,10 +773,20 @@ def _bring_to_front(hwnd) -> bool:
     return False
 
 
+# A window just launched has no title for a second or two (the browser hasn't
+# drawn the page yet), so find_app_window can't see it: at startup the
+# launcher and a reminder missed while JARVIS was off would each open one.
+# A launch in the last LAUNCH_GRACE seconds counts as the window.
+LAUNCH_GRACE = 20.0
+_launched = {"at": None}
+_launch_lock = threading.Lock()
+
+
 def show_app_window(url: str) -> str:
     """Bring JARVIS's window to the front (a second launch, the hotkey, the tray
     icon, a reminder) instead of opening another one. Returns 'focused',
-    'flashed' (Windows refused the focus: the taskbar button blinks) or 'opened'."""
+    'flashed' (Windows refused the focus: the taskbar button blinks), 'opened'
+    or 'opening' (one was launched moments ago and is still coming up)."""
     if config.IS_WINDOWS:
         hwnd = find_app_window()
         if hwnd:
@@ -786,6 +796,11 @@ def show_app_window(url: str) -> str:
         with contextlib.suppress(OSError, subprocess.SubprocessError):
             if subprocess.run(["wmctrl", "-a", APP_TITLE], capture_output=True, timeout=5).returncode == 0:
                 return "focused"
+    with _launch_lock:  # check and claim at once: two callers never both launch
+        at = _launched["at"]
+        if at is not None and time.monotonic() - at < LAUNCH_GRACE:
+            return "opening"
+        _launched["at"] = time.monotonic()
     open_app_window(url)
     return "opened"
 

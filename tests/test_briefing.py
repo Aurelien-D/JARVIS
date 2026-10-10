@@ -7,8 +7,9 @@ from datetime import datetime
 
 import pytest
 
-from jarvis import ares, briefing, config, desktop, events, inbox, info, memory, scheduler, store, tasks
+from jarvis import ares, briefing, config, desktop, events, health, inbox, info, memory, scheduler, store, tasks
 
+REAL_ONBOARDED = health.onboarded
 MONDAY_8 = datetime(2026, 10, 12, 8, 0)
 SATURDAY_8 = datetime(2026, 10, 10, 8, 0)
 AGENDA = ("• Appeler le labo — Aujourd'hui · 14:00\n"
@@ -16,6 +17,12 @@ AGENDA = ("• Appeler le labo — Aujourd'hui · 14:00\n"
           "• Payer la facture EDF — En retard (2 j)\n"
           "• (rappel) Dentiste — Demain · 09:00")
 WEATHER = "Aujourd'hui à Laon : pluie faible, de 8 à 14 °C, risque de pluie 80 %."
+
+
+@pytest.fixture(autouse=True)
+def onboarded(monkeypatch):
+    """Monsieur has done the Mise en route (the briefing waits for it)."""
+    monkeypatch.setattr(health, "onboarded", lambda: True)
 
 
 @pytest.fixture
@@ -195,3 +202,22 @@ def test_briefing_once_a_day_in_its_window(published, sources, monkeypatch):
     briefing._thread.join(5)
     briefing.maybe_run(MONDAY_8.replace(minute=6).timestamp())
     assert ran == [MONDAY_8.replace(minute=5)]
+
+
+def test_no_briefing_before_the_mise_en_route_then_it_follows_it(published, sources, monkeypatch):
+    # A first launch on a weekday morning: no empty briefing on top of the
+    # onboarding dialog; the day is not claimed, so it comes once that is done.
+    monkeypatch.setattr(config, "BRIEFING_TIME", "08:00")
+    monkeypatch.setattr(config, "BRIEFING_DAYS", "tous")
+    monkeypatch.setattr(briefing, "_thread", None)
+    monkeypatch.setitem(briefing._done, "day", None)
+    monkeypatch.setattr(health, "onboarded", REAL_ONBOARDED)
+    assert health.onboarded() is False  # a fresh data folder
+    scheduler.tick(MONDAY_8.replace(minute=10).timestamp())
+    assert briefing._thread is None and published == [] and inbox.pending() == []
+    assert "briefing_date" not in store.load("state.json", {})
+    health.set_onboarded()
+    scheduler.tick(MONDAY_8.replace(minute=40).timestamp())
+    briefing._thread.join(5)
+    assert [e["type"] for e in published] == ["briefing"]
+    assert store.load("state.json", {})["briefing_date"] == MONDAY_8.date().isoformat()

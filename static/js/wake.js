@@ -36,6 +36,7 @@ let localSR = false;       // on-device recognition in use
 let localStatus = null;    // available() answer: available | downloadable | downloading | unavailable | unsupported
 let installing = false;
 let paused = false;        // microphone refused, not for good: waits to be allowed again
+let closed = false;        // « Quitter JARVIS »: never listens again in this page
 let muted = 0;             // JARVIS speaking through the browser's voice: don't hear it
 let guardTimer = null;
 let cappedToastAt = 0, configAt = 0;
@@ -57,7 +58,7 @@ function publishEngine() {
 }
 
 export function goStandby() {
-  const on = wakeWanted() && !paused;
+  const on = wakeWanted() && !paused && !closed;
   setMode(on ? "standby" : "off");
   if (on) startWake(); else stopWake();
   renderToggle();
@@ -130,7 +131,7 @@ function scheduleRestart(delay = restartDelay) {
 export function startWake() {
   clearTimeout(restartTimer);
   restartTimer = null;
-  if (!wakeWanted() || paused || muted || wakeRec || state.mode !== "standby" || state.connecting) return;
+  if (closed || !wakeWanted() || paused || muted || wakeRec || state.mode !== "standby" || state.connecting) return;
   if (!isLeader()) { renderToggle(); return; }  // the leader page listens for both
   let rec;
   try { rec = new SR(); } catch (err) { console.warn(err); return; }
@@ -172,6 +173,12 @@ export function startWake() {
   startedAt = Date.now();
   heard = trouble = false;
   publishEngine();
+}
+
+/* JARVIS is quitting: the microphone is let go for good in this page. */
+export function shutDown() {
+  closed = true;
+  stopWake();
 }
 
 export function stopWake() {

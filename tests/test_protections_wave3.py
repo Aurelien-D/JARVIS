@@ -38,7 +38,7 @@ from test_protections_wave2 import HOSTILE, SOURCES, _reset_ares, asgi_status
 from test_security import FOREIGN_ORIGINS, KNOWN_API, served_routes
 
 import server
-from jarvis import (api_schedules, ares, briefing, config, confirm, events, inbox, info, memory, realtime,
+from jarvis import (api_schedules, ares, briefing, config, confirm, events, health, inbox, info, memory, realtime,
                     remarques, scheduler, security, settings, store, tasks, tools, tools_agenda, usage)
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -669,6 +669,7 @@ def test_usage_remarques_and_briefing_state_write_fixed_names_holds(client, monk
     monkeypatch.setattr(config, "BRIEFING_DAYS", "tous")
     monkeypatch.setattr(config, "BRIEFING_NEWS", False)
     briefing._done["day"] = None
+    monkeypatch.setattr(health, "onboarded", lambda: True)  # the briefing waits for the Mise en route
     briefing.maybe_run(FAR.timestamp())
     assert briefing._thread is not None
     briefing._thread.join(10)

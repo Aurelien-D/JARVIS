@@ -1,4 +1,5 @@
 """The launcher: Quit, Ctrl+C and a second launch."""
+import json
 import socket
 import sys
 import threading
@@ -55,6 +56,8 @@ def test_quit_is_quick_with_the_page_open(monkeypatch):
     assert not run.is_alive() and not page.is_alive()
     assert all(not line.startswith(("RemoteProtocolError", "ReadError")) for line in lines)
     assert time.time() - started < 2.5  # streams ended, not cut after timeout_graceful_shutdown
+    # The page was told first: it ends its voice session and closes its window.
+    assert any(line.startswith("data: ") and json.loads(line[6:]).get("type") == "shutdown" for line in lines)
 
 
 @pytest.fixture

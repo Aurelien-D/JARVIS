@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from jarvis import config, events, info, tasks  # noqa: E402
+from jarvis import config, desktop, events, info, tasks  # noqa: E402
 
 
 def _no_network(request):
@@ -30,6 +30,7 @@ def isolated(tmp_path, monkeypatch):
     # internet: test_ares and test_info bring their own fakes.
     monkeypatch.setattr(config, "ARES", "off")
     monkeypatch.setattr(info, "TRANSPORT", httpx.MockTransport(_no_network))
+    monkeypatch.setitem(desktop._launched, "at", None)  # no window "still coming up" from another test
     tasks.TASKS.clear()
     yield
     tasks.TASKS.clear()

@@ -34,6 +34,7 @@ MAX_BATCH = 200
 MAX_RESULTS = 500  # entries one GET returns at most
 RECALL_MAX = 10
 SNIPPET = 300
+BRIEFING_SNIPPET = 1500  # « redis-moi le briefing »: recall gives it whole, not its first lines
 FUTURE_SLACK = 300  # seconds: a page's clock a little ahead is still believed
 PAST_SLACK = 2 * 86400  # older than this, a page's timestamp is not believed
 FINAL_TASK = {"done": "Tâche terminée", "error": "Tâche en échec", "cancelled": "Tâche annulée",
@@ -166,7 +167,7 @@ def note(text: str, source: str = "system") -> dict | None:
 
 
 def _on_event(kind: str, data: dict):
-    """events.HOOKS: tasks and reminders leave a line in the journal."""
+    """events.HOOKS: tasks, reminders and the morning briefing leave a line in the journal."""
     if not enabled() or not isinstance(data, dict):
         return
     if kind == "task" and data.get("id"):
@@ -190,6 +191,9 @@ def _on_event(kind: str, data: dict):
     elif kind == "reminder" and data.get("title"):
         title, body = str(data.get("title")), " ".join(str(data.get("text") or "").split())
         note(f"Rappel : {title}" + (f" — {body}" if body and body != title else ""), "reminder")
+    elif kind == "briefing" and data.get("text"):  # its text lives nowhere else once told
+        text = "Briefing du matin : " + " ".join(str(data["text"]).split())
+        note(text if len(text) <= BRIEFING_SNIPPET else text[:BRIEFING_SNIPPET - 1] + "…", "briefing")
 
 
 def _remember_task(tid: str, status: str):
@@ -358,6 +362,12 @@ def _spread(rows: list, n: int) -> list:
     return [rows[int(i * step)] for i in range(n)]
 
 
+def _snippet(row: dict) -> str:
+    cap = BRIEFING_SNIPPET if row.get("source") == "briefing" else SNIPPET
+    text = row["text"]
+    return text if len(text) <= cap else text[:cap - 1] + "…"
+
+
 def recall(a: dict, ctx=None, now: datetime | None = None) -> dict:
     if not enabled():
         return {"ok": False, "error": "Le journal est désactivé (Réglages › Données)."}
@@ -374,8 +384,7 @@ def recall(a: dict, ctx=None, now: datetime | None = None) -> dict:
         found = _spread(asks, RECALL_MAX)
     found.sort(key=lambda r: r["ts"])  # read back in the order it was said
     snippets = [{"date": fr_when(r["ts"], now), "role": WHO.get(r["role"], r["role"]),
-                 "text": r["text"] if len(r["text"]) <= SNIPPET else r["text"][:SNIPPET - 1] + "…"}
-                for r in found[:RECALL_MAX]]
+                 "text": _snippet(r)} for r in found[:RECALL_MAX]]
     if not snippets:
         return {"ok": True, "snippets": [], "message": "Rien de tel dans le journal sur cette période."}
     return {"ok": True, "snippets": snippets,

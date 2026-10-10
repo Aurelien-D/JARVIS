@@ -31,6 +31,17 @@ const MODULES = [core, strings, audioFx, orb, hud, keys, composer, panels, taskv
 
 window.__jarvis = { state: core.state, bus: core.bus, api: core.api, voice, settings: core.settings };
 
+// « Quitter JARVIS » (the tray, /api/shutdown): the voice session ends now (it
+// goes straight to OpenAI and would run on, billed, with every tool failing),
+// the wake word lets the microphone go, and the window closes (Chrome allows
+// it for the --app window; elsewhere the chip says JARVIS is closed).
+core.bus.on("server:shutdown", () => {
+  wake.shutDown();
+  try { voice.sleep(); } catch (err) { reportError(err); }
+  sse.serverClosed();
+  try { window.close(); } catch { /* not this page's to close */ }
+});
+
 for (const mod of MODULES) {
   try {
     await mod.init();

@@ -523,6 +523,37 @@ def test_no_window_yet_opens_one(win32, monkeypatch, no_launch):
     assert opened == ["http://127.0.0.1:8788"]
 
 
+def test_startup_with_missed_reminders_opens_a_single_window(win32, monkeypatch, no_launch):
+    # At startup the launcher (--app) and the reminders that came due while
+    # JARVIS was off all want the window, before the browser has drawn it (no
+    # title yet: find_app_window sees nothing). Only one window opens.
+    monkeypatch.setattr(desktop, "_visible_windows", lambda: {101: "Bloc-notes"})
+    opened = []
+    monkeypatch.setattr(desktop, "open_app_window", lambda url: opened.append(url))
+    monkeypatch.setattr(desktop, "toast", lambda title, body: None)
+    monkeypatch.setattr(desktop, "attention_state", lambda: "ok")
+    monkeypatch.setattr(config, "QUIET_HOURS", "")
+    monkeypatch.setattr(config, "REOPEN_ON_REMINDER", True)
+    monkeypatch.setattr(events, "leader", lambda: None)
+    monkeypatch.setattr(server, "_already_running", lambda url: True)
+    inbox._toasted.clear()
+    callers = [threading.Thread(target=inbox.notify_offline, args=("Rappel", f"Rappel manqué {i}"))
+               for i in range(2)]
+    callers.append(threading.Thread(target=server._open_when_ready, args=("http://127.0.0.1:8788",)))
+    for t in callers:
+        t.start()
+    for t in callers:
+        t.join(5)
+    assert len(opened) == 1
+    assert desktop.show_app_window("http://127.0.0.1:8788") == "opening"  # still coming up
+    assert len(opened) == 1
+    # Long after, a window closed by monsieur is opened again.
+    monkeypatch.setitem(desktop._launched, "at", time.monotonic() - desktop.LAUNCH_GRACE - 1)
+    assert desktop.show_app_window("http://127.0.0.1:8788") == "opened"
+    assert len(opened) == 2
+    inbox._toasted.clear()
+
+
 def test_find_app_window_prefers_the_app_window_and_ignores_other_programs(win32, monkeypatch):
     win32.classes = {1: "Chrome_WidgetWin_1", 2: "Notepad", 3: "Chrome_WidgetWin_1",
                      4: "Chrome_WidgetWin_1"}

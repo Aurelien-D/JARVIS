@@ -157,6 +157,10 @@ class JarvisServer(uvicorn.Server):
 
 
 def _request_shutdown():
+    # The pages first, before their streams end: each one closes its voice
+    # session (it goes straight to OpenAI and would run on, billed, until the
+    # idle timeout), stops the wake word and closes its window.
+    events.publish("shutdown", {})
     tasks.shutdown()
     if SERVER is not None:
         SERVER.should_exit = True
