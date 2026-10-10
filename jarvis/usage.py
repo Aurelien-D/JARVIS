@@ -205,10 +205,13 @@ def _day(key: str) -> dict:
     return _entry(_load().get(key))
 
 
-def add_realtime(usage: dict, model: str = "") -> float:
-    """A response.done usage (or the sum of several) of one voice model; returns its cost in USD."""
+def add_realtime(usage: dict, model: str = "", at_least: str = "") -> float:
+    """A response.done usage (or the sum of several) of one voice model; returns its cost in USD.
+    at_least: never priced below this model (the page's report: see post_usage)."""
     classes = realtime_classes(usage)
     usd = realtime_cost(classes, model or config.REALTIME_MODEL)
+    if at_least:
+        usd = max(usd, realtime_cost(classes, at_least))
 
     def apply(entry):
         for k, v in classes.items():
@@ -218,13 +221,18 @@ def add_realtime(usage: dict, model: str = "") -> float:
     return usd
 
 
-def add_transcription(usage: dict, model: str = "") -> float:
+def add_transcription(usage: dict, model: str = "", at_least: str = "") -> float:
+    """at_least: never priced below this model's rate (the page's report: see post_usage)."""
     if not isinstance(usage, dict):
         raise ValueError("objet attendu")
     if model not in TRANSCRIBE_PER_MINUTE:
         from . import realtime  # late: realtime -> tools -> tasks imports this module
         model = realtime.transcribe_model()
     parts = transcription_parts(usage, model)
+    if at_least and at_least != model:
+        floor = transcription_parts(usage, at_least)
+        if floor["usd"] > parts["usd"]:
+            parts = floor
 
     def apply(entry):
         entry["realtime"]["transcribe_in"] += parts["in"]
@@ -320,12 +328,17 @@ class UsageIn(BaseModel):
 
 @router.post("/api/usage")
 def post_usage(body: UsageIn):
+    # The page names its session's model, but a cheaper name than Réglages
+    # set never makes the cap look further away: the dearer of the two counts
+    # (a session opened before a switch to a dearer model is then over-counted,
+    # the safe side).
+    from . import realtime  # late: realtime -> tools -> tasks imports this module
     model = body.model[:80]
     try:
         if "type" in body.usage:  # a transcription: {type: 'tokens'|'duration', ...}
-            add_transcription(body.usage, model)
+            add_transcription(body.usage, model, at_least=realtime.transcribe_model())
         else:
-            add_realtime(body.usage, model)
+            add_realtime(body.usage, model, at_least=config.REALTIME_MODEL)
     except ValueError:
         raise HTTPException(400, "Relevé de consommation invalide.") from None
     return summary(1)

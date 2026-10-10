@@ -232,7 +232,12 @@ def _rule(name: str, args: dict, sid):
                 _clip(args.get("prompt"), DETAIL_MAX))
     if (name == "schedule" and str(args.get("kind") or "").lower() == "task"
             and _complet(args.get("profile"))):
-        freq = FREQ.get(str(args.get("repeat") or "none"), "ponctuelle")
+        # Read as scheduler.add reads it ('Daily', or days with no repeat): the
+        # card names the frequency that will run, never a harmless 'ponctuelle'.
+        repeat = str(args.get("repeat") or "none").strip().lower()
+        if repeat in ("none", "") and args.get("days"):
+            repeat = "days"
+        freq = FREQ.get(repeat, "ponctuelle")
         return (T.complet_routine.format(freq=freq, title=_title(args.get("title"), args.get("text"))),
                 _clip(args.get("text"), DETAIL_MAX))
     if not is_tainted(sid):

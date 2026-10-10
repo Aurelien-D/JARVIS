@@ -530,7 +530,8 @@ def create_task(title: str, prompt: str, profile: str | None = DEFAULT_PROFILE,
     return task
 
 
-def _check_budget():
+def _over_budget() -> str:
+    """The daily cap's refusal in French, or '' when a task may start."""
     cap = config.DAILY_BUDGET_USD
     if cap and cap > 0:
         try:
@@ -538,9 +539,16 @@ def _check_budget():
             spent = float(usage.claude_spent_today() or 0) + float(usage.realtime_spent_today() or 0)
         except Exception:  # noqa: BLE001 - a broken counter must not block every task
             logging.exception("JARVIS: dépense du jour illisible")
-            return
+            return ""
         if spent >= cap:
-            raise ValueError(T.budget.format(amount=_money(cap)))
+            return T.budget.format(amount=_money(cap))
+    return ""
+
+
+def _check_budget():
+    refused = _over_budget()
+    if refused:
+        raise ValueError(refused)
 
 
 def _find_resumable(ref: str):
@@ -626,9 +634,15 @@ class _Outcome:
 
 def _run(task: dict):
     status, output = "error", ""
+    queued = task["status"] == "en_file"
     try:
         if _wait_for_slot(task):
-            status, output = _run_attempts(task)
+            # The cap reached while it waited its turn: not started either.
+            refused = _over_budget() if queued else ""
+            if refused:
+                status, output = "error", refused
+            else:
+                status, output = _run_attempts(task)
     except Exception as exc:  # noqa: BLE001
         logging.exception("JARVIS: échec de la tâche %s", task["id"])
         status, output = "error", str(exc)
