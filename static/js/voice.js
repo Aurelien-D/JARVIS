@@ -111,6 +111,23 @@ export async function connect({ reconnect = false, pendingText = "", quiet = fal
     state.pendingText = state.pendingText ? `${state.pendingText}\n${pendingText}` : pendingText;
   }
   if (state.connecting || pc) return; // already on its way, or already there
+  // A module may hold a new conversation back (usage.js: past the daily cap,
+  // it asks first). Never a reconnection, nor a wake word already let through.
+  if (!reconnect && !quiet && !state.wake) {
+    const holds = [];
+    bus.emit("connect:intercept", { hold: (p) => holds.push(p) });
+    if (holds.length) {
+      const go = (await Promise.all(holds.map(h => Promise.resolve(h).catch(() => false)))).every(Boolean);
+      if (!go) {
+        // Not opened: what monsieur typed goes back in the field.
+        const lost = state.pendingText;
+        state.pendingText = "";
+        if (lost) bus.emit("ui:compose", { text: lost });
+        return;
+      }
+      if (state.connecting || pc) return; // opened meanwhile
+    }
+  }
   const mine = ++attempt;
   state.connecting = true;
   state.wantLive = true;
@@ -719,6 +736,8 @@ export function handleEvent(ev) {
     }
     case "conversation.item.input_audio_transcription.completed":
       onHeard(ev.item_id, ev.transcript);
+      // Billed apart, at the transcription model's rate (usage.js counts it).
+      if (ev.usage) bus.emit("usage", { usage: ev.usage, model: "", kind: "transcription" });
       break;
     case "conversation.item.input_audio_transcription.failed":
       onInaudible(ev.item_id);

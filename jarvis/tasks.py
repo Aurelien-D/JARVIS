@@ -534,7 +534,8 @@ def _check_budget():
     cap = config.DAILY_BUDGET_USD
     if cap and cap > 0:
         try:
-            spent = float(usage.claude_spent_today() or 0)
+            # One cap for the voice and the tasks (Réglages › Coûts, usage.py).
+            spent = float(usage.claude_spent_today() or 0) + float(usage.realtime_spent_today() or 0)
         except Exception:  # noqa: BLE001 - a broken counter must not block every task
             logging.exception("JARVIS: dépense du jour illisible")
             return

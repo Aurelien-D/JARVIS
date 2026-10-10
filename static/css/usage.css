@@ -1,1 +1,44 @@
-/* Cost chip and budget (WP18). */
+/* Costs (WP18): the top-bar chip, the cap's confirmation and Réglages ›
+   Coûts. Colours come from tokens.css; the warning and the cap are also
+   written in the chip's words, never left to colour alone. */
+
+/* ------------------------------------------------ the chip */
+#topChips .cost-chip.warn { color: var(--amber); border-color: var(--amber); }
+#topChips .cost-chip.cap { color: var(--err); border-color: var(--err); }
+
+/* ------------------------------------------------ past the cap: the confirmation */
+.cap-dialog {
+  margin: auto; width: min(480px, calc(100vw - 32px)); padding: 18px 22px;
+  color: var(--text); background: var(--panel);
+  border: 1px solid var(--err); border-top: 3px solid var(--err);
+  box-shadow: 0 0 60px rgba(0, 0, 0, .7);
+  font-size: var(--fs-in); line-height: var(--lh-body);
+}
+.cap-dialog::backdrop { background: rgba(1, 4, 9, .72); }
+.cap-dialog h2 { margin-bottom: 8px; font: 600 var(--fs-h) / var(--lh-label) var(--font-hud); color: var(--err); }
+.cap-dialog p { margin-bottom: 10px; }
+.cap-dialog .cap-hint { color: var(--muted); font-size: var(--fs-md); }
+.cap-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+/* opening anyway costs money: not the inviting cyan button */
+.cap-dialog .ctl.primary { background: transparent; color: var(--err); border-color: var(--err); }
+.cap-dialog .ctl.primary:hover { background: var(--err); color: var(--bg); }
+
+/* ------------------------------------------------ Réglages › Coûts */
+.usage-title { margin: 18px 0 6px; font: 600 var(--fs-user) / var(--lh-label) var(--font-hud); color: var(--text); }
+.usage-today, .usage-period, .usage-cap { margin-bottom: 4px; font-family: var(--font-mono); font-size: var(--fs-sm); }
+.usage-period, .usage-cap { color: var(--muted); }
+.usage-chart { min-height: 60px; margin: 10px 0 4px; }
+.usage-chart-note { padding: 18px 0; color: var(--muted); font-size: var(--fs-md); }
+.usage-details { margin: 8px 0; }
+.usage-details summary { min-height: 24px; color: var(--cyan); cursor: pointer; }
+.usage-table { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: var(--fs-md); }
+.usage-table th, .usage-table td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+.usage-table thead th { color: var(--muted); font-weight: 600; }
+.usage-table .num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.usage-note { margin-top: 10px; color: var(--muted); font-size: var(--fs-md); }
+
+@media (forced-colors: active) {
+  #topChips .cost-chip.warn, #topChips .cost-chip.cap { border: 2px solid CanvasText; }
+  .cap-dialog { border: 2px solid CanvasText; }
+  .cap-dialog .ctl.primary { background: ButtonFace; color: ButtonText; border-color: ButtonText; }
+}

@@ -564,6 +564,52 @@ export const T = typeset({
     late: "en retard",
     card: "A.R.E.S",
   },
+  // Costs (usage.js, WP18): the top-bar chip, the warnings, the cap's
+  // confirmation and Réglages › Coûts. Amounts come formatted ('0,42 $').
+  usage: {
+    chip: (amount) => `Aujourd'hui ≈ ${amount}`,
+    chipWarn: (pct) => ` · ${pct}${NBSP}% du plafond`,
+    chipCapped: " · plafond atteint",
+    tooltip: (voice, claude) => `Voix ≈ ${voice} · Claude ≈ ${claude}\nClaude : estimation (équivalent API)`,
+    tooltipCap: (cap) => `\nPlafond du jour : ${cap} · Réglages › Coûts`,
+    estimate: "Claude : estimation (équivalent API)",
+    warnTitle: "Dépenses du jour",
+    warnText: (pct, spent, cap) => `${pct}${NBSP}% du plafond du jour : environ ${spent} sur ${cap}. `
+      + "Modifiable dans Réglages › Coûts.",
+    capTitle: "Plafond du jour atteint",
+    capText: (spent, cap) => `Environ ${spent} dépensés aujourd'hui, pour un plafond de ${cap}. `
+      + "Le mot d'éveil n'ouvre plus de conversation et aucune nouvelle tâche Claude ne démarre. "
+      + "Un clic sur l'orbe reste possible, après confirmation.",
+    openSettings: "Réglages › Coûts",
+    askTitle: "Plafond du jour atteint",
+    askText: (spent, cap) => `Environ ${spent} dépensés aujourd'hui, pour un plafond de ${cap}. `
+      + "Cette conversation sera payante, elle aussi.",
+    askGeneric: "Le plafond de dépenses du jour est atteint. Cette conversation sera payante, elle aussi.",
+    askHint: "Le plafond se modifie dans Réglages › Coûts.",
+    askOk: "Ouvrir quand même",
+    askCancel: "Annuler",
+    // Réglages › Coûts
+    title: "30 derniers jours",
+    voice: "Voix (OpenAI)",
+    claude: "Claude (estimation)",
+    today: (total, voice, claude) => `Aujourd'hui ≈ ${total} · voix ≈ ${voice} · Claude ≈ ${claude}`,
+    period: (sum, avg) => `Sur 30 jours ≈ ${sum} · en moyenne ≈ ${avg} par jour`,
+    capSet: (cap) => `Plafond du jour : ${cap}.`,
+    capNone: "Aucun plafond du jour.",
+    note: "Claude : estimation (équivalent API). Claude Code calcule ce montant au tarif de l'API ; "
+      + "avec un abonnement claude.ai, les tâches ne sont pas facturées à l'unité. "
+      + "La voix est estimée d'après les tarifs publics d'OpenAI.",
+    chartLabel: "Dépenses des 30 derniers jours, voix et Claude",
+    chartLoading: "Chargement du graphique…",
+    chartUnavailable: "Graphique indisponible (hors ligne ?) : les chiffres sont dans le tableau.",
+    table: "Voir les chiffres",
+    colDate: "Jour",
+    colVoice: "Voix",
+    colClaude: "Claude",
+    colTotal: "Total",
+    nothing: "Aucune dépense ces 30 derniers jours.",
+    loadFailed: "Dépenses illisibles pour l'instant : réessayez dans un moment.",
+  },
   help: {
     // What monsieur says to JARVIS (he says "tu" to it): examples, not UI copy.
     examples: [
