@@ -344,6 +344,7 @@ BAD_VALUES = {
     "model_simple": "--dangerously-skip-permissions", "model_normal": "Opus 4", "model_complex": "-x",
     "task_timeout": 10**9, "task_budget_usd": "NaN", "max_concurrent_tasks": 0, "daily_budget_usd": -1,
     "hotkey": "ctrl+alt+j", "browser": "firefox", "tray": "oui", "ares": "parfois", "journal_days": 366,
+    "ntfy": "oui", "ntfy_server": "http://ntfy.sh", "ntfy_only_away": 2, "ntfy_reminder_text": "true",
 }
 
 

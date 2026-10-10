@@ -585,3 +585,78 @@ def test_remote_put_of_a_harmless_setting_works(monkeypatch, published):
     assert config.VOICE == "cedar" and saved_file() == {"voice": "cedar", "quiet_hours": "23:00-07:00"}
     assert set(r.json()["values"]) == set(remote.REMOTE_SETTINGS)
     assert published[-1]["type"] == "config"
+
+# ---------------------------------------------------------------- ntfy (B1, spec 6)
+
+
+def test_the_notifications_section_holds_the_four_ntfy_settings(client):
+    ids = [i for i, _ in settings.SECTIONS]
+    assert ids.index("notifications") == ids.index("distance") + 1
+    assert dict(settings.SECTIONS)["notifications"] == "Notifications"
+    expected = {"ntfy": ("NTFY", "bool", "Notifications sur l'iPhone (ntfy)"),
+                "ntfy_server": ("NTFY_SERVER", "url", "Serveur ntfy"),
+                "ntfy_only_away": ("NTFY_ONLY_AWAY", "bool", "Seulement si je ne suis pas au PC"),
+                "ntfy_reminder_text": ("NTFY_REMINDER_TEXT", "bool", "Texte des rappels dans la notification")}
+    mine = [s for s in settings.SCHEMA if s.section == "notifications"]
+    assert [s.key for s in mine] == list(expected)
+    for s in mine:
+        assert (s.attr, s.kind, s.label) == expected[s.key]
+        assert s.live == "now" and not s.sensitive
+    body = client.get("/api/settings").json()
+    entry = next(e for e in body["schema"] if e["key"] == "ntfy_server")
+    assert entry["type"] == "url" and entry["maxlength"] == 200 and entry["section"] == "notifications"
+    assert body["values"]["ntfy_server"] == "https://ntfy.sh" and body["values"]["ntfy"] is False
+
+
+def test_ntfy_settings_are_saved_from_the_pc_and_never_from_the_phone(client, monkeypatch):
+    from remote_helpers import paired_client
+
+    from jarvis import remote
+    r = client.put("/api/settings", json={"ntfy": True, "ntfy_only_away": True,
+                                          "ntfy_server": "http://jarvis-pc.tail0000.ts.net:8080"})
+    assert r.status_code == 200, r.text
+    assert config.NTFY is True and config.NTFY_ONLY_AWAY is True
+    assert config.NTFY_SERVER == "http://jarvis-pc.tail0000.ts.net:8080"
+    assert saved_file()["ntfy_server"] == "http://jarvis-pc.tail0000.ts.net:8080"
+    assert not {"ntfy", "ntfy_server", "ntfy_only_away", "ntfy_reminder_text"} & remote.REMOTE_SETTINGS
+    phone, _, _ = paired_client(monkeypatch)
+    for change in ({"ntfy": False}, {"ntfy_server": "https://ntfy.example.org"}, {"ntfy_reminder_text": True}):
+        assert phone.put("/api/settings", json=change).status_code == 403, change
+    assert config.NTFY is True and config.NTFY_REMINDER_TEXT is False
+    # The phone sees the section (for the topic and the test), none of its settings.
+    body = phone.get("/api/settings").json()
+    assert "notifications" in [s["id"] for s in body["sections"]]
+    assert not [e for e in body["schema"] if e["section"] == "notifications"]
+
+
+@pytest.mark.parametrize("value", [
+    "https://ntfy.sh", "https://ntfy.sh/", "https://ntfy.example.org/chemin", "https://ntfy.example.org:8443",
+    "http://100.101.102.103", "http://100.64.0.1:8080", "http://100.127.255.254",
+    "http://[fd7a:115c:a1e0::1234]:8080", "http://jarvis-pc.tail0000.ts.net", "http://ntfy.tail0000.ts.net.",
+    "http://10.0.0.5", "http://172.16.0.1", "http://172.31.255.254", "http://192.168.1.20:80",
+    "http://[fc00::1]", "http://[fdff::2]", "HTTPS://NTFY.SH",
+])
+def test_url_kind_accepts_https_and_local_http(value):
+    assert settings.validate(settings.BY_KEY["ntfy_server"], value) == value.strip()
+
+
+@pytest.mark.parametrize("value", [
+    "http://ntfy.sh", "http://8.8.8.8", "http://100.63.255.255", "http://100.128.0.1", "http://172.32.0.1",
+    "http://192.169.0.1", "http://127.0.0.1", "http://localhost", "http://[::1]", "http://[fe80::1]",
+    "http://[2001:db8::1]", "http://[::ffff:192.168.1.1]", "http://ts.net", "http://evil.ts.net.example",
+    "http://evilts.net", "https://monsieur@ntfy.sh", "https://monsieur:motdepasse@ntfy.sh",
+    "https://ntfy.sh/?x=1", "https://ntfy.sh?", "https://ntfy.sh/#top", "https://ntfy.sh#",
+    "ftp://ntfy.sh", "javascript:alert(1)", "file:///C:/Windows", "ntfy.sh", "//ntfy.sh", "https://",
+    "https://ntfy.sh:0x50", "https://ntfy.sh:99999", "https://ntfy .sh", "https://ntfy.sh\\@evil.example",
+    "http://0x7f.1", "http://3232235777", "http://012.0.0.1",
+])
+def test_url_kind_refuses_the_rest_in_french(value):
+    with pytest.raises(settings.SettingError) as err:
+        settings.validate(settings.BY_KEY["ntfy_server"], value)
+    assert str(err.value) == settings.URL_REFUSED
+
+
+@pytest.mark.parametrize("value", ["", None, "https://" + "a" * 200, 42, ["https://ntfy.sh"], "https://ntfy.sh\x00"])
+def test_url_kind_refuses_empty_long_or_odd_values(value):
+    with pytest.raises(settings.SettingError):
+        settings.validate(settings.BY_KEY["ntfy_server"], value)

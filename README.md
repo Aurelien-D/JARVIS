@@ -285,6 +285,7 @@ ou au prochain démarrage de JARVIS.
 | **Claude Code** | Mode de permission, dossier de travail, connecteurs MCP en plus, modèle Claude par complexité (haiku, sonnet, opus), durée maximale (10 min), plafond par tâche (2 $), tâches en même temps (3) |
 | **Coûts** | Plafond de dépense par jour et les 30 derniers jours |
 | **Accès à distance** | Activer ou couper l'accès depuis l'iPhone, associer un iPhone, accès complet depuis l'iPhone, activité récente |
+| **Notifications** | Notifications sur l'iPhone (ntfy), serveur ntfy, seulement si je ne suis pas au PC, texte des rappels, le sujet à copier, envoyer un test, nouveau sujet |
 | **Système** | Lancer JARVIS au démarrage de Windows, raccourci global, navigateur, icône de notification, A.R.E.S (Automatique, Toujours, Jamais), animations, volume des sons |
 | **Données** | Dossier des données (Ouvrir le dossier data, Purger le journal), conservation du journal (30 jours) |
 | **À propos** | Versions de JARVIS et de Claude Code, modèles utilisés, mot d'éveil, échéances OpenAI |

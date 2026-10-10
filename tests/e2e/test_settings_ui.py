@@ -195,7 +195,7 @@ def test_reglages_opens_as_a_modal_drawer_and_gives_the_focus_back(server_side, 
     open_settings(jarvis)
     tabs = jarvis.eval_on_selector_all("#settingsDialog .set-tab", "els => els.map(e => e.textContent)")
     assert tabs == ["Connexion", "Voix", "Écoute", "Proactivité", "Claude Code", "Coûts", "Accès à distance",
-                    "Système", "Données", "À propos"]
+                    "Notifications", "Système", "Données", "À propos"]
     assert jarvis.evaluate("document.getElementById('settingsDialog').matches(':modal')")
     assert jarvis.evaluate("document.getElementById('settingsDialog').contains(document.activeElement)")
     jarvis.keyboard.press("Escape")

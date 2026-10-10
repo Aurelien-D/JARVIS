@@ -668,6 +668,37 @@ def test_attention_elsewhere_than_windows_is_ok(monkeypatch):
     assert desktop.keep_awake() is False and desktop.flash_app_window() is False
 
 
+def test_idle_seconds_counts_from_the_last_input(win32):
+    """GetLastInputInfo and GetTickCount (ntfy's "only when I'm away", B1)."""
+    seen = []
+
+    def last_input(info, when=40_000, ok=1):
+        seen.append(info._obj.cbSize)
+        info._obj.dwTime = when
+        return ok
+    win32.GetLastInputInfo, win32.GetTickCount = last_input, lambda: 100_000
+    assert desktop.idle_seconds() == 60.0
+    assert seen == [ctypes.sizeof(desktop.LASTINPUTINFO)] == [8]
+    # Both counters wrap after 49.7 days: the difference stays right across the wrap.
+    win32.GetLastInputInfo = lambda info: last_input(info, when=0x1_0000_0000 - 5_000)
+    win32.GetTickCount = lambda: 5_000
+    assert desktop.idle_seconds() == 10.0
+    win32.GetLastInputInfo = lambda info: last_input(info, ok=0)  # Windows said no
+    assert desktop.idle_seconds() is None
+
+    def broken(info):
+        raise OSError("refusé")
+    win32.GetLastInputInfo = broken
+    assert desktop.idle_seconds() is None
+
+
+def test_idle_seconds_is_unknown_elsewhere_than_windows(monkeypatch, win32):
+    assert desktop.idle_seconds() is None  # this Windows lacks the functions
+    monkeypatch.setattr(config, "IS_WINDOWS", False)
+    monkeypatch.setattr(desktop, "_win", lambda: None)
+    assert desktop.idle_seconds() is None
+
+
 def test_keep_awake_resets_the_idle_timer_without_holding_it(win32):
     assert desktop.keep_awake() is True
     # ES_SYSTEM_REQUIRED only: no ES_CONTINUOUS (0x80000000), nothing to undo later.
@@ -932,6 +963,8 @@ def test_real_windows_api_loads_and_answers():
     assert shell._win() is not None and desktop._win() is not None
     assert desktop.attention_state() in set(desktop.ATTENTION.values())
     assert isinstance(desktop.keep_awake(), bool)
+    idle = desktop.idle_seconds()
+    assert idle is None or idle >= 0
     hwnd = desktop.find_app_window()
     assert hwnd is None or isinstance(hwnd, int)
     assert isinstance(desktop.pictures_dir(), Path)
