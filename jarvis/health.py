@@ -526,11 +526,12 @@ def check_costs(refresh: bool = False) -> list:
     Nothing to say on a day with no spending and no cap; the cap reached is
     something to know, not a fault: the Mise en route never opens for it."""
     from . import usage
-    voice, claude = usage.realtime_spent_today(), usage.claude_spent_today()
-    total, cap = voice + claude, usage.daily_cap()
+    voice, claude, siri = usage.realtime_spent_today(), usage.claude_spent_today(), usage.text_spent_today()
+    total, cap = voice + claude + siri, usage.daily_cap()
     if not cap and not total:
         return []
-    spent = (f"Aujourd'hui ≈ {_money(total)} (voix ≈ {_money(voice)}, Claude ≈ {_money(claude)}, "
+    siri_part = f", Siri ≈ {_money(siri)}" if siri else ""  # only on the days Siri spoke
+    spent = (f"Aujourd'hui ≈ {_money(total)} (voix ≈ {_money(voice)}, Claude ≈ {_money(claude)}{siri_part}, "
              "estimation).")
     if not cap:
         return [item("costs", "info", "Dépenses du jour", f"{spent} Aucun plafond du jour.",

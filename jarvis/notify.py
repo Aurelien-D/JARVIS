@@ -9,11 +9,14 @@
   with the kind's fixed sentence. No task output, prompt, title, device name,
   IP or login ever leaves the PC this way; only the reminder's own text, and
   only when monsieur asked for it.
+- siri_late(): Siri promised « je vous préviens sur l'iPhone » and answered
+  after its deadline; a fixed sentence says the answer is ready.
 - Quiet hours, « Ne pas déranger » and "only when I'm away" hold back tasks
-  and confirmations; reminders and security alerts always go. One message
-  per kind every RATE_S seconds, except security alerts (audit.py already
-  deduplicates them, and an alert must never be dropped). A task's status is
-  told once.
+  and confirmations ("only when away" just the PC's own: the PC never speaks
+  a result from the iPhone or Siri); reminders and security alerts always
+  go. One message per kind every RATE_S seconds, except security alerts
+  (audit.py already deduplicates them, and an alert must never be dropped).
+  A task's status is told once.
 - Sending: POST {server}/{topic} on a daemon thread, with no redirect and no
   click URL (a notification with a link never comes from JARVIS). A failure
   is kept in last_error, without the topic, and never reaches events.publish.
@@ -53,6 +56,8 @@ PENDING = "JARVIS : une confirmation vous attend."
 ALERT = "JARVIS · sécurité : {text}"
 ALERT_UNKNOWN = "alerte sur le PC : vérifiez Réglages › Accès à distance."
 TEST = "JARVIS : notification de test."
+SIRI_READY = "JARVIS : la réponse de Siri est prête, redemandez-la à Siri dans les 5 minutes."
+SIRI_FAILED = "JARVIS : Siri n'a pas pu terminer, réessayez."
 _FAILED = ("error", "interrompue")
 # A reminder's own text never carries a link either.
 _LINK = re.compile(r"(?i)\b(?:[a-z][a-z0-9+.-]*://|www\.)\S*")
@@ -139,13 +144,18 @@ def at_pc() -> bool:
     return idle is None or idle < AWAY_IDLE_S
 
 
-def _held_back() -> bool:
-    """Quiet hours, « Ne pas déranger », or "only when away" while he's here."""
+def _held_back(via=None) -> bool:
+    """Quiet hours, « Ne pas déranger », or "only when away" while he's here.
+    "Only when away" holds back only what the PC tells itself: a result from
+    the iPhone or Siri is never spoken on the PC (spec 4.12), so the phone
+    is its only way to monsieur."""
     try:
         if inbox.is_quiet():
             return True
     except Exception:  # noqa: BLE001 - a broken state file must not silence the phone
         pass
+    if str(via or "pc") != "pc":
+        return False
     return bool(config.NTFY_ONLY_AWAY) and at_pc()
 
 
@@ -180,7 +190,7 @@ def message_for(kind: str, data) -> tuple | None:
     if kind == "task":
         status, task_id = data.get("status"), str(data.get("id") or "")
         body = TASK_DONE if status == "done" else TASK_FAILED if status in _FAILED else ""
-        if not body or not task_id or not _first((task_id, status)) or _held_back():
+        if not body or not task_id or not _first((task_id, status)) or _held_back(data.get("via")):
             return None
         return ("task", body, "default")
     if kind == "reminder":  # monsieur set it: quiet hours or not
@@ -191,7 +201,7 @@ def message_for(kind: str, data) -> tuple | None:
             return None
         if str(p.get("via") or "pc").startswith("app:"):
             return None  # raised on the phone: its card is on its screen already
-        if not _first(("pending", str(p["id"]))) or _held_back():
+        if not _first(("pending", str(p["id"]))) or _held_back(p.get("via")):
             return None
         return ("pending", PENDING, "default")
     return None
@@ -230,6 +240,20 @@ def _on_alert(kind: str, ntfy_text: str) -> None:
     except Exception:  # noqa: BLE001 - audit.alert carries on regardless
         log.warning("JARVIS: alerte ntfy non transmise (%s)", kind)
 
+
+def siri_late(ok: bool) -> bool:
+    """raccourci.py: Siri said « je vous préviens sur l'iPhone » and its answer
+    came after the deadline. A fixed sentence (the answer itself stays in the
+    conversation, never in a notification); monsieur just asked, so quiet
+    hours and "only when away" do not hold it back. False when nothing went."""
+    if not config.NTFY:
+        return False
+    try:
+        return _queue("siri", SIRI_READY if ok else SIRI_FAILED, "default")
+    except Exception:  # noqa: BLE001 - Siri's worker carries on regardless
+        log.warning("JARVIS: notification ntfy ignorée (siri)")
+        return False
+
 # ---------------------------------------------------------------- sending
 
 def _allowed(kind: str) -> bool:
@@ -250,7 +274,7 @@ def _queue(kind: str, body: str, priority: str, *, limit: bool = True) -> bool:
         worker = threading.Thread(target=_deliver, args=(body, priority), daemon=True, name="jarvis-ntfy")
         _workers[:] = [w for w in _workers if w.is_alive()]
         _workers.append(worker)
-    worker.start()
+        worker.start()  # under the lock: _drain never finds a thread not yet started
     return True
 
 

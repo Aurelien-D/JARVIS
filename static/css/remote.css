@@ -90,7 +90,12 @@
 }
 .siri-key-text { min-width: 0; overflow-wrap: anywhere; color: var(--muted); }
 .siri-key-text .mono { color: var(--text); }
-.siri-screen { width: min(560px, calc(100vw - 24px)); max-height: 88vh; overflow-y: auto; overflow-x: hidden; }
+.siri-screen {
+  width: min(560px, calc(100vw - 24px)); max-height: 88vh; overflow-y: auto; overflow-x: hidden;
+  /* the iPhone: clear of the notch, the rounded corners and the home bar (tokens.css) */
+  width: min(560px, calc(100vw - 24px - var(--safe-left) - var(--safe-right)));
+  max-height: calc(100dvh - 24px - var(--safe-top) - var(--safe-bottom));
+}
 .siri-body { display: grid; gap: 10px; min-width: 0; }
 .siri-row { display: grid; gap: 4px; min-width: 0; }
 .siri-label { margin: 0; }

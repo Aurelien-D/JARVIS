@@ -171,10 +171,11 @@ function buildHelp() {
   const keys = document.createElement("ul");
   keys.className = "aide-keys";
   keys.setAttribute("aria-label", L.shortcuts);
-  // The global hotkey as set in Réglages › Système; none shown when Windows refused it.
+  // The global hotkey as set in Réglages › Système; none shown when Windows
+  // refused it, nor on the iPhone (it is the PC's keyboard).
   const hk = state.config && state.config.hotkey;
   const parts = T.help.shortcuts.split(" · ");
-  if (hk && hk.combo && hk.active !== false) parts.push(T.help.globalKey(hk.combo));
+  if (hk && hk.combo && hk.active !== false && !state.remote) parts.push(T.help.globalKey(hk.combo));
   for (const part of parts) {
     const li = document.createElement("li");
     li.textContent = part;

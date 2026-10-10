@@ -259,8 +259,21 @@ def test_no_model_left_says_so(siri, openai):
 # ---------------------------------------------------------------- the deadline
 
 
+def ntfy_spy(monkeypatch) -> list:
+    """Notifications on, with a topic; every body sent to ntfy is recorded."""
+    from jarvis import notify
+    sent = []
+    monkeypatch.setattr(config, "NTFY", True)
+    monkeypatch.setattr(notify, "TRANSPORT", httpx.MockTransport(
+        lambda request: sent.append(request.content.decode("utf-8")) or httpx.Response(200, json={})))
+    notify.topic()
+    return sent
+
+
 def test_the_deadline_answers_and_the_late_reply_joins_the_conversation(siri, openai, monkeypatch):
+    from jarvis import notify
     client, key_id, _, _ = siri
+    sent = ntfy_spy(monkeypatch)
     monkeypatch.setattr(raccourci, "DEADLINE_S", 0.3)
     release = threading.Event()
 
@@ -272,9 +285,43 @@ def test_the_deadline_answers_and_the_late_reply_joins_the_conversation(siri, op
     r = say(client, "Une question longue")
     assert r.status_code == 200 and r.text == "Je m'en occupe, je vous préviens sur l'iPhone."
     assert time.monotonic() - began < 3
+    assert sent == []
     release.set()
     assert raccourci._wait_workers(10)
     assert raccourci._CONVOS[key_id]["items"][-1] == {"role": "assistant", "content": "La réponse tardive."}
+    # The promise is kept: ntfy says the answer is ready, never what it says.
+    notify._drain()
+    assert sent == [notify.SIRI_READY]
+
+
+def test_an_answer_within_the_deadline_sends_no_notification(siri, openai, monkeypatch):
+    from jarvis import notify
+    client, _, _, _ = siri
+    sent = ntfy_spy(monkeypatch)
+    openai(text_reply("Tout de suite."))
+    assert say(client, "Bonjour").text == "Tout de suite."
+    assert raccourci._wait_workers(10)
+    notify._drain()
+    assert sent == []
+
+
+def test_with_notifications_off_siri_promises_nothing_and_makes_no_reminder(siri, openai, monkeypatch):
+    client, _, _, _ = siri
+    assert config.NTFY is False
+    monkeypatch.setattr(raccourci, "DEADLINE_S", 0.3)
+    release = threading.Event()
+
+    def slow(body):
+        release.wait(10)
+        return call_reply("rappel", {"texte": "sortir le pain", "quand": "dans 20 minutes"})
+    fake = openai(slow, text_reply("Je ne peux pas."))
+    r = say(client, "Rappelle-moi de sortir le pain")
+    assert r.text == raccourci.T.later_quiet and "préviens" not in r.text
+    assert raccourci.QUIET_INSTRUCTIONS in fake.bodies[0]["instructions"]
+    release.set()
+    assert raccourci._wait_workers(10)
+    assert json.loads(fake.bodies[1]["input"][-1]["output"]) == {"ok": False, "error": raccourci.T.no_ntfy}
+    assert scheduler.items() == []
 
 # ---------------------------------------------------------------- cost
 
@@ -327,8 +374,9 @@ def test_the_cap_is_checked_again_before_each_call(siri, openai, monkeypatch):
 # ---------------------------------------------------------------- tools
 
 
-def test_a_reminder_round_trip_passes_reasoning_and_calls_back(siri, openai):
+def test_a_reminder_round_trip_passes_reasoning_and_calls_back(siri, openai, monkeypatch):
     client, key_id, _, _ = siri
+    monkeypatch.setattr(config, "NTFY", True)  # Siri's reminders reach the iPhone by ntfy
     fake = openai(call_reply("rappel", {"texte": "sortir le pain", "quand": "dans 20 minutes"}, reasoning=True),
                   text_reply("C'est noté, dans vingt minutes."))
     r = say(client, "Rappelle-moi de sortir le pain dans 20 minutes")
@@ -345,8 +393,9 @@ def test_a_reminder_round_trip_passes_reasoning_and_calls_back(siri, openai):
         {"role": "assistant", "content": "C'est noté, dans vingt minutes."}]
 
 
-def test_reminders_are_bounded_to_a_year(siri, openai):
+def test_reminders_are_bounded_to_a_year(siri, openai, monkeypatch):
     client, _, _, _ = siri
+    monkeypatch.setattr(config, "NTFY", True)
     far = (datetime.now() + timedelta(days=400)).strftime("%Y-%m-%dT09:00")
     fake = openai(call_reply("rappel", {"texte": "anniversaire", "quand": far}), text_reply("Non."),
                   call_reply("rappel", {"texte": "x"}), text_reply("Quand ?"))

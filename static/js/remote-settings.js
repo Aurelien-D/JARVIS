@@ -897,11 +897,14 @@ async function pauseNow(v) {
 async function forgetNow(v) {
   const ok = await askConfirm({ title: R.forgetTitle, text: R.forgetAsk, ok: R.forget, danger: R.forgetWarn });
   if (!ok) return;
+  // The stream ends and a 401 may reload the page first: not « Appareil retiré » (sse.js).
+  bus.emit("remote:forgetting", true);
   try {
     await api("/api/remote/forget", { method: "POST" });
     note(v, "phone", R.forgotten);
     setTimeout(() => location.replace("/"), 800);
   } catch (err) {
+    bus.emit("remote:forgetting", false);
     note(v, "phone", explainError(err), true);
   }
 }

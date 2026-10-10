@@ -146,6 +146,22 @@ def test_get_status_says_todays_spending(monkeypatch):
     assert spending["daily_cap"] == "1,00 $" and spending["cap_reached"] is True
     assert "Claude ≈ 1,50 $" in spending["today"]
 
+def test_siri_spending_counts_in_get_status_and_health(monkeypatch):
+    """Wave B: Siri's text model is part of the day's spending everywhere the
+    chip's total is said (and only named on the days Siri spoke)."""
+    usage.add_claude(0.40)
+    usage.add_text("gpt-6-luna", {"input_tokens": 1_000_000, "output_tokens": 1_000_000})
+    siri = usage.text_spent_today()
+    assert siri > 0.5
+    spending = tools.run_tool("get_status", {})["spending"]
+    assert spending["today"].startswith("≈ 1,00 $ (voix ≈ 0,00 $, Claude ≈ 0,40 $, Siri ≈ 0,60 $")
+    monkeypatch.setattr(config, "DAILY_BUDGET_USD", 0.9)
+    assert tools.run_tool("get_status", {})["spending"]["cap_reached"] is True  # Claude alone is under it
+    (row,) = health.check_costs()
+    assert f"Aujourd'hui ≈ 1,00{NBSP}$" in row["message_fr"] and f"Siri ≈ 0,60{NBSP}$" in row["message_fr"]
+    assert row["level"] == "warning" and "Plafond du jour atteint" in row["message_fr"]
+
+
 # ---------------------------------------------------------------- snooze: card and voice
 
 

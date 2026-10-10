@@ -185,8 +185,8 @@ SCHEMA = [
             "sur le réseau local ou Tailscale.", maximum=200),
     Setting("ntfy_only_away", "NTFY_ONLY_AWAY", "bool", "notifications",
             "Seulement si je ne suis pas au PC",
-            "Rien pour les tâches et les confirmations tant que vous utilisez le PC. Les rappels "
-            "et les alertes de sécurité partent toujours."),
+            "Rien pour les tâches et les confirmations du PC tant que vous l'utilisez. Ce qui vient de "
+            "l'iPhone ou de Siri, les rappels et les alertes de sécurité partent toujours."),
     Setting("ntfy_reminder_text", "NTFY_REMINDER_TEXT", "bool", "notifications",
             "Texte des rappels dans la notification",
             "Sinon la notification dit seulement « un rappel »."),

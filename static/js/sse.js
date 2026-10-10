@@ -18,6 +18,7 @@ const SERVER_DOWN = T.status?.serverDown || "Serveur JARVIS déconnecté · reco
 const SERVER_CLOSED = T.status?.serverClosed || "JARVIS est fermé · relancez JARVIS.bat";
 const PC_CLOSED = T.delivery?.pcClosed || "JARVIS est fermé sur le PC";
 const ID_KEY = "jarvis.client";
+const WAS_PAIRED = "jarvis.wasPaired";  // read once by pair.js
 const STALE_MS = 30e3;  // two pings (15 s) missed: the stream is dead, whatever its readyState says
 
 let es = null;
@@ -29,6 +30,7 @@ let opened = 0;
 let closed = false;  // « Quitter JARVIS »: the server said it stops
 let closedText = SERVER_CLOSED;
 let lastFrameAt = Date.now();  // the stream's last sign of life (opened, an event, a ping)
+let forgetting = false;  // « Oublier cet iPhone » under way: its 401 is no removal by the PC
 
 /* This page's id. Kept across a reload (sessionStorage), but taken out of
    storage while the page lives and put back when it goes: a duplicated tab
@@ -77,10 +79,22 @@ export function listenEvents() {
     state.synced = false;
     setServerChip(true);
     // A restarted server has a new token, so this page's is dead: reload to get it.
-    api("/api/config").catch(err => { if (err.status === 401) location.reload(); });
+    api("/api/config").catch(err => { if (err.status === 401) reloadRefused(); });
     // The browser gives up for good on an HTTP error: start a new stream later.
     if (source.readyState === EventSource.CLOSED && source === es) reopenLater();
   };
+}
+
+/* A 401: this page's token is dead (a restarted JARVIS) or, on the paired
+   iPhone, its device was removed on the PC. That answer clears the device
+   cookie, so the next load cannot tell which: the mark lets pair.js say
+   « Appareil retiré » instead of offering pairing as if the phone were new
+   (a reload that finds JARVIS again drops it, see init). */
+function reloadRefused() {
+  if (state.remote && !forgetting) {
+    try { sessionStorage.setItem(WAS_PAIRED, "1"); } catch { /* storage blocked: the plain pairing page */ }
+  }
+  location.reload();
 }
 
 /* Back on screen, or back from the back/forward cache: a silent stream is reopened now. */
@@ -152,6 +166,10 @@ async function refreshPanels() {
 }
 
 export function init() {
+  if (state.remote) {
+    try { sessionStorage.removeItem(WAS_PAIRED); } catch { /* storage blocked */ }  // still paired
+    bus.on("remote:forgetting", (on) => { forgetting = !!on; });
+  }
   $("serverChip")?.setAttribute("role", "status");  // read out when the server drops
   setServerChip(false);
   listenEvents();

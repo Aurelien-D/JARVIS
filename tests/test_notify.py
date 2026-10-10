@@ -306,13 +306,21 @@ def test_only_away_follows_the_leader_page_the_attention_and_idle_time(ntfy, mon
         state.update(leader=leader, attention=attention, idle=idle)
         assert notify.at_pc() is here, (leader, attention, idle)
         before = len(sent(ntfy))
-        push("task", task("done", f"away-{i}"))
+        push("task", task("done", f"away-{i}", via="pc"))
         push("pending", pending(f"away-{i}"))
         push("reminder", reminder())  # always
         bodies = sent(ntfy)[before:]
         expected = ["JARVIS : un rappel."] if here else \
             ["JARVIS : tâche terminée.", "JARVIS : une confirmation vous attend.", "JARVIS : un rappel."]
         assert bodies == expected, (leader, attention, idle)
+    # A result from the iPhone or Siri is never spoken on the PC: monsieur at
+    # the PC or not, the phone is told.
+    state.update(leader="page-1", attention="ok", idle=1.0)
+    assert notify.at_pc()
+    for i, via in enumerate((f"app:{DEVICE}", "siri:k_0123456789abcdef")):
+        before = len(sent(ntfy))
+        push("task", task("done", f"remote-{i}", via=via))
+        assert sent(ntfy)[before:] == ["JARVIS : tâche terminée."], via
     # Off: tasks are told even with monsieur at the PC.
     monkeypatch.setattr(config, "NTFY_ONLY_AWAY", False)
     state.update(leader="page-1", attention="ok", idle=1.0)

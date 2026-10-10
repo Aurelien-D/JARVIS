@@ -201,12 +201,27 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ---------------------------------------------------------- start */
+/* sse.js marks a paired JARVIS page that a 401 sent here: its device cookie
+   was cleared by that answer, so the server can only serve the plain
+   pairing page. Read once. */
+function justRemoved() {
+  try {
+    const was = sessionStorage.getItem("jarvis.wasPaired") === "1";
+    sessionStorage.removeItem("jarvis.wasPaired");
+    return was && (pageState === "pair" || pageState === "closed");
+  } catch {
+    return false;
+  }
+}
+
 function start() {
-  if (pageState !== "pair") stateView(pageState);
+  const removed = justRemoved();
+  if (removed) stateView("revoked");  // [Réessayer] then offers pairing again
+  else if (pageState !== "pair") stateView(pageState);
   else if (isIOS() && !standalone()) installView();
   else formView();
   started = true;
-  window.__pair = { ready: true, state: pageState };
+  window.__pair = { ready: true, state: removed ? "revoked" : pageState };
 }
 
 start();
