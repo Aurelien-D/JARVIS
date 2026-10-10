@@ -533,3 +533,55 @@ def test_about_gets_the_deadlines_of_the_models_in_use(client, monkeypatch):
     monkeypatch.setattr(config, "TRANSCRIBE_MODEL", "gpt-realtime-whisper")
     monkeypatch.setattr(config, "TRANSCRIBE_FALLBACK", "")
     assert client.get("/api/settings").json()["deadlines"] == []
+
+# ---------------------------------------------------------------- from a paired iPhone (spec 4.10)
+
+
+def test_remote_get_shows_only_the_phones_sections_and_settings(monkeypatch, client):
+    from remote_helpers import paired_client
+
+    from jarvis import remote
+    phone, _, _ = paired_client(monkeypatch)
+    body = phone.get("/api/settings").json()
+    existing = {i for i, _ in settings.SECTIONS}
+    assert [s["id"] for s in body["sections"]] == [s for s in remote.REMOTE_SECTIONS if s in existing]
+    assert {e["key"] for e in body["schema"]} == set(remote.REMOTE_SETTINGS)
+    assert set(body["values"]) == set(remote.REMOTE_SETTINGS)
+    assert body["key"] == {"present": True, "masked": ""} and body["data_dir"] == "" and body["autostart"] is None
+    assert body["remote"] is True
+    assert set(body["overridden"]) <= remote.REMOTE_SETTINGS and set(body["restart"]) <= remote.REMOTE_SETTINGS
+    assert str(config.DATA_DIR) not in json.dumps(body) and "sk-" not in json.dumps(body)
+    # The PC's page is unchanged.
+    pc_body = client.get("/api/settings").json()
+    assert "remote" not in pc_body and len(pc_body["schema"]) == len(settings.SCHEMA)
+    assert pc_body["data_dir"] == str(config.DATA_DIR)
+
+
+@pytest.mark.parametrize("change", [
+    {"permission_mode": "bypassPermissions"}, {"permission_mode": "auto", "confirm": True},
+    {"workdir": "C:\\Users"}, {"workdir": "C:\\Users", "confirm": True},
+    {"mcp_config": ""}, {"mcp_config": "", "confirm": True},
+    {"daily_budget_usd": 100}, {"daily_budget_usd": 100, "confirm": True},
+    {"voice": "cedar", "confirm": True},
+])
+def test_remote_put_of_pc_settings_is_refused(monkeypatch, change):
+    from remote_helpers import paired_client
+    phone, _, _ = paired_client(monkeypatch)
+    before = (config.PERMISSION_MODE, config.WORKDIR, config.MCP_CONFIG, config.DAILY_BUDGET_USD, config.VOICE)
+    r = phone.put("/api/settings", json=change)
+    assert r.status_code == 403 and r.json()["detail"] == "Réglage modifiable sur le PC seulement."
+    assert (config.PERMISSION_MODE, config.WORKDIR, config.MCP_CONFIG, config.DAILY_BUDGET_USD,
+            config.VOICE) == before
+    assert saved_file() == {}
+
+
+def test_remote_put_of_a_harmless_setting_works(monkeypatch, published):
+    from remote_helpers import paired_client
+
+    from jarvis import remote
+    phone, _, _ = paired_client(monkeypatch)
+    r = phone.put("/api/settings", json={"voice": "cedar", "quiet_hours": "23:00-07:00"})
+    assert r.status_code == 200, r.text
+    assert config.VOICE == "cedar" and saved_file() == {"voice": "cedar", "quiet_hours": "23:00-07:00"}
+    assert set(r.json()["values"]) == set(remote.REMOTE_SETTINGS)
+    assert published[-1]["type"] == "config"

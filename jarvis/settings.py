@@ -26,7 +26,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from . import config, desktop, events, shell, store
@@ -740,21 +740,44 @@ def _schema_entry(s: Setting) -> dict:
 
 
 @router.get("/api/settings")
-def get_settings():
+def get_settings(request: Request):
+    from . import remote  # late: remote reads settings through usage
     key = config.OPENAI_API_KEY or ""
-    return {"sections": [{"id": i, "title": t} for i, t in SECTIONS],
+    body = {"sections": [{"id": i, "title": t} for i, t in SECTIONS],
             "schema": [_schema_entry(s) for s in SCHEMA], "values": shown_values(),
             "overridden": overridden(), "restart": restart_pending(),
             "key": {"present": bool(key.strip()), "masked": mask(key)},
             "autostart": autostart_state(), "versions": versions(), "deadlines": deadlines(),
             "data_dir": str(config.DATA_DIR), "platform": _platform()}
+    if remote.caller_of(request).remote:
+        body = _for_the_phone(body)
+    return body
+
+
+def _for_the_phone(body: dict) -> dict:
+    """What a paired iPhone sees of Réglages: its few sections and harmless
+    settings, nothing about the key, the data folder or autostart (4.10)."""
+    from . import remote
+    allowed = remote.REMOTE_SETTINGS
+    sections = [s for s in body["sections"] if s["id"] in remote.REMOTE_SECTIONS]
+    return {**body, "sections": sections,
+            "schema": [e for e in body["schema"] if e["key"] in allowed],
+            "values": {k: v for k, v in body["values"].items() if k in allowed},
+            "overridden": [k for k in body["overridden"] if k in allowed],
+            "restart": [k for k in body["restart"] if k in allowed],
+            "key": {"present": True, "masked": ""}, "data_dir": "", "autostart": None, "remote": True}
 
 
 @router.put("/api/settings")
-def put_settings(body: dict):
+def put_settings(body: dict, request: Request):
     """A partial dict {key: value}; 'confirm': true for the sensitive ones."""
+    from . import remote  # late: remote reads settings through usage
     changes = dict(body)
     confirm = changes.pop("confirm", False)
+    phone = remote.caller_of(request).remote
+    if phone and (confirm or any(k not in remote.REMOTE_SETTINGS for k in changes)):
+        # The phone may be away from home: what runs tasks or spends stays on the PC.
+        raise HTTPException(403, "Réglage modifiable sur le PC seulement.")
     if not changes:
         raise HTTPException(400, "Aucun réglage à modifier.")
     try:
@@ -765,8 +788,14 @@ def put_settings(body: dict):
         raise HTTPException(500, "Réglages non enregistrés : le dossier des données n'est pas "
                                  "modifiable (disque plein ou protégé).") from None
     # The models may have changed: À propos shows their versions and deadlines.
-    return {"ok": True, "applied": applied, "values": shown_values(), "restart": restart_pending(),
-            "overridden": overridden(), "versions": versions(), "deadlines": deadlines()}
+    out = {"ok": True, "applied": applied, "values": shown_values(), "restart": restart_pending(),
+           "overridden": overridden(), "versions": versions(), "deadlines": deadlines()}
+    if phone:
+        allowed = remote.REMOTE_SETTINGS
+        out.update(values={k: v for k, v in out["values"].items() if k in allowed},
+                   restart=[k for k in out["restart"] if k in allowed],
+                   overridden=[k for k in out["overridden"] if k in allowed])
+    return out
 
 
 class KeyIn(BaseModel):

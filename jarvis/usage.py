@@ -19,13 +19,19 @@ data/usage.json holds one entry per local date (the PC's clock), 90 days kept:
   together. Once reached, /api/config says usage_capped: the wake word no
   longer opens a paid conversation (a click still can, after a confirmation)
   and no new Claude task starts (tasks._check_budget).
+- A paired iPhone (remote.py) reports its voice usage the same way, but a page
+  away from home could lie: its reports are bounded per post and by the time
+  elapsed since each voice session it opened today (REMOTE_*), and what it was
+  granted is kept in the day entry, under "remote", so a restart grants nothing
+  new: {"remote": {"d_<16 hex>": {"usd": 0.42, "mints": [epoch, ...]}}}.
 """
 import logging
 import math
 import re
+import time
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from . import config, events, store
@@ -70,6 +76,17 @@ _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 # One post covers 30 s of conversation: far below these, whatever happens.
 MAX_TOKENS = 50_000_000
 MAX_SECONDS = 86_400
+
+# A paired iPhone's reports (spec 4.8): at most this much per post, and in all
+# at most the elapsed time of each voice session it opened today at this rate,
+# capped per session. A page can then raise the ledger by 0.30 $ a minute per
+# session at worst, and the mint limits stop a page that opens many.
+REMOTE_POST_MAX_USD = 1.0
+REMOTE_SESSION_ALLOWANCE_USD = 6.0
+REMOTE_MAX_USD_PER_S = 0.005
+REMOTE_MAX_DEVICES = 10
+REMOTE_MAX_MINTS = 100
+_DEVICE_ID = re.compile(r"d_[0-9a-f]{16}")
 
 
 def resolve_model(model: str) -> str:
@@ -164,8 +181,26 @@ def _today() -> date:
     return datetime.now().date()
 
 
+def _now() -> float:
+    return time.time()
+
+
 def _num(value) -> float:
     return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else 0
+
+
+def _remote(raw) -> dict:
+    """The paired devices' part of a day: known id shapes, bounded, numbers finite."""
+    out = {}
+    for device_id, item in (raw.items() if isinstance(raw, dict) else ()):
+        if len(out) >= REMOTE_MAX_DEVICES:
+            break
+        if not isinstance(device_id, str) or not _DEVICE_ID.fullmatch(device_id) or not isinstance(item, dict):
+            continue
+        mints = [float(m) for m in item.get("mints") or [] if _num(m) > 0] if isinstance(item.get("mints"), list) \
+            else []
+        out[device_id] = {"usd": max(0.0, float(_num(item.get("usd")))), "mints": mints[-REMOTE_MAX_MINTS:]}
+    return out
 
 
 def _entry(raw) -> dict:
@@ -175,7 +210,11 @@ def _entry(raw) -> dict:
     cl = raw.get("claude") if isinstance(raw.get("claude"), dict) else {}
     realtime = {k: _num(rt.get(k)) for k in (*TOKEN_CLASSES, "transcribe_in", "transcribe_out",
                                              "transcribe_seconds", "usd")}
-    return {"realtime": realtime, "claude": {"usd": _num(cl.get("usd")), "tasks": int(_num(cl.get("tasks")))}}
+    entry = {"realtime": realtime, "claude": {"usd": _num(cl.get("usd")), "tasks": int(_num(cl.get("tasks")))}}
+    remote = _remote(raw.get("remote"))
+    if remote:  # only once a paired device used the voice: the PC's days keep their shape
+        entry["remote"] = remote
+    return entry
 
 
 def _load() -> dict:
@@ -183,7 +222,7 @@ def _load() -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _change(fn) -> dict:
+def _change(fn, publish: bool = True) -> dict:
     """Apply fn to today's entry and save; returns that entry."""
     today = _today()
     with store.LOCK:
@@ -197,7 +236,8 @@ def _change(fn) -> dict:
         oldest = (today - timedelta(days=KEEP_DAYS - 1)).isoformat()
         data = {k: v for k, v in data.items() if _DAY.fullmatch(str(k)) and k >= oldest}
         store.save(FILE, data)
-    _publish()
+    if publish:
+        _publish()
     return entry
 
 
@@ -253,6 +293,78 @@ def add_claude(usd) -> None:
         entry["claude"]["usd"] += usd
         entry["claude"]["tasks"] += 1
     _change(apply)
+
+
+# ---------------------------------------------------------------- a paired iPhone's voice
+
+def note_remote_mint(device_id: str, now: float) -> None:
+    """A voice session a paired device opened (remote.note_mint): kept in today's
+    entry, so the day's mint limit and the report allowance survive a restart."""
+    if not _DEVICE_ID.fullmatch(str(device_id or "")):
+        return
+
+    def apply(entry):
+        remote = entry.setdefault("remote", {})
+        item = remote.setdefault(device_id, {"usd": 0.0, "mints": []})
+        item["mints"] = [*item["mints"], float(now)][-REMOTE_MAX_MINTS:]
+        while len(remote) > REMOTE_MAX_DEVICES:  # the oldest device of the day goes
+            remote.pop(next(iter(remote)))
+    _change(apply, publish=False)
+
+
+def remote_mints(device_id: str) -> list[float]:
+    """Today's voice sessions of this device (epoch seconds)."""
+    item = _day(_today().isoformat()).get("remote", {}).get(str(device_id or ""))
+    return list(item["mints"]) if item else []
+
+
+def _allowance(mints: list, now: float) -> float:
+    return sum(min(REMOTE_SESSION_ALLOWANCE_USD, REMOTE_MAX_USD_PER_S * max(0.0, now - m)) for m in mints)
+
+
+def _remote_report(caller, usage: dict, model: str) -> None:
+    """A paired device's report: priced like the PC's, refused above
+    REMOTE_POST_MAX_USD, and recorded only up to what the time elapsed since its
+    sessions allows (the token classes scaled alike, so the ledger stays whole)."""
+    from . import (  # late: realtime -> tools -> tasks imports this module
+        audit,
+        realtime,
+    )
+    device_id = caller.device_id
+    if "type" in usage:
+        asr = model if model in TRANSCRIBE_PER_MINUTE else realtime.transcribe_model()
+        parts = transcription_parts(usage, asr)
+        floor = realtime.transcribe_model()
+        if floor != asr:
+            low = transcription_parts(usage, floor)
+            if low["usd"] > parts["usd"]:
+                parts = low
+        usd, classes = parts["usd"], {"transcribe_in": parts["in"], "transcribe_out": parts["out"],
+                                      "transcribe_seconds": parts["seconds"]}
+    else:
+        classes = realtime_classes(usage)
+        usd = max(realtime_cost(classes, model or config.REALTIME_MODEL),
+                  realtime_cost(classes, config.REALTIME_MODEL))
+    if usd > REMOTE_POST_MAX_USD:
+        raise ValueError("relevé trop élevé")
+    clamped = {"done": False}
+
+    def apply(entry):
+        # No voice session opened today: no allowance, nothing recorded (and no entry made).
+        item = entry.get("remote", {}).get(device_id) or {"usd": 0.0, "mints": []}
+        room = max(0.0, _allowance(item["mints"], _now()) - item["usd"])
+        ratio = 1.0
+        if usd > room:
+            ratio = room / usd if usd > 0 else 0.0
+            clamped["done"] = True
+        for k, v in classes.items():
+            entry["realtime"][k] += v * ratio
+        recorded = usd * ratio
+        entry["realtime"]["usd"] += recorded
+        item["usd"] = round(item["usd"] + recorded, 6)
+    _change(apply)
+    if clamped["done"]:
+        audit.event(caller, "usage", reason="clamped")
 
 
 def realtime_spent_today() -> float:
@@ -327,15 +439,21 @@ class UsageIn(BaseModel):
 
 
 @router.post("/api/usage")
-def post_usage(body: UsageIn):
+def post_usage(body: UsageIn, request: Request):
     # The page names its session's model, but a cheaper name than Réglages
     # set never makes the cap look further away: the dearer of the two counts
     # (a session opened before a switch to a dearer model is then over-counted,
     # the safe side).
-    from . import realtime  # late: realtime -> tools -> tasks imports this module
+    from . import (  # late: realtime -> tools -> tasks imports this module
+        realtime,
+        remote,
+    )
     model = body.model[:80]
+    caller = remote.caller_of(request)
     try:
-        if "type" in body.usage:  # a transcription: {type: 'tokens'|'duration', ...}
+        if caller.remote:  # a paired iPhone: bounded (4.8)
+            _remote_report(caller, body.usage, model)
+        elif "type" in body.usage:  # a transcription: {type: 'tokens'|'duration', ...}
             add_transcription(body.usage, model, at_least=realtime.transcribe_model())
         else:
             add_realtime(body.usage, model, at_least=config.REALTIME_MODEL)

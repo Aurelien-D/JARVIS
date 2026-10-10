@@ -317,3 +317,97 @@ def test_the_ledger_lives_in_the_data_folder_under_a_fixed_name():
     usage.add_claude(0.1)
     assert (config.DATA_DIR / "usage.json").is_file()
     assert usage.FILE == "usage.json"
+
+# ---------------------------------------------------------------- a paired iPhone's reports (spec 4.8)
+
+PHONE_ID = "d_0123456789abcdef"
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    now = {"t": 1_760_000_000.0}
+    monkeypatch.setattr(usage, "_now", lambda: now["t"])
+    return now
+
+
+@pytest.fixture
+def phone(monkeypatch):
+    """POST /api/usage as a paired iPhone (its caller stamped by the gate)."""
+    from remote_helpers import as_caller, remote_client
+
+    from jarvis import remote
+    as_caller(monkeypatch, remote.Caller(kind="app", device_id=PHONE_ID, ip="100.101.102.103",
+                                         login="monsieur@example.com", name="iPhone de test"))
+    return remote_client()
+
+
+def test_remote_mints_are_kept_in_the_day_entry(clock):
+    assert usage.remote_mints(PHONE_ID) == []
+    usage.note_remote_mint(PHONE_ID, clock["t"])
+    usage.note_remote_mint(PHONE_ID, clock["t"] + 60)
+    usage.note_remote_mint("../evil", clock["t"])  # not a device id: ignored
+    assert usage.remote_mints(PHONE_ID) == [clock["t"], clock["t"] + 60]
+    stored = store.load(usage.FILE, {})[TODAY.isoformat()]
+    assert stored["remote"] == {PHONE_ID: {"usd": 0.0, "mints": [clock["t"], clock["t"] + 60]}}
+    for _ in range(120):
+        usage.note_remote_mint(PHONE_ID, clock["t"])
+    assert len(usage.remote_mints(PHONE_ID)) == usage.REMOTE_MAX_MINTS
+
+
+def test_the_remote_part_of_a_day_is_sanitised():
+    many = {f"d_{n:016x}": {"usd": 1.0, "mints": [1.0]} for n in range(15)}
+    store.save(usage.FILE, {TODAY.isoformat(): {"remote": {
+        **many, "../evil": {"usd": 9}, PHONE_ID: {"usd": float("nan"), "mints": [1.0, "x", True, -5, None, 2.0]},
+        "d_ffffffffffffffff": "rien"}}})
+    entry = usage._entry(store.load(usage.FILE, {})[TODAY.isoformat()])
+    assert len(entry["remote"]) == usage.REMOTE_MAX_DEVICES
+    assert all(usage._DEVICE_ID.fullmatch(k) for k in entry["remote"])
+    store.save(usage.FILE, {TODAY.isoformat(): {"remote": {PHONE_ID: {"usd": float("inf"), "mints": [1.0, "x", 2.0]}}}})
+    entry = usage._entry(store.load(usage.FILE, {})[TODAY.isoformat()])
+    assert entry["remote"] == {PHONE_ID: {"usd": 0.0, "mints": [1.0, 2.0]}}
+    # A day with nothing remote keeps the shape the PC always had.
+    assert set(usage._entry({})) == {"realtime", "claude"}
+
+
+def test_remote_reports_are_bounded_by_the_time_since_each_session(phone, clock):
+    one_dollar = audio_out(15_000)  # 0.96 $ at gpt-realtime-2.1
+    # No voice session opened today: nothing to report, nothing recorded.
+    assert phone.post("/api/usage", json={"usage": one_dollar, "model": "gpt-realtime-2.1"}).status_code == 200
+    assert usage.realtime_spent_today() == 0
+    usage.note_remote_mint(PHONE_ID, clock["t"])
+    clock["t"] += 30  # 0.15 $ of room
+    phone.post("/api/usage", json={"usage": one_dollar, "model": "gpt-realtime-2.1"})
+    entry = usage._day(TODAY.isoformat())
+    assert entry["realtime"]["usd"] == pytest.approx(0.15)
+    # Clamped: the token classes are scaled alike, so the ledger stays whole.
+    assert entry["realtime"]["audio_out"] == pytest.approx(15_000 * 0.15 / 0.96)
+    assert entry["remote"][PHONE_ID]["usd"] == pytest.approx(0.15)
+    # Each session's allowance stops at 6 $; two sessions, twice that.
+    clock["t"] += 3600
+    for _ in range(10):
+        phone.post("/api/usage", json={"usage": one_dollar, "model": "gpt-realtime-2.1"})
+    assert usage.realtime_spent_today() == pytest.approx(6.0)
+    usage.note_remote_mint(PHONE_ID, clock["t"])
+    clock["t"] += 10
+    phone.post("/api/usage", json={"usage": one_dollar, "model": "gpt-realtime-2.1"})
+    assert usage.realtime_spent_today() == pytest.approx(6.05)
+
+
+def test_a_remote_post_above_one_dollar_is_refused(phone, clock):
+    usage.note_remote_mint(PHONE_ID, clock["t"] - 3600)
+    r = phone.post("/api/usage", json={"usage": audio_out(20_000), "model": "gpt-realtime-2.1"})
+    assert r.status_code == 400 and r.json()["detail"] == "Relevé de consommation invalide."
+    # Priced like the PC's: a cheaper model name never lowers it.
+    r = phone.post("/api/usage", json={"usage": audio_out(20_000), "model": "gpt-realtime-mini"})
+    assert r.status_code == 400
+    r = phone.post("/api/usage", json={"usage": {"type": "duration", "seconds": 60}, "model": "whisper-1"})
+    assert r.status_code == 200 and usage.realtime_spent_today() == pytest.approx(0.006)
+    assert usage._day(TODAY.isoformat())["realtime"]["transcribe_seconds"] == 60
+
+
+def test_the_pc_path_is_unchanged(client, clock):
+    r = client.post("/api/usage", json={"usage": audio_out(15_000), "model": "gpt-realtime-2.1"})
+    assert r.status_code == 200 and usage.realtime_spent_today() == pytest.approx(0.96)
+    r = client.post("/api/usage", json={"usage": audio_out(20_000), "model": "gpt-realtime-2.1"})
+    assert r.status_code == 200 and usage.realtime_spent_today() == pytest.approx(0.96 + 1.28)
+    assert "remote" not in store.load(usage.FILE, {})[TODAY.isoformat()]
