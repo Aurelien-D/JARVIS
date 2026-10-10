@@ -470,10 +470,39 @@ export function onTask(tk) {
 
 function lateText(r) { return r.late_minutes ? S.reminderLate(r.late_minutes) : ""; }
 
+/* '+10 min', '+1 h', 'Demain' bring a reminder that went off back later
+   (POST /api/schedules/{id}/snooze, WP17); 'Fait' closes it: monsieur saw it. */
+function reminderActions(reminderId, inboxId) {
+  if (!reminderId) return [];
+  const later = (minutes) => async (card) => {
+    try {
+      const out = await api(`/api/schedules/${encodeURIComponent(reminderId)}/snooze`,
+                            { method: "POST", body: { minutes } });
+      const due = new Date(Number(out?.item?.due) * 1000);
+      const today = due.toDateString() === new Date().toDateString();
+      removeCard(card, { byUser: true });
+      toast(S.snoozed(today ? fmtTime(due) : T.time.tomorrow(fmtTime(due))));
+      if (inboxId) ack([inboxId]);
+    } catch (err) {
+      toast(S.snoozeFailed(err.message));
+    }
+  };
+  return [
+    { label: S.snooze10, onClick: later(10) },
+    { label: S.snooze60, onClick: later(60) },
+    { label: S.tomorrow, onClick: later(1440) },
+    { label: S.done, primary: true, onClick: (card) => {
+      removeCard(card, { byUser: true });
+      if (inboxId) ack([inboxId]);
+    } },
+  ];
+}
+
 export function onReminder(r) {
   const late = lateText(r);
   const text = r.text || r.title || "";
-  addCard(`${S.reminder}${late}`, text, "warning", r.inbox_id ? { id: `rappel-${r.inbox_id}` } : {});
+  addCard(`${S.reminder}${late}`, text, "warning", {
+    ...(r.inbox_id ? { id: `rappel-${r.inbox_id}` } : {}), actions: reminderActions(r.id, r.inbox_id) });
   if (!isLeader() || !firstTime(r.inbox_id)) return;
   announce(`Rappel : ${text}`, { urgent: true });
   deliver({ kind: "reminder",
@@ -483,9 +512,20 @@ export function onReminder(r) {
             inboxIds: r.inbox_id ? [r.inbox_id] : [] });
 }
 
+/* The local briefing (WP17): its text on a card on every page; the leader
+   tells it. Marked queued (quiet hours, « Ne pas déranger »): it waits
+   behind the badge, nothing is said aloud. */
 function onBriefing(b) {
+  const text = String(b.text || b.summary || b.output || "");
+  if (text) addCard(S.briefing, text, "info", b.inbox_id ? { id: `briefing-${b.inbox_id}` } : {});
   if (!isLeader() || !firstTime(b.inbox_id)) return;
-  deliver(briefingMessage(b.text || b.summary || b.output, b.inbox_id));
+  const m = message(briefingMessage(text, b.inbox_id));
+  if (b.queued && !isLive()) {
+    queue(m);
+    delivered(m, "queued");
+    return;
+  }
+  deliver(m);
 }
 
 function showWarning(w, inboxId) {
@@ -572,7 +612,7 @@ export function syncInbox() {
         if (it.kind === "reminder") {
           const p = it.payload || {};
           addCard(S.reminderAt(fmtTime(new Date(it.created * 1000))), p.text || p.title || "", "warning",
-                  { id: `rappel-${it.id}` });
+                  { id: `rappel-${it.id}`, actions: reminderActions(p.id, it.id) });
         }
       }
       if (told.length) deliver(missedMessage(told));

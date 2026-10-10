@@ -116,7 +116,7 @@ def test_memory_routes_edit_delete_by_id_and_undo(client, published):
     assert client.patch("/api/memory/zzz", json={"text": "ok"}).status_code == 404
     assert client.patch("/api/memory/__sonde__", json={}).status_code == 422
     # The side panel learns what it can edit from /api/config, never by probing.
-    assert client.get("/api/config").json()["edit"] == {"memory": True, "schedules": False}
+    assert client.get("/api/config").json()["edit"] == {"memory": True, "schedules": True}  # WP17: PATCH too
     # DELETE takes an id, never words: 'monsieur' in the URL deletes nothing.
     assert client.delete("/api/memory/monsieur").json() == {"ok": True, "removed": 0}
     assert len(memory.facts()) == 2

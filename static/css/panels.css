@@ -155,6 +155,31 @@
   font: var(--fs-md) var(--font-hud);
 }
 .edit-form .ctl { min-height: 28px; padding: 2px 10px; font-size: var(--fs-sm); }
+/* WP17: a reminder's date and time under its text */
+.edit-form.with-when { flex-wrap: wrap; }
+.edit-form.with-when input[type="text"] { flex-basis: 100%; }
+.edit-form .edit-when { flex: 1 1 10em; font-family: var(--font-mono); font-size: var(--fs-sm); color-scheme: dark; }
+.edit-form.with-when ~ .when { display: none; }  /* the field says when */
+
+/* ------------------------------------------------ « JARVIS a remarqué » (remarques.js, WP17) */
+#remarques .remarque {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "txt x" "acts x";
+  border-left: 3px solid var(--amber); padding-left: 8px;
+}
+#remarques .remarque.notify { border-left-color: var(--cyan); }
+#remarques .remarque .acts {
+  grid-area: acts; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 4px;
+}
+#remarques .remarque .acts .ctl { min-height: 28px; padding: 2px 10px; font-size: var(--fs-sm); }
+#remarques .why > summary {
+  cursor: pointer; font-size: var(--fs-xs); color: var(--muted); list-style: none; min-height: 24px;
+  display: inline-flex; align-items: center;
+}
+#remarques .why > summary::-webkit-details-marker { display: none; }
+#remarques .why > summary:hover { color: var(--text); }
+#remarques .why[open] { flex-basis: 100%; }
+#remarques .why p { margin: 2px 0 0; font-size: var(--fs-xs); color: var(--muted); line-height: var(--lh-body); }
 
 @media (forced-colors: active) {
   .task, .item { border-color: CanvasText; }
