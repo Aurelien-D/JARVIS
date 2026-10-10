@@ -230,6 +230,10 @@ def test_hostile_ids_and_texts_never_name_a_file_holds(client, fake_claude, tmp_
     for bad in HOSTILE:
         quoted = bad.replace("%", "%25").replace("/", "%2F").replace("\\", "%5C").replace("\x00", "%00")
         api.delete(f"/api/schedules/{quoted}")
+        api.patch(f"/api/schedules/{quoted}", json={"title": bad, "text": bad, "at": bad})  # WP17
+        api.post(f"/api/schedules/{quoted}/snooze", json={"minutes": 10})
+        api.post(f"/api/remarques/{quoted}/dismiss")
+        api.post("/api/schedules", json={"title": bad, "text": bad, "delay_minutes": 60})
         api.delete(f"/api/memory/{quoted}")
         api.post(f"/api/inbox/{quoted}/ack")
         api.get(f"/api/task/{quoted}")

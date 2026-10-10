@@ -231,6 +231,10 @@ export const T = typeset({
     reminder: "Rappel",
     reminderLate: (minutes) => ` (en retard de ${minutes} min)`,
     reminderAt: (time) => `Rappel (${time})`,
+    // WP17: the buttons of a reminder that went off, and the local briefing's card
+    snoozed: (time) => `Rappel reporté : ${time}.`,
+    snoozeFailed: (why) => `Report impossible : ${why}`,
+    briefing: "Briefing du matin",
   },
   // ---- WP10 + WP11 (panels.js, taskview.js, report.js) -------------------
   // The report window (report.js): its table, chart and ApexCharts' toolbar.
@@ -293,6 +297,11 @@ export const T = typeset({
     cancelEdit: "Annuler la modification",
     saveFailed: (why) => `Modification impossible : ${why}`,
     factDate: (date) => `Retenu le ${date}`,
+    // WP17: a reminder's date and time in the edit form, and the new repeats
+    editWhen: "Date et heure",
+    repeats: { daily: "chaque jour", weekdays: "en semaine", weekly: "chaque semaine", monthly: "chaque mois" },
+    weekdays: ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"],  // the server's 0 = lundi
+    repeatDays: (days) => `le ${days}`,
   },
   // The task viewer (taskview.js): a task's whole story.
   taskview: {
@@ -563,6 +572,16 @@ export const T = typeset({
     reminder: "Rappel",
     late: "en retard",
     card: "A.R.E.S",
+  },
+  // ---- WP17: « JARVIS a remarqué » (remarques.js)
+  remarques: {
+    title: "JARVIS a remarqué",
+    count: (n) => `JARVIS a remarqué (${n})`,
+    why: "Pourquoi ?",
+    dismiss: (text) => `Masquer la remarque « ${text} »`,
+    dismissed: (n) => (Number(n) > 1 ? `Remarque masquée pendant ${n} jours.` : "Remarque masquée pendant 1 jour."),
+    dismissFailed: (why) => `Impossible de masquer la remarque : ${why}`,
+    actionFailed: (why) => `Action impossible : ${why}`,
   },
   help: {
     // What monsieur says to JARVIS (he says "tu" to it): examples, not UI copy.

@@ -171,6 +171,7 @@ KNOWN_API = {
     "/api/task/{task_id}/retry", "/api/task/{task_id}/reveal",  # WP10, WP13
     "/api/settings", "/api/settings/openai-key", "/api/settings/open-data", "/api/autostart",  # WP12
     "/api/health", "/api/onboarding",  # WP12
+    "/api/schedules/{item_id}/snooze", "/api/remarques", "/api/remarques/{key}/dismiss",  # WP17
 }
 FOREIGN_ORIGINS = ("https://evil.example", "http://127.0.0.1:9999", "null", "http://localhost.evil.example:8788")
 

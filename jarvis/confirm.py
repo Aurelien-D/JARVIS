@@ -60,7 +60,7 @@ class T:
 
 
 FREQ = {"none": "ponctuelle", "daily": "quotidienne", "weekdays": "en semaine",
-        "weekly": "hebdomadaire"}
+        "weekly": "hebdomadaire", "monthly": "mensuelle", "days": "certains jours"}
 
 
 def _now() -> float:
@@ -211,6 +211,11 @@ def gate(name: str, args: dict, ctx) -> dict | None:
     pending = _park(name, args or {}, sid, summary, detail)
     return {"status": "needs_confirmation", "pending_id": pending["id"], "summary": summary,
             "expires_in": max(0, round(pending["expires"] - _now())), "consigne": T.ask}
+
+
+def needs_confirmation(name: str, args: dict, sid=None) -> bool:
+    """Would gate() park this call? (a handler reached anyway came through decide())"""
+    return _rule(name, args or {}, sid) is not None
 
 
 def _complet(profile) -> bool:

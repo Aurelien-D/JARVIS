@@ -18,7 +18,6 @@ import { setSideOpen, toast } from "./hud.js";
 import { openTask } from "./taskview.js";
 
 const S = T.task, P = T.panels;
-const REPEAT_LABEL = { daily: "chaque jour", weekdays: "en semaine", weekly: "chaque semaine" };
 const ACTIVE = new Set(["running", "en_file"]);
 const FAILED = new Set(["error", "interrompue", "interrupted"]);
 const FINISHED = new Set(["done", "cancelled", "error", "interrompue", "interrupted"]);
@@ -412,6 +411,22 @@ function whenText(d, group) {
   return T.time.onDate(dayFormat.format(d), fmtTime(d));
 }
 
+/* 'chaque jour', 'chaque mois', 'le lundi et jeudi' (WP17: monthly and days). */
+export function repeatLabel(it) {
+  if (it.repeat === "days" && Array.isArray(it.days)) {
+    const names = it.days.filter(d => Number.isInteger(d) && d >= 0 && d <= 6).map(d => P.weekdays[d]);
+    if (!names.length) return "";
+    return P.repeatDays(names.length > 1 ? `${names.slice(0, -1).join(", ")} et ${names[names.length - 1]}` : names[0]);
+  }
+  return P.repeats[it.repeat] || "";
+}
+
+/* A Date as a datetime-local field's value, in local time. */
+function localValue(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 function emptyLine(text) {
   const div = document.createElement("div");
   div.className = "none";
@@ -450,13 +465,14 @@ function drawSchedules() {
       out.push(h, list);
     }
     const text = String(it.title || it.text || "");
-    const repeat = REPEAT_LABEL[it.repeat] ? ` · ${REPEAT_LABEL[it.repeat]}` : "";
+    const repeat = repeatLabel(it) ? ` · ${repeatLabel(it)}` : "";
     list.append(itemRow({
       key: `s:${it.id}`, text, when: whenText(due, g) + repeat,
       tag: it.kind === "task" ? S.routine : "",
       deleteLabel: S.deleteReminder(text), editLabel: P.editReminder(text),
       url: `/api/schedules/${encodeURIComponent(it.id)}`, undoText: P.reminderDeleted,
-      edit: editable.schedules ? { field: it.title ? "title" : "text", kind: "schedules" } : null,
+      edit: editable.schedules ? { field: it.title ? "title" : "text", kind: "schedules",
+                                   due: Number(it.due) || 0 } : null,
     }));
   }
   schedulesEl.replaceChildren(...out);
@@ -642,7 +658,18 @@ function startEdit(row, { key, text, url, edit }) {
   const save = button(P.save, "ctl primary");
   save.type = "submit";
   const cancel = button("✕", "x", P.cancelEdit);
-  form.append(input, save, cancel);
+  // A reminder's date and time too (WP17): PATCH sends only what changed.
+  let whenInput = null, whenBefore = "";
+  if (edit.due) {
+    whenInput = document.createElement("input");
+    whenInput.type = "datetime-local";
+    whenInput.className = "edit-when";
+    whenInput.value = whenBefore = localValue(new Date(edit.due * 1000));
+    whenInput.setAttribute("aria-label", P.editWhen);
+    whenInput.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); end(); } });
+    form.classList.add("with-when");
+  }
+  form.append(input, ...(whenInput ? [whenInput] : []), save, cancel);
   const txt = row.querySelector(".txt");
   txt.hidden = true;
   row.classList.add("editing");
@@ -661,13 +688,19 @@ function startEdit(row, { key, text, url, edit }) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const value = input.value.trim();
-    if (!value || value === text) { end(); return; }
+    const body = {};
+    if (value && value !== text) body[edit.field] = value;
+    if (whenInput && whenInput.value && whenInput.value !== whenBefore) {
+      const due = new Date(whenInput.value).getTime() / 1000;  // read as local time
+      if (Number.isFinite(due)) body.due = due;
+    }
+    if (!Object.keys(body).length) { end(); return; }
     save.disabled = true;
     try {
-      await api(url, { method: "PATCH", body: { [edit.field]: value } });
+      await api(url, { method: "PATCH", body });
       const list = edit.kind === "schedules" ? schedules : facts;
       const item = list.find(it => `${key[0]}:${it.id}` === key);
-      if (item) item[edit.field] = value;  // the server's event confirms it right after
+      if (item) Object.assign(item, body);  // the server's event confirms it right after
       end();
     } catch (err) {
       save.disabled = false;

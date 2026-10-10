@@ -352,7 +352,7 @@ def test_memory_shows_text_with_its_date_on_hover_and_undo(jarvis):
 
 def test_editing_appears_only_when_the_server_can_patch(jarvis, reload_jarvis):
     """Memory has its PATCH route (WP14): ✎ edits a fact in place, for real.
-    Reminders have none yet (WP17): no ✎ on them."""
+    Reminders have theirs since WP17 (tests/e2e/test_reminders_ui.py edits one)."""
     from jarvis import memory
     fact = memory.remember("Thé vert")
     try:
@@ -362,7 +362,7 @@ def test_editing_appears_only_when_the_server_can_patch(jarvis, reload_jarvis):
         edit = jarvis.locator("#memoryList .item .edit")
         edit.wait_for()
         jarvis.wait_for_selector("#scheduleList .item")
-        assert jarvis.locator("#scheduleList .edit").count() == 0
+        assert jarvis.locator("#scheduleList .edit").count() == 1
         assert edit.get_attribute("aria-label") == f"Modifier «{NNBSP}Thé vert{NNBSP}»"
         edit.click()
         field = jarvis.locator("#memoryList .edit-form input")
@@ -389,7 +389,7 @@ def test_loading_the_page_sends_no_request_that_fails(jarvis, reload_jarvis):
     jarvis.wait_for_function("__jarvis.state.synced")
     jarvis.wait_for_timeout(800)
     assert patches == [] and failed == []
-    assert jarvis.evaluate("__jarvis.state.config.edit") == {"memory": True, "schedules": False}
+    assert jarvis.evaluate("__jarvis.state.config.edit") == {"memory": True, "schedules": True}
 
 
 def test_sections_are_details_with_counts_and_empty_states(jarvis):
