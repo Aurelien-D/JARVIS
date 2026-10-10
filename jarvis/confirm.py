@@ -120,17 +120,32 @@ def _session(sid: str) -> dict:
     return record
 
 
-def new_session(continues: bool = False) -> str:
-    """continues: the new session carries the last exchanges of the previous one
-    (a reconnection, the 55-minute refresh): what JARVIS said there about
-    outside content comes along, so its taint does too."""
+def new_session(continues: bool = False, sources=None) -> str:
+    """continues: the new session carries the last exchanges of earlier ones
+    (a reconnection, the 55-minute refresh, a page refilled from the journal):
+    what JARVIS said there about outside content comes along, so its taint
+    does too. sources: the sessions JARVIS's carried lines were said in, as the
+    page tracks them ("" for a line refilled from the journal); any of them
+    tainted, or unknown here (JARVIS restarted since, or forgot it), taints the
+    new one. Without sources, the previous session stands for them (none
+    known: JARVIS restarted, the lines' taint is unknown)."""
     sid = uuid.uuid4().hex
     with _lock:
-        previous = max(SESSIONS.values(), key=lambda r: r["created"], default=None)
+        if sources is None:
+            origins = [max(SESSIONS.values(), key=lambda r: r["created"], default=None)]
+        else:
+            origins = [SESSIONS.get(str(s or "")[:64]) for s in sources]
         record = _session(sid)
-        if continues and previous and previous["tainted"]:
-            record["tainted"] = True
-            record["reasons"] = list(previous["reasons"])
+        if continues:
+            reasons = []
+            for origin in origins:
+                if origin is None:
+                    reasons.append("conversation reprise")
+                elif origin["tainted"]:
+                    reasons += origin["reasons"] or ["conversation reprise"]
+            if reasons:
+                record["tainted"] = True
+                record["reasons"] = list(dict.fromkeys(reasons))[-10:]
     return sid
 
 
@@ -168,7 +183,9 @@ def after_tool(name: str, args: dict, ctx, out):
         mark_tainted(sid, name)
     elif name == "system_control" and args.get("action") == "read_clipboard":
         mark_tainted(sid, "presse-papiers")  # often copied from a web page
-    elif name == "info" and "actu" in str(args.get("type") or args.get("kind") or "").lower():
+    elif name == "info" and ("headlines" in out
+                             or "actu" in str(args.get("type") or args.get("kind") or "").lower()):
+        # By what came back: info also answers 'news' or 'Actus' with headlines.
         mark_tainted(sid, "actualités")
     elif name == "ares_lire" and _mentions_notes(args, out):
         mark_tainted(sid, "notes A.R.E.S")

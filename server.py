@@ -99,6 +99,8 @@ def get_config():
 
 class SessionIn(BaseModel):
     recent: str = ""  # last exchanges, so a reconnection picks up the thread
+    # The voice sessions JARVIS's lines in recent were said in ("" if unknown).
+    sources: list[str] | None = None
 
 
 @app.post("/api/session")
@@ -109,7 +111,8 @@ def create_session(body: SessionIn | None = None):
         raise HTTPException(exc.status, exc.detail) from None
     # A session that picks up the last exchanges also keeps their taint (confirm.py).
     return {"client_secret": data["value"], "model": config.REALTIME_MODEL,
-            "session_id": confirm.new_session(continues=bool(body and body.recent.strip()))}
+            "session_id": confirm.new_session(continues=bool(body and body.recent.strip()),
+                                              sources=body.sources if body else None)}
 
 # ---------------------------------------------------------------- tools & live events
 

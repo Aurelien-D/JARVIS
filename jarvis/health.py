@@ -131,6 +131,9 @@ def check_openai(refresh: bool = False) -> dict:
         status, code, ttl = -1, "", OPENAI_RETRY_TTL
     except httpx.HTTPError:
         status, code, ttl = 0, "", OPENAI_RETRY_TTL
+    except Exception as exc:  # noqa: BLE001 - its message may quote the request, key included
+        logging.warning("JARVIS: clé OpenAI non vérifiée (%s)", type(exc).__name__)
+        status, code, ttl = 0, "", OPENAI_RETRY_TTL
     fix_key = "Vérifiez-la sur platform.openai.com/api-keys, puis remplacez-la dans Réglages › Connexion."
     if status == 200:
         result = item("openai", "ok", title, f"Clé OpenAI valide · modèle {model} disponible.")

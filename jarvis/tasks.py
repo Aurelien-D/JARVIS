@@ -212,6 +212,22 @@ def _rule_path(path) -> str:
     return "/" + posix(path)  # '//c/Users/X': an absolute path in a permission rule
 
 
+def _mcp_servers() -> list:
+    """The servers the extra MCP file declares, as Claude Code names them in a
+    tool (mcp__<server>__<tool>: other characters become '_'); [] if unreadable."""
+    path = (config.MCP_CONFIG or "").strip()
+    if not path:
+        return []
+    try:
+        data = json.loads(Path(os.path.expanduser(path)).read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return []
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    if not isinstance(servers, dict):
+        return []
+    return [re.sub(r"[^A-Za-z0-9_-]", "_", name)[:100] for name in servers if isinstance(name, str) and name]
+
+
 def deny_rules(profile: str) -> list:
     """--disallowedTools rules for a profile. Deny beats allow in every mode.
 
@@ -227,8 +243,9 @@ def deny_rules(profile: str) -> list:
         # JARVIS's secrets and its data (memory, journal, the window's browser profile).
         return ["mcp__*", f"Read({root}/.env)", f"Read({data}/**)", f"Read({data}/app-window*/**)"]
     # complet: never A.R.E.S's remember (it writes into A.R.E.S's own prompt),
+    # under whatever name the MCP file of Réglages › Claude Code gives it too,
     # never JARVIS's code, data, nor Claude Code's own settings, hooks and MCP list.
-    rules = [f"mcp__{config.ARES_MCP_NAME}__remember"]
+    rules = [f"mcp__{name}__remember" for name in dict.fromkeys([config.ARES_MCP_NAME, *_mcp_servers()])]
     for target in (root, data):
         rules += [f"Edit({target}/**)", f"Write({target}/**)"]
     rules += ["Edit(~/.claude/**)", "Write(~/.claude/**)", "Edit(~/.mcp.json)",

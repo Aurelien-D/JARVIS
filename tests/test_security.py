@@ -168,6 +168,9 @@ KNOWN_API = {
     "/api/inbox", "/api/inbox/{item_id}/ack", "/api/presence", "/api/delivery", "/api/dnd",
     "/api/voice/turn", "/api/voice/taint", "/api/pending", "/api/pending/{pending_id}/decide",
     "/api/journal", "/api/undo/{fact_id}", "/api/ares",  # WP14, WP15
+    "/api/task/{task_id}/retry", "/api/task/{task_id}/reveal",  # WP10, WP13
+    "/api/settings", "/api/settings/openai-key", "/api/settings/open-data", "/api/autostart",  # WP12
+    "/api/health", "/api/onboarding",  # WP12
 }
 FOREIGN_ORIGINS = ("https://evil.example", "http://127.0.0.1:9999", "null", "http://localhost.evil.example:8788")
 

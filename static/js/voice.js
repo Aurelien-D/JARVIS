@@ -125,7 +125,8 @@ export async function connect({ reconnect = false, pendingText = "", quiet = fal
     const [mic, sess] = await Promise.allSettled([
       navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, ...micDevice() } }),
-      api("/api/session", { method: "POST", body: { recent: recentContext(reconnect) }, signal: timeout.signal }),
+      api("/api/session", { method: "POST", body: { recent: recentContext(reconnect), sources: recentSources(reconnect) },
+                            signal: timeout.signal }),
     ]);
     clearTimeout(timer);
     if (mine !== attempt) { // put to sleep meanwhile
@@ -377,6 +378,7 @@ export function logExchange(role, text) {
   text = (text || "").trim();
   if (!text) return null;
   const entry = { role, text: text.slice(0, 400) };
+  if (role === "JARVIS") entry.sid = currentSessionId || "";  // its session's taint follows it (recentSources)
   state.history.push(entry);
   trimHistory();
   return entry;
@@ -386,10 +388,22 @@ function trimHistory() {
   if (state.history.length > 24) state.history.splice(0, state.history.length - 24);
 }
 
-export function recentContext(force) {
+function recentLines(force) {
   // A recent conversation (or a dropped connection) carries over to the new session.
-  if (!force && Date.now() - state.lastActivity > 30 * 60e3) return "";
-  return state.history.filter(h => h.text).slice(-12).map(h => `${h.role} : ${h.text}`).join("\n");
+  if (!force && Date.now() - state.lastActivity > 30 * 60e3) return [];
+  return state.history.filter(h => h.text).slice(-12);
+}
+
+export function recentContext(force) {
+  return recentLines(force).map(h => `${h.role} : ${h.text}`).join("\n");
+}
+
+/* The voice sessions JARVIS's carried lines were said in ("" when unknown: a
+   line refilled from the journal). The server gives the new session their
+   taint (jarvis/confirm.py): a fresh session in between must not wash out
+   what an older one said about a web page or a note. */
+export function recentSources(force) {
+  return [...new Set(recentLines(force).filter(h => h.role === "JARVIS").map(h => h.sid || ""))];
 }
 
 /* ---------------------------------------------------------- phases, captions, turns */
