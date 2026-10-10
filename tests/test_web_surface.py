@@ -251,7 +251,8 @@ def test_hostile_ids_and_texts_never_name_a_file_holds(client, fake_claude, tmp_
     wait(tasks.TASKS[task["id"]])
     api.post("/api/dnd", json={"minutes": 5})
 
-    allowed = re.compile(r"(inbox|state|memory|schedules|tasks|trash)\.json(\.bak|\.tmp|\.corrompu-[\d-]+)?")
+    # usage.json: the day's costs (WP18), the finished task's included.
+    allowed = re.compile(r"(inbox|state|memory|schedules|tasks|trash|usage)\.json(\.bak|\.tmp|\.corrompu-[\d-]+)?")
     day_file = re.compile(r"\d{4}-\d{2}-\d{2}\.jsonl")  # the journal: one file per day, named by the server
     written = [p for p in tmp_path.rglob("*") if p.is_file()]
     inside = [p for p in written if data in p.parents]

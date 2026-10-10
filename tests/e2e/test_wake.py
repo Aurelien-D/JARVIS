@@ -201,7 +201,8 @@ def test_no_paid_session_from_the_wake_word_over_the_daily_cap(open_page):
     page.wait_for_selector(".toast:has-text('Plafond')")
     assert page.evaluate("__jarvis.state.mode") == "standby"
     assert page.evaluate("window.__pcs || 0") == 0
-    page.click("#orbBtn")  # a click still works
+    page.click("#orbBtn")  # a click still works, after a confirmation (usage.js, WP18)
+    page.click("#capDialog[open] button[value='ok']")
     page.wait_for_function("__jarvis.state.mode === 'live'")
 
 
