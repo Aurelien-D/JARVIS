@@ -1,0 +1,56 @@
+/* Design tokens (design spec §5-6): colours with their measured contrast on
+   --bg #010409 / --panel #07141e, the type scale, the focus ring and the
+   Windows contrast themes. */
+:root {
+  color-scheme: dark;
+  --bg: #010409;
+  --panel: #07141e;
+  --panel-glass: rgba(7, 20, 30, .86);   /* over --bg: about --panel */
+  --text: #cfeaff;          /* 16.5 / 15.0 : 1 */
+  --muted: #7aa7c2;         /* 7.95 / 7.21 : 1, secondary text */
+  --cyan: #40dcff;          /* 12.6 / 11.4 : 1, accent, focus, listening */
+  --amber: #ffb347;         /* 11.5 / 10.5 : 1, thinking, tools, warnings */
+  --err: #ff6b81;           /* 7.5 / 6.8 : 1, errors, muted microphone */
+  --ok: #43ffa4;            /* 15.7 / 14.3 : 1 */
+  --speak: #e8f6ff;         /* 18.6 / 16.9 : 1, JARVIS's words */
+  --off: #788ca0;           /* 5.9 / 5.4 : 1, offline orb, disabled text */
+  --orb-standby: #1e7ea3;   /* 4.47 / 4.05 : 1, non-text only */
+  --line: rgba(64, 220, 255, .18);   /* decorative dividers only */
+  --line-strong: #2a8fb0;   /* 5.53 / 5.01 : 1, borders of controls (non-text ≥ 3:1) */
+  /* Former names, still used by stylesheets not reworked yet: same contrast. */
+  --dim: var(--muted);
+  --cyan-dim: var(--line-strong);
+
+  --font-hud: "Rajdhani", "Segoe UI", sans-serif;
+  --font-mono: "Share Tech Mono", Consolas, monospace;
+  --fs-xs: 12px;    /* meta, timestamps, labels */
+  --fs-sm: 13px;    /* status pill, task output */
+  --fs-md: 14px;    /* panel items, buttons */
+  --fs-user: 15px;  /* 'Vous : …' */
+  --fs-in: 16px;    /* composer, dialog body */
+  --fs-say: 19px;   /* JARVIS's caption */
+  --fs-h: 22px;     /* dialog and report titles */
+  --fs-kpi: 28px;
+  --lh-body: 1.45;
+  --lh-label: 1.2;
+  --radius: 4px;
+}
+
+/* One focus ring for every control (keyboard only). */
+:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px rgba(64, 220, 255, .25);
+}
+
+/* Windows contrast themes: the browser forces the system colours (never
+   opt out with forced-color-adjust: none, or our own colours would come back
+   on the user's background); borders keep controls visible, and the state
+   stays readable as text (the orb's own fallback is in orb.css). */
+@media (forced-colors: active) {
+  .ctl, .x, .top-btn { border: 1px solid ButtonText; color: ButtonText; background: ButtonFace; }
+  .ctl:disabled { color: GrayText; border-color: GrayText; }
+  #statusPill { border: 1px solid CanvasText; color: CanvasText; background: Canvas; }
+  .card { border: 1px solid CanvasText; }
+  :focus-visible { outline: 2px solid Highlight; box-shadow: none; }
+}

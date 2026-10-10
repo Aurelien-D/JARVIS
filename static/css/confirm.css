@@ -1,0 +1,40 @@
+/* Confirmation cards (design spec §3): amber, never evicted, with what will
+   run spelled out, a countdown and large [Lancer] / [Annuler] buttons. */
+.card.confirm {
+  border-left-color: var(--amber);
+  box-shadow: 0 0 0 1px rgba(255,179,71,.35), 0 0 24px rgba(255,179,71,.12);
+}
+.card.confirm h3 { color: var(--amber); }
+
+.card.confirm .confirm-detail {
+  margin: 8px 0 0; padding: 6px 8px; max-height: 8.5em; overflow: auto;
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.45;
+  color: var(--muted, #7aa7c2); white-space: pre-wrap; word-break: break-word;
+  border-left: 1px solid var(--line-strong, #2a8fb0); background: rgba(255,179,71,.04);
+}
+.card.confirm .confirm-detail:empty { display: none; }
+
+.card .confirm-countdown {
+  margin: 8px 0 0; font-family: var(--font-mono); font-size: 12px;
+  letter-spacing: .06em; color: var(--amber);
+}
+
+.card.confirm .actions { gap: 10px; }
+.card.confirm .actions .ctl {
+  min-height: 32px; min-width: 96px; padding: 6px 14px;
+  font-size: 13px; letter-spacing: .12em;
+  color: var(--text); border-color: var(--line-strong, #2a8fb0);
+}
+/* Primary: cyan on the page background (12.6:1). */
+.card.confirm .actions .ctl.primary {
+  background: var(--cyan); color: var(--bg); border-color: var(--cyan); font-weight: 600;
+}
+.card.confirm .actions .ctl:disabled { opacity: .55; cursor: progress; }
+.card.confirm .actions .ctl:focus-visible {
+  outline: 2px solid var(--cyan); outline-offset: 3px; box-shadow: 0 0 0 5px rgba(64,220,255,.25);
+}
+
+@media (forced-colors: active) {
+  .card.confirm { border: 2px solid CanvasText; }
+  .card.confirm .actions .ctl.primary { background: ButtonText; color: ButtonFace; }
+}

@@ -1,0 +1,74 @@
+/* Journal drawer (WP14, journal.js): a non-modal drawer on the right, under
+   the top bar (its 'Journal' button stays within reach to close it), above
+   the side panel. Header and tools stay put; only the log scrolls. */
+#journalDrawer {
+  top: var(--topbar-h, 49px);
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px var(--gutter) 12px;
+  overflow: hidden;
+  box-shadow: -12px 0 40px rgba(0, 0, 0, .6);
+}
+#journalDrawer[hidden] { display: none; }
+
+.jr-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.jr-head h2 {
+  margin: 0; font: 400 var(--fs-xs) / var(--lh-label) var(--font-mono);
+  letter-spacing: .18em; text-transform: uppercase; color: var(--cyan);
+}
+
+.jr-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.jr-day, .jr-search {
+  min-height: 32px; padding: 4px 8px;
+  background: rgba(1, 4, 9, .6); color: var(--text);
+  border: 1px solid var(--line-strong); border-radius: var(--radius);
+  font: var(--fs-md) / var(--lh-label) var(--font-hud);
+}
+.jr-day { flex: 0 1 auto; max-width: 48%; }
+.jr-day option { background: var(--panel); color: var(--text); }
+.jr-search { flex: 1 1 160px; min-width: 0; }
+.jr-search::placeholder { color: var(--muted); }
+
+.jr-status { margin: 0; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); letter-spacing: .04em; }
+.jr-status:empty { display: none; }
+
+.jr-log {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 0 4px 0 0;
+  scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent;
+}
+.jr-list { list-style: none; margin: 0; padding: 0; }
+.jr-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; row-gap: 2px;
+  align-items: baseline; padding: 8px 0; border-bottom: 1px dashed var(--line);
+}
+.jr-time { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--amber); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.jr-who { font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: .06em; color: var(--muted); }
+.jr-row.user .jr-who { color: var(--cyan); }
+.jr-txt {
+  grid-column: 1 / -1; margin: 0;
+  font-size: var(--fs-md); line-height: var(--lh-body); color: var(--text);
+  overflow-wrap: anywhere; white-space: pre-wrap;
+}
+.jr-row.jarvis .jr-txt { color: var(--speak); }
+.jr-row.system .jr-txt { color: var(--muted); font-style: italic; }
+.jr-txt mark { background: rgba(255, 179, 71, .28); color: inherit; border-radius: 2px; padding: 0 1px; }
+.jr-dayhead h3 {
+  margin: 12px 0 2px; font: 400 var(--fs-xs) / var(--lh-label) var(--font-mono);
+  letter-spacing: .08em; color: var(--muted);
+}
+.jr-dayhead:first-child h3 { margin-top: 0; }
+.jr-empty { padding: 8px 0; }
+
+.jr-foot {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+  padding-top: 10px; border-top: 1px solid var(--line);
+}
+.jr-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; }
+.jr-confirm p { flex: 1 1 100%; margin: 0; font-size: var(--fs-sm); line-height: var(--lh-body); color: var(--text); }
+#journalDrawer .ctl.danger { color: var(--err); border-color: var(--err); }
+#journalDrawer .ctl.danger:hover { background: var(--err); color: var(--bg); }
+
+@media (forced-colors: active) {
+  #journalDrawer { border-left: 1px solid CanvasText; }
+  .jr-txt mark { background: Highlight; color: HighlightText; }
+  .jr-day, .jr-search { border: 1px solid ButtonText; }
+}

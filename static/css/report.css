@@ -1,0 +1,116 @@
+/* The report window (report.js): a modal dialog with KPI tiles, a chart, a
+   native sortable table and markdown notes (design spec §2-3). */
+/* Centred at any window size, opaque: the HUD never shows through. No
+   backdrop-filter on the window itself (components.css); its ::backdrop
+   dims and blurs the page while it is open. */
+#report {
+  position: fixed; inset: 0; margin: auto; z-index: 20; display: none;
+  width: min(1100px, calc(100vw - 48px)); height: fit-content;
+  max-width: none; max-height: calc(100dvh - 48px);
+  color: var(--text);
+  background: var(--panel); border: 1px solid var(--line-strong);
+  border-top: 2px solid var(--cyan); border-radius: 2px;
+  box-shadow: 0 0 60px rgba(0, 0, 0, .7), 0 0 30px rgba(64, 220, 255, .08);
+  padding: 0 26px 22px; overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent;
+}
+#report[open] { display: block; }
+#report::backdrop { background: rgba(1, 4, 9, .72); backdrop-filter: blur(3px); }
+@media (prefers-reduced-motion: no-preference) {
+  #report[open] { animation: materialize .18s ease-out; }
+}
+
+/* the title stays in view while the report scrolls */
+#report .rhead {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  margin: 0 -26px 18px; padding: 16px 26px 12px;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+}
+#report .rhead h2 {
+  font: 600 var(--fs-h) / var(--lh-label) var(--font-hud); letter-spacing: .02em;
+  color: var(--cyan); overflow-wrap: anywhere; text-transform: none;
+}
+#report .rhead .x { font-size: 16px; }
+
+/* ------------------------------------------------ KPI tiles */
+#kpis {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: 12px; margin-bottom: 18px;
+}
+#kpis[hidden], #rchart[hidden], #rtable[hidden], #rmd[hidden] { display: none; }
+.kpi {
+  border: 1px solid var(--line-strong); border-left: 3px solid var(--cyan);
+  padding: 12px 14px; background: rgba(64, 220, 255, .04); min-width: 0;
+}
+.kpi .l {
+  font-family: var(--font-mono); font-size: var(--fs-xs); line-height: var(--lh-label);
+  letter-spacing: .08em; color: var(--muted); overflow-wrap: anywhere;
+}
+.kpi .v {
+  font-size: var(--fs-kpi); font-weight: 700; line-height: 1.15; color: var(--text);
+  margin-top: 6px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums;
+}
+.kpi .d { font-size: var(--fs-xs); font-family: var(--font-mono); margin-top: 4px; color: var(--ok); }
+.kpi .d.neg { color: var(--err); }
+
+/* ------------------------------------------------ chart */
+#rchart { margin-bottom: 18px; min-height: 0; }
+#rchart[data-state="loading"] { min-height: 280px; }
+#rchart .rchart-note { font-size: var(--fs-sm); color: var(--muted); font-style: italic; padding: 8px 0; }
+#rchart[data-state="loading"] .rchart-note { padding-top: 120px; text-align: center; font-style: normal; }
+
+/* ------------------------------------------------ table */
+#rtable { margin-bottom: 18px; }
+.rtable-bar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 8px; }
+/* its own scroller: the header sticks to its top, wide tables scroll sideways */
+.rtable-wrap {
+  max-height: min(60vh, 560px); overflow: auto;
+  border: 1px solid var(--line); scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent;
+}
+#rtable table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs-md); }
+#rtable th {
+  position: sticky; top: 0; z-index: 1;
+  background: #0b2230; /* opaque: the rows scroll under it */
+  border-bottom: 1px solid var(--line-strong); padding: 0; text-align: left; vertical-align: bottom;
+}
+#rtable th .sort {
+  display: flex; align-items: center; gap: 6px; width: 100%; min-height: 32px;
+  padding: 6px 10px; border: 0; background: transparent; cursor: pointer;
+  font: 600 var(--fs-xs) / var(--lh-label) var(--font-mono); letter-spacing: .06em;
+  color: var(--cyan); text-align: left;
+}
+#rtable th .sort:hover { color: var(--text); background: rgba(64, 220, 255, .08); }
+#rtable th .sort:focus-visible { outline-offset: -3px; }
+#rtable th .arrow { margin-left: auto; color: var(--muted); font-size: 10px; }
+#rtable th[aria-sort] .arrow { color: var(--cyan); }
+#rtable td {
+  padding: 6px 10px; border-bottom: 1px solid var(--line); color: var(--text);
+  line-height: var(--lh-body); overflow-wrap: anywhere; vertical-align: top;
+}
+#rtable td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#rtable tbody tr:hover td { background: rgba(64, 220, 255, .05); }
+.rtable-pager { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 8px; }
+.rtable-pager[hidden] { display: none; }
+.rtable-info { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); }
+
+/* ------------------------------------------------ notes */
+#rmd { font-size: var(--fs-in); line-height: 1.6; color: var(--text); overflow-wrap: anywhere; }
+#rmd h1, #rmd h2, #rmd h3 { color: var(--cyan); margin: 12px 0 6px; font-family: var(--font-hud); line-height: var(--lh-label); }
+#rmd h1 { font-size: 20px; } #rmd h2 { font-size: 18px; } #rmd h3 { font-size: var(--fs-in); }
+#rmd p, #rmd ul, #rmd ol { margin: 0 0 8px; }
+#rmd table { border-collapse: collapse; margin: 8px 0; }
+#rmd th, #rmd td { border: 1px solid var(--line); padding: 5px 10px; font-size: var(--fs-sm); }
+#rmd code { font-family: var(--font-mono); color: var(--amber); background: rgba(255, 179, 71, .08); padding: 1px 5px; }
+#rmd ul, #rmd ol { margin-left: 20px; }
+
+/* narrow windows (reflow at 320 px, design spec §9) */
+@media (max-width: 600px) {
+  #report { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 0 14px 16px; }
+  #report .rhead { margin: 0 -14px 14px; padding: 12px 14px 10px; }
+  #report .rhead h2 { font-size: 18px; }
+}
+@media (forced-colors: active) {
+  #report { border: 2px solid CanvasText; }
+  #rtable th { background: Canvas; }
+}

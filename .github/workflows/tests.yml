@@ -24,4 +24,19 @@ jobs:
       - run: pip install -r requirements.txt pytest
       - run: python -m pytest -q
       - name: JavaScript syntax
-        run: node --check static/jarvis.js
+        shell: bash
+        run: for f in static/js/*.js; do node --check "$f"; done
+
+  e2e:
+    # Optional: the page in a real Chromium, with fake WebRTC, speech
+    # recognition, OpenAI and Claude (no key or account needed).
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m playwright install --with-deps chromium
+      - run: python -m pytest -m e2e tests/e2e
