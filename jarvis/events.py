@@ -21,6 +21,11 @@ thread-safely.
 - Remote pages (a paired iPhone, see remote.py) get their own stream ids, never
   take part in the election and never hear the PC's controls ('leader',
   'hotkey', publish_pc); at most MAX_REMOTE_STREAMS stay open per device.
+  A reconnecting phone replays nothing from before its pairing
+  (remote.replay_floor) nor older than REMOTE_REPLAY_SECONDS.
+- Every PING_SECONDS each stream gets a 'ping' data frame (no id): it keeps
+  proxies from closing the connection, and a phone's page token alive
+  (remote.keepalive).
 """
 import asyncio
 import json
@@ -34,7 +39,9 @@ from collections import deque
 REPLAY_SIZE = 200
 QUEUE_SIZE = 500
 PING_SECONDS = 15
+PING = 'data: {"type":"ping"}\n\n'  # no id: never replayed, never Last-Event-ID
 MAX_REMOTE_STREAMS = 4  # per device: a fifth closes the oldest
+REMOTE_REPLAY_SECONDS = 600  # a phone back after a night never hears yesterday's events again
 # publish() writes {"type": kind, ...} first: these PC controls never reach a remote stream.
 _PC_ONLY = ('{"type": "leader"', '{"type": "hotkey"')
 
@@ -42,6 +49,9 @@ _lock = threading.Lock()
 _elect_lock = threading.Lock()  # one election at a time, so 'leader' events go out in order
 _subscribers: list = []  # _Sub per open stream
 _replay: deque = deque(maxlen=REPLAY_SIZE)  # (id, message)
+# When each _replay entry was published (time.monotonic()), appended with it:
+# the newest ends of both deques always match.
+_replay_at: deque = deque(maxlen=REPLAY_SIZE)
 # Ids keep growing across restarts: a page still holding an id from the
 # previous run then gets everything this run has buffered.
 _seq = int(time.time() * 1000)
@@ -129,6 +139,7 @@ def _push(kind: str, data: dict, pc_only: bool) -> int:
         event_id = _seq
         if not pc_only:
             _replay.append((event_id, message))
+            _replay_at.append(time.monotonic())
         # Scheduled under the lock: a stream that subscribes now either has
         # this event in its replay or in its queue, never both, never neither.
         for sub in _subscribers:
@@ -194,6 +205,38 @@ def _parse_id(value, current: int):
     return n if 0 <= n <= current else None
 
 
+def _replay_floor(caller):
+    """The id a reconnecting phone replays from at the earliest (its pairing);
+    None when it can't be known: nothing is replayed then (fail closed)."""
+    from . import remote  # late: remote imports events
+    try:
+        return int(remote.replay_floor(caller))
+    except Exception:  # noqa: BLE001 - a broken device file must not open the backlog
+        logging.exception("JARVIS: reprise du flux distant impossible")
+        return None
+
+
+def _backlog(sub, after) -> list:
+    """The buffered events after that id this stream may hear. A remote stream
+    skips those older than REMOTE_REPLAY_SECONDS."""
+    if after is None:
+        return []
+    if not _is_remote(sub.caller):
+        return [item for item in _replay if item[0] > after and _delivers(sub, item[1])]
+    oldest = time.monotonic() - REMOTE_REPLAY_SECONDS
+    # Paired from the newest end; an entry without its time is never replayed.
+    stamped = list(zip(reversed(_replay), reversed(_replay_at)))[::-1]
+    return [item for item, at in stamped if at >= oldest and item[0] > after and _delivers(sub, item[1])]
+
+
+def _keepalive(caller):
+    from . import remote  # late: remote imports events
+    try:
+        remote.keepalive(caller)
+    except Exception:  # noqa: BLE001 - the stream goes on; the next ping tries again
+        logging.exception("JARVIS: flux distant : maintien en échec")
+
+
 async def stream(client_id: str = "", last_event_id=None, caller=None):
     """One page's event stream. client_id is the page's own id (sse.js); with
     last_event_id, the buffered events after it are replayed first. caller: the
@@ -206,10 +249,16 @@ async def stream(client_id: str = "", last_event_id=None, caller=None):
         client = client_id if client_id and _CLIENT_RE.match(client_id) else f"anon-{uuid.uuid4().hex[:12]}"
     sub = _Sub(asyncio.get_running_loop(), client, caller)
     oldest = []
+    # A phone that reconnects never replays what came before its pairing.
+    # Asked outside the lock: remote may read events.current_id().
+    floor = _replay_floor(caller) if remote_page and last_event_id not in (None, "") else None
     with _lock:
         after = _parse_id(last_event_id, _seq)
-        backlog = [item for item in _replay
-                   if after is not None and item[0] > after and _delivers(sub, item[1])]
+        if after is not None and remote_page:
+            # Unknown floor: nothing. From the future (a clock set back): nothing
+            # either, without dropping the events still to come.
+            after = _seq if floor is None else max(after, min(floor, _seq))
+        backlog = _backlog(sub, after)
         if remote_page:  # this one makes MAX_REMOTE_STREAMS: the oldest of that device go
             same = [s for s in _subscribers if _is_remote(s.caller) and _device(s.caller) == _device(caller)]
             oldest = same[:max(0, len(same) - (MAX_REMOTE_STREAMS - 1))]
@@ -232,11 +281,18 @@ async def stream(client_id: str = "", last_event_id=None, caller=None):
             # Who speaks, even if it didn't change (no id: not part of the replay).
             current = json.dumps({"type": "leader", **leader_info()})
             yield f"data: {current}\n\n"
+        next_ping = time.monotonic() + PING_SECONDS
         while not _closing.is_set():
+            wait = next_ping - time.monotonic()
+            if wait <= 0:  # due even on a busy stream: a phone's token must not lapse
+                next_ping = time.monotonic() + PING_SECONDS
+                if remote_page:
+                    _keepalive(caller)
+                yield PING
+                continue
             try:
-                item = await asyncio.wait_for(sub.queue.get(), timeout=PING_SECONDS)
+                item = await asyncio.wait_for(sub.queue.get(), timeout=wait)
             except asyncio.TimeoutError:
-                yield ": ping\n\n"  # keeps the connection (and proxies) alive
                 continue
             if item is None:  # close_streams()
                 return

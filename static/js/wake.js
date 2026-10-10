@@ -11,8 +11,10 @@
      about JARVIS doesn't wake it. A wake followed by silence goes back to
      sleep after 8 s instead of keeping a paid session open.
    - A refused microphone pauses the wake word; only a real 'denied' turns it
-     off for good (a one-time permission that expired must not). */
-import { $, api, bus, settings, setMode, state } from "./core.js";
+     off for good (a one-time permission that expired must not).
+   - Never on the paired iPhone (state.remote) nor on iOS: the recognizer
+     would hold the microphone the voice session needs. No switch there. */
+import { $, api, bus, isIOS, settings, setMode, state } from "./core.js";
 import { earcon } from "./audio-fx.js";
 import { addCard, removeCard, toast } from "./hud.js";
 import { T } from "./strings-fr.js";
@@ -42,7 +44,10 @@ let guardTimer = null;
 let cappedToastAt = 0, configAt = 0;
 let ui = null;
 
-export function wakeWanted() { return !!SR && !!settings.get("wake", state.config.wake_word); }
+export function wakeWanted() {
+  if (state.remote || isIOS()) return false;
+  return !!SR && !!settings.get("wake", state.config.wake_word);
+}
 
 /* local | cloud (null without speech recognition): for the status line and the health check. */
 export function wakeEngine() { return SR ? (localSR ? "local" : "cloud") : null; }
@@ -66,6 +71,7 @@ export function goStandby() {
 
 /* The on/off switch: remembered in this browser. */
 export function toggleWake() {
+  if (state.remote || isIOS()) return;  // no wake word there to switch
   settings.set("wake", !wakeWanted());
   paused = false;
   removeCard("wake-refused");
@@ -356,7 +362,7 @@ function renderToggle() {
     ui = { box, toggle, engine };
   }
   const on = wakeWanted();
-  ui.box.hidden = !SR || !(state.mode === "off" || state.mode === "standby");
+  ui.box.hidden = !SR || state.remote || isIOS() || !(state.mode === "off" || state.mode === "standby");
   ui.toggle.textContent = on ? S.wakeOn : S.wakeOff;
   ui.toggle.dataset.on = String(on);  // the label says the state (no aria-pressed)
   // Which engine listens is in the status line; here only what it doesn't say.
