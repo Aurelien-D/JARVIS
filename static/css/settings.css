@@ -23,6 +23,9 @@
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 12px 18px; border-bottom: 1px solid var(--line);
 }
+/* The drawer is the window's full height: its title below the notch, its
+   last field above the home bar (safe areas, tokens.css). */
+#settingsDialog .set-head { padding-top: calc(12px + var(--safe-top)); padding-right: calc(18px + var(--safe-right)); }
 .set-head h2, .ob-head h2 {
   font: 600 var(--fs-h) / var(--lh-label) var(--font-hud); letter-spacing: .06em; color: var(--cyan);
 }
@@ -49,7 +52,10 @@
   color: var(--cyan); border-color: var(--line-strong);
   background: rgba(64, 220, 255, .08); box-shadow: inset 3px 0 0 var(--cyan);
 }
-.set-panels { min-width: 0; overflow-y: auto; padding: 14px 22px 32px; scrollbar-width: thin; }
+.set-panels {
+  min-width: 0; overflow-y: auto; scrollbar-width: thin;
+  padding: 14px calc(22px + var(--safe-right)) calc(32px + var(--safe-bottom)) 22px;
+}
 .set-loading { padding: 8px 0; color: var(--muted); }
 .set-loading[hidden], .set-section[hidden] { display: none; }
 .set-section-title {
@@ -208,10 +214,18 @@ select.set-input, input.set-input[type="text"], input.set-input[type="password"]
   .set-nav { flex-direction: row; flex-wrap: wrap; gap: 4px; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--line); }
   .set-tab { padding: 4px 10px; }
   .set-tab[aria-current="true"] { box-shadow: inset 0 -3px 0 var(--cyan); }
-  .set-panels { padding: 10px 14px 24px; }
+  .set-panels { padding: 10px calc(14px + var(--safe-right)) calc(24px + var(--safe-bottom)) 14px; }
   .ob-body, .ob-foot { padding-left: 14px; padding-right: 14px; }
   .set-about { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .set-about dd { margin-bottom: 8px; }
+}
+
+/* ------------------------------------------------ touch screens */
+/* The tabs and fields get their 44 px in components.css; the labels of the
+   checkboxes and the day pills are the targets here. */
+@media (pointer: coarse) {
+  .set-check, .set-day, .ob-radio { min-height: 44px; align-items: center; }
+  .set-checkbox { margin-top: 0; }
 }
 
 /* ------------------------------------------------ Windows contrast themes */

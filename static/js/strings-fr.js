@@ -969,6 +969,24 @@ export const T = typeset({
   },
   // ---- ios: owned by B2
   ios: {
+    // A finger, no keyboard (touchUI()): the status line, the composer and the
+    // help card without Espace, Ctrl+J, Ctrl+M or Échap (hud.js, keys.js).
+    standby: "En veille · touchez l'orbe pour parler",
+    standbyWake: "En veille · dites « Jarvis » ou touchez l'orbe",
+    wakeOff: "En veille · mot d'éveil désactivé · touchez l'orbe",
+    off: "Hors ligne · touchez l'orbe pour parler",
+    speaking: "JARVIS répond · parlez ou touchez Interrompre",
+    muted: "Micro coupé · touchez « Micro » pour le réactiver",
+    composerPlaceholder: "Écrivez à JARVIS…",
+    gestures: "Commandes tactiles",
+    help: "Orbe : parler ou mettre en veille · Champ de message : écrire · Interrompre : couper la parole · Micro : couper le micro",
+    // The conversation and iOS (ios.js, voice.js).
+    paused: "Conversation en pause (écran verrouillé ou autre app).",
+    resume: "Reprendre",
+    dismiss: "Fermer ce message",
+    micInterrupted: "Micro interrompu (appel, Siri ou autre app) : JARVIS vous entend de nouveau dès qu'iOS le rend.",
+    // Réglages › Écoute on iOS: Safari cannot choose the output (settings.js).
+    speakerNote: "Sur l'iPhone, iOS choisit la sortie du son : haut-parleur, écouteurs ou AirPlay (Centre de contrôle).",
   },
 });
 

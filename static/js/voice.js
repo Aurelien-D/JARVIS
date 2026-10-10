@@ -60,6 +60,48 @@ export function setOutputDevice(id) {
 }
 
 export function isLive() { return state.mode === "live" && !!dc && dc.readyState === "open"; }
+
+/* iOS plays an <audio> element on its own only once a tap has played it:
+   hud.js calls this inside the orb's tap, so JARVIS's voice (set much later,
+   in ontrack) is heard. A short silent clip, muted, once; a blob: URL, which
+   the remote page's CSP allows (media-src 'self' blob:). Never throws. */
+let primed = false;
+export function primeAudio() {
+  if (primed || remoteAudio.srcObject) return;
+  primed = true;
+  let url = "";
+  const done = () => {
+    if (!remoteAudio.srcObject) {  // never stop JARVIS's voice if it arrived meanwhile
+      remoteAudio.pause();
+      remoteAudio.removeAttribute("src");
+    }
+    remoteAudio.muted = false;
+    if (url) URL.revokeObjectURL(url);
+  };
+  try {
+    url = URL.createObjectURL(silentWav());
+    remoteAudio.muted = true;
+    remoteAudio.src = url;
+    const played = remoteAudio.play();
+    if (played && played.then) played.then(done, () => { done(); primed = false; });
+    else done();
+  } catch {
+    primed = false;
+    remoteAudio.muted = false;
+  }
+}
+
+/* 50 ms of silence as a WAV file (8 kHz, 8 bits, mono). */
+function silentWav() {
+  const samples = 400, view = new DataView(new ArrayBuffer(44 + samples));
+  const text = (at, str) => [...str].forEach((c, i) => view.setUint8(at + i, c.charCodeAt(0)));
+  text(0, "RIFF"); view.setUint32(4, 36 + samples, true); text(8, "WAVE");
+  text(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, 8000, true); view.setUint32(28, 8000, true); view.setUint16(32, 1, true); view.setUint16(34, 8, true);
+  text(36, "data"); view.setUint32(40, samples, true);
+  for (let i = 0; i < samples; i++) view.setUint8(44 + i, 128);  // 8-bit PCM silence is 128
+  return new Blob([view], { type: "audio/wav" });
+}
 export function sessionId() { return currentSessionId; }
 
 /* ---------------------------------------------------------- errors, in French */
@@ -138,6 +180,10 @@ export async function connect({ reconnect = false, pendingText = "", quiet = fal
   if (state.remote || isIOS()) stopWake();
   setMode("connecting", quiet ? "refresh" : "");
   try {
+    // iOS: one audio session that records and plays at once, set before the
+    // microphone opens (otherwise JARVIS's voice may go to the earpiece, or
+    // stop). Safari 17+ only; elsewhere nothing to set.
+    if ("audioSession" in navigator) try { navigator.audioSession.type = "play-and-record"; } catch { /* read-only here */ }
     // The microphone and the session key at the same time: the wait is the longest of the two.
     const timeout = new AbortController();
     const timer = setTimeout(() => timeout.abort(), SESSION_TIMEOUT);
@@ -152,7 +198,7 @@ export async function connect({ reconnect = false, pendingText = "", quiet = fal
       if (mic.status === "fulfilled") mic.value.getTracks().forEach(tr => tr.stop());
       return;
     }
-    if (mic.status === "fulfilled") { micStream = mic.value; registerMic(micStream); } // muted under earcons outside a session
+    if (mic.status === "fulfilled") { micStream = mic.value; registerMic(micStream); watchMic(micStream); } // muted under earcons outside a session
     if (mic.status === "rejected") throw tag(mic.reason, "mic");
     if (sess.status === "rejected") throw tag(sess.reason, "server");
     const s = sess.value;
@@ -238,6 +284,20 @@ async function postOffer(sess, sdp) {
     throw tag(err, "openai");
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/* iOS takes the microphone for a call, Siri or another app: the track is
+   muted, not ended. ios.js says so in a banner; when it comes back, the
+   sound (suspended or 'interrupted' meanwhile) starts again. */
+function watchMic(stream) {
+  for (const track of stream.getAudioTracks()) {
+    track.onmute = () => { if (micStream === stream) bus.emit("mic:interrupted", { interrupted: true }); };
+    track.onunmute = () => {
+      if (micStream !== stream) return;
+      try { audio(); } catch { /* no Web Audio */ }
+      bus.emit("mic:interrupted", { interrupted: false });
+    };
   }
 }
 
