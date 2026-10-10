@@ -825,9 +825,10 @@ class _FakePystray:
 def test_hotkey_and_tray_do_no_more_than_the_page_buttons_holds(monkeypatch, client):
     """The hotkey and every tray item only bring the window back, say 'hotkey'
     (toggle / talk / wake, what the orb and the wake button do), switch
-    « Ne pas déranger » or the start with Windows, or quit: each has its page
-    button and route. None runs a tool, starts a task, registers a turn,
-    taints or confirms anything."""
+    « Ne pas déranger », remote access (the iPhone's kill switch, as in
+    Réglages) or the start with Windows, or quit: each has its page button and
+    route. None runs a tool, starts a task, registers a turn, taints or
+    confirms anything."""
     def forbidden(name):
         def fail(*a, **k):
             raise AssertionError(f"{name} appelé par le raccourci ou l'icône")
@@ -846,6 +847,9 @@ def test_hotkey_and_tray_do_no_more_than_the_page_buttons_holds(monkeypatch, cli
     monkeypatch.setattr(inbox, "set_dnd", lambda until: effects.append(("dnd", until is not None)) or until)
     monkeypatch.setattr(inbox, "dnd_until", lambda now=None: None)
     monkeypatch.setattr(shell, "notify", lambda title, body: effects.append(("notify", title)) or True)
+    from jarvis import remote
+    monkeypatch.setattr(remote, "is_enabled", lambda: False)
+    monkeypatch.setattr(remote, "set_enabled", lambda on, **kw: effects.append(("remote", (on, kw))) or {})
     monkeypatch.setitem(shell._state, "on_quit", lambda: effects.append(("quit", None)))
     monkeypatch.setitem(shell._state, "url", "http://127.0.0.1:8788")
 
@@ -862,7 +866,9 @@ def test_hotkey_and_tray_do_no_more_than_the_page_buttons_holds(monkeypatch, cli
         action(*([icon] if inspect.signature(action).parameters else []))
 
     kinds = {kind for kind, _ in effects}
-    assert kinds <= {"window", "hotkey", "dnd", "autostart", "notify", "quit", "icon-stop"}, kinds
+    assert kinds <= {"window", "hotkey", "dnd", "remote", "autostart", "notify", "quit", "icon-stop"}, kinds
+    # Remote access: exactly the kill switch, from the PC (no tool, task or decision).
+    assert [data for kind, data in effects if kind == "remote"] == [(True, {"by": remote.PC})]
     hotkeys = [data for kind, data in effects if kind == "hotkey"]
     assert [h["action"] for h in hotkeys] == ["toggle", "talk", "wake"]
     assert all(set(h) == {"action", "at"} and abs(h["at"] - time.time()) < 5 for h in hotkeys)
@@ -878,7 +884,7 @@ def test_hotkey_and_tray_do_no_more_than_the_page_buttons_holds(monkeypatch, cli
     assert said == {"toggle", "talk", "wake"}, said
     # What the tray does, the page can do with its token: the same routes.
     served = served_routes()
-    for route in ("/api/dnd", "/api/autostart", "/api/shutdown"):
+    for route in ("/api/dnd", "/api/autostart", "/api/shutdown", "/api/remote/state"):
         assert "POST" in served[route], route
 
 # ---------------------------------------------------------------- 9. data files

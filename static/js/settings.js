@@ -2,7 +2,10 @@
    a time: Connexion · Voix · Écoute · Proactivité · Claude Code · Coûts ·
    Accès à distance · Système · Données · À propos.
    - Other modules add a section of their own with registerSection() (the
-     remote access and notification sections).
+     remote access and notification sections); those are built again each
+     time they are shown, as their state lives on the server.
+   - On the paired iPhone (a remote page), the dialog opens on « Accès à
+     distance ».
    - Server settings come from /api/settings (schema and values) and are
      saved one field at a time; each says when it takes effect: at once, at
      the next conversation, at the next task, or after a restart.
@@ -591,8 +594,10 @@ export function showSection(id) {
   for (const b of ui.nav.querySelectorAll("button")) {
     if (b.dataset.section === id) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
   }
-  // À propos follows what changed in the other sections (models, their deadlines).
-  if (model && (id === "apropos" || !ui.panels.get(id).childElementCount)) renderSection(id);
+  // À propos follows what changed in the other sections (models, their deadlines);
+  // a registered section (remote access, notifications) shows the server's state now.
+  const fresh = id === "apropos" || (registered.has(id) && !BUILDERS[id]);
+  if (model && (fresh || !ui.panels.get(id).childElementCount)) renderSection(id);
 }
 
 function renderRestart() {
@@ -691,7 +696,8 @@ export async function openSettings(section) {
   ui.loading.hidden = true;
   renderNav();
   renderRestart();
-  const wanted = section || (model.key?.present ? current : "connexion");
+  // The iPhone comes here for its own remote access (pause, forget) first.
+  const wanted = section || (state.remote ? "distance" : model.key?.present ? current : "connexion");
   showSection(wanted);
   ui.nav.querySelector('[aria-current="true"]')?.focus();
 }

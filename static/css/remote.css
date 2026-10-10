@@ -2,6 +2,61 @@
    adds its styles without touching another's lines. Linked after usage.css. */
 
 /* ---- remote: A4 */
+/* Réglages › Accès à distance (remote-settings.js): long addresses and
+   commands wrap anywhere, so the drawer never scrolls sideways at 360 px. */
+.rm-root { display: grid; min-width: 0; }
+.rm-block { min-width: 0; }
+.rm-block .set-sub:first-child { margin-top: 0; }
+.rm-status dd { overflow-wrap: anywhere; }
+.rm-source { color: var(--muted); font-size: var(--fs-sm); }
+.rm-personal { color: var(--amber); }
+.rm-serve-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 6px; }
+.rm-serve { font: 600 var(--fs-user) / var(--lh-label) var(--font-hud); color: var(--text); }
+.rm-serve-ready { color: var(--ok); }
+.rm-serve-funnel, .rm-serve-tcp, .rm-serve-wrong_target { color: var(--err); }
+.rm-serve-absent, .rm-serve-stopped { color: var(--amber); }
+.rm-command { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 100%; }
+.rm-command code {
+  flex: 1 1 220px; min-width: 0; padding: 6px 10px; overflow-wrap: anywhere; word-break: break-all;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); color: var(--text);
+}
+.rm-command code.rm-url { font-size: 20px; letter-spacing: .02em; color: var(--cyan); }
+.rm-url-small { overflow-wrap: anywhere; word-break: break-all; color: var(--muted); }
+.rm-link { color: var(--cyan); text-decoration: underline; text-underline-offset: 3px; }
+.rm-countdown { font: 600 var(--fs-user) / var(--lh-label) var(--font-mono); color: var(--cyan); }
+.rm-qr { width: min(100%, 220px); }
+.rm-qr-svg { display: block; width: 100%; height: auto; border-radius: var(--radius); }
+.rm-requests, .rm-devices, .rm-audit { list-style: none; display: grid; gap: 8px; width: 100%; }
+.rm-request, .rm-device {
+  display: grid; gap: 6px; padding: 10px 12px; min-width: 0;
+  border: 1px solid var(--line-strong); border-left: 3px solid var(--cyan); border-radius: var(--radius);
+  background: var(--panel);
+}
+.rm-cells, .rm-device-meta { overflow-wrap: anywhere; color: var(--muted); font-size: var(--fs-sm); }
+.rm-cell { color: var(--text); }
+.rm-code { font-size: 22px; letter-spacing: .15em; color: var(--cyan); }
+.rm-name { overflow-wrap: anywhere; }
+.rm-code-form, .rm-rename { display: grid; gap: 6px; justify-items: start; }
+.rm-code-input { width: 6em; font-size: 20px; letter-spacing: .2em; }
+.rm-device-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.rm-device-name { overflow-wrap: anywhere; font: 600 var(--fs-user) / var(--lh-label) var(--font-hud); }
+.rm-device-extra:empty { display: none; }
+.rm-radios { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.rm-audit-line {
+  display: grid; grid-template-columns: minmax(7em, max-content) minmax(0, 1fr); gap: 2px 12px;
+  padding: 6px 0; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); overflow-wrap: anywhere;
+}
+.rm-audit-time { color: var(--muted); }
+.rm-audit-who { color: var(--text); }
+.rm-audit-what { grid-column: 2; }
+.rm-audit-result { grid-column: 2; color: var(--muted); }
+.rm-phone-name { font-size: var(--fs-say); overflow-wrap: anywhere; }
+.rm-phone-state { color: var(--ok); }
+.rm-shortcut-slot:empty, .rm-block:has(> .rm-shortcut-slot:empty:only-child) { display: none; }
+@media (max-width: 520px) {
+  .rm-audit-line { grid-template-columns: minmax(0, 1fr); }
+  .rm-audit-what, .rm-audit-result { grid-column: 1; }
+}
 
 /* ---- notify: B1 */
 
