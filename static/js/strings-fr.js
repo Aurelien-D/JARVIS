@@ -512,7 +512,7 @@ export const T = typeset({
       jarvis: "JARVIS", claude: "Claude Code", python: "Python", voice: "Modèle vocal",
       transcribe: "Transcription", claudeModels: "Modèles Claude", browser: "Navigateur", wake: "Mot d'éveil",
       deadlines: "Échéances", update: "Mise à jour",
-      updateText: "Pour mettre JARVIS à jour, suivez le README, section « Mise à jour ».",
+      updateText: "Pour mettre JARVIS à jour, suivez le README, section « Mettre à jour ».",
       checking: "vérification…", unknown: "inconnu",
       noDeadline: "Aucune pour les modèles choisis.",
       models: (m) => `simple : ${m.simple || "défaut"} · normale : ${m.normale || "défaut"} · complexe : ${m.complexe || "défaut"}`,
