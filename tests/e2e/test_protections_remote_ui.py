@@ -8,16 +8,16 @@
 - P0-28: the wake word is off on the phone and on any iOS page, and a
   recognizer is stopped before the voice session takes the microphone.
 
-The phone is remote_page (fake-guard mode); speech synthesis, notifications
+The phone is remote_page (real gate); speech synthesis, notifications
 and earcons are faked as in test_delivery. Fictitious devices only."""
 import time
 
 import pytest
+from conftest import phone_origin
 from fakes import FAKE_RTC, FAKE_SR, SDP_ANSWER
 
 pytestmark = pytest.mark.e2e
 
-PHONE = "app:d_e2e0000000000001"
 SIRI = "siri:k_e2e0000000000001"
 IPHONE_UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X) AppleWebKit/605.1.15 "
              "(KHTML, like Gecko) Version/26.1 Mobile/15E148 Safari/604.1")
@@ -138,10 +138,10 @@ def test_pc_never_speaks_phone_results_holds(open_pc, remote_page):
     phone = with_spies(remote_page)
 
     # A phone's and a Siri result: listed in the PC's task panel, never told there.
-    publish("task", done("t-phone", "Météo Lyon", via=PHONE))
+    publish("task", done("t-phone", "Météo Lyon", via=phone_origin()))
     publish("task", done("t-siri", "Trajet", via=SIRI))
     publish("reminder", {"id": "r-phone", "title": "Pain", "text": "Acheter du pain", "late_minutes": 0,
-                         "via": PHONE})
+                         "via": phone_origin()})
     pc.wait_for_selector(".task.done:has-text('Météo Lyon')")
     pc.wait_for_selector(".task.done:has-text('Trajet')")
     phone.wait_for_function("__spoken.length === 2")  # the phone tells its own two
@@ -154,7 +154,7 @@ def test_pc_never_speaks_phone_results_holds(open_pc, remote_page):
     assert waiting(SIRI) == ["t-siri"]  # nobody acknowledged it for Siri
     assert sorted(phone.evaluate("__spoken")) == ["Monsieur, la tâche « Météo Lyon » est terminée.",
                                                   "Monsieur, un rappel : Acheter du pain"]
-    until(lambda: waiting(PHONE) == [])  # acknowledged by the phone itself
+    until(lambda: waiting(phone_origin()) == [])  # acknowledged by the phone itself
 
     # A reload of the PC page: « Pendant votre absence » never lists them either.
     pc.reload()
@@ -184,7 +184,7 @@ def test_remote_page_ignores_the_pc_busy_screen_holds(open_pc, remote_page, monk
     assert phone.evaluate("async () => (await import('/static/js/delivery.js')).quietNow()") is False
     phone.evaluate("__tones.length = 0")
     pc.evaluate("__tones.length = 0")
-    publish("task", done("t-phone", "Météo Lyon", via=PHONE))
+    publish("task", done("t-phone", "Météo Lyon", via=phone_origin()))
     publish("task", done("t-pc", "Rapport"))
     phone.wait_for_function("__spoken.length === 1")
     assert phone.evaluate("__spoken") == ["Monsieur, la tâche « Météo Lyon » est terminée."]

@@ -94,6 +94,9 @@ _DEVICE_COOKIE = re.compile(r"^(d_[0-9a-f]{16})\.([A-Za-z0-9_-]{20,128})$")
 _PAIR_VALUE = re.compile(r"^(r_[0-9a-f]{12})\.([A-Za-z0-9_-]{20,128})$")
 _SIRI_HEADER = re.compile(r"^Bearer jv_siri_(k_[0-9a-f]{16})\.([A-Za-z0-9_-]{20,128})$")
 QUIET_PATHS = ("/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png")
+# What pair.html loads (public files, no credential): served even while remote
+# access is off, paused or the login is refused, so that pairing page can say why.
+PAIR_ASSETS = ("/static/js/pair.js", "/static/js/strings-fr.js", "/static/css/pair.css", "/static/css/tokens.css")
 
 OPEN, APP, SIRI = "open", "app", "siri"
 # The remote route table (3.14): deny by default. Matched like Starlette's
@@ -1156,12 +1159,13 @@ def _decide(ask: _Ask, app) -> _Verdict:
     if path in QUIET_PATHS:
         return _Verdict(caller=base, response=Response(status_code=404), route=route, quiet=True)
     saved = _settings()
+    pair_asset = reading and path in PAIR_ASSETS
     # 4. Off (READY False counts as off).
-    if not _enabled_of(saved):
+    if not _enabled_of(saved) and not pair_asset:
         return refuse(403, T_OFF, "off", "off")
     # 5. Paused.
     until = _paused_of(saved)
-    if until:
+    if until and not pair_asset:
         return refuse(403, T_PAUSED.format(until=_until_text(until)), "paused", "paused")
     # 6. The exact Serve name.
     expected = _host_of(saved)
@@ -1183,7 +1187,7 @@ def _decide(ask: _Ask, app) -> _Verdict:
         return refuse(403, T_REFUSED, "self")
     base = Caller(kind="unpaired", ip=ip, login=login)
     # 9. An allowed Tailscale login.
-    if not login or login not in _logins_of(saved):
+    if (not login or login not in _logins_of(saved)) and not pair_asset:
         known = _DEVICE_COOKIE.fullmatch(ask.cookies.get(COOKIE, ""))
         device = devices.get(known.group(1)) if known else None
         if device and not device["revoked"]:

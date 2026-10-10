@@ -181,7 +181,7 @@ def test_complet_has_every_tool_but_guard_rails(fake_claude, monkeypatch):
 
 
 def test_windows_paths_become_posix_rules():
-    assert tasks.posix(r"C:\Users\Aurelien\jarvis") == "/c/Users/Aurelien/jarvis"
+    assert tasks.posix(r"C:\Users\Helene\jarvis") == "/c/Users/Helene/jarvis"
     assert tasks.posix("D:/JARVIS/data/") == "/d/JARVIS/data"
     assert tasks.posix("/home/user/jarvis/") == "/home/user/jarvis"
     assert tasks._rule_path(r"C:\Users\X") == "//c/Users/X"

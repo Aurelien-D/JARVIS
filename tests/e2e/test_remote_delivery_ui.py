@@ -4,17 +4,17 @@ listed on the PC; each « Pendant votre absence » holds its own device's
 messages; the phone catches up on open without any leader; and when JARVIS
 stops on the PC, the phone says so and keeps its page.
 
-The phone is remote_page (fake-guard mode); speech synthesis, notifications,
+The phone is remote_page (real gate); speech synthesis, notifications,
 earcons and the voice session are faked. Fictitious devices only."""
 import json
 import time
 
 import pytest
+from conftest import phone_origin
 from fakes import FAKE_RTC, FAKE_SR, SDP_ANSWER
 
 pytestmark = pytest.mark.e2e
 
-PHONE = "app:d_e2e0000000000001"
 
 # The browser's voice, notifications and the earcons' tones, recorded (as in test_delivery).
 SPIES = r"""
@@ -139,7 +139,7 @@ def test_a_task_launched_from_the_phone_is_told_on_the_phone_and_only_listed_on_
     call(phone, "delegate_to_claude", "d1", {"title": "Météo Lyon", "prompt": "météo ?", "profile": "recherche"})
     started = output(phone, "d1")
     assert started["status"] == "started"
-    assert tasks.TASKS[started["task_id"]]["via"] == PHONE
+    assert tasks.TASKS[started["task_id"]]["via"] == phone_origin()
     phone.evaluate("__jarvis.voice.sleep()")  # back in its pocket: the badge and the voice tell it
     phone.wait_for_function("__jarvis.state.mode !== 'live'")
     phone.evaluate("__tones.length = 0")
@@ -150,7 +150,7 @@ def test_a_task_launched_from_the_phone_is_told_on_the_phone_and_only_listed_on_
     phone.wait_for_function("__jarvis.state.pending === 1")
     assert phone.is_visible("#badge") and phone.text_content("#badge") == "1"
     assert phone.evaluate("__tones") == [880, 660]
-    until(lambda: waiting(PHONE) == [])  # acknowledged by the phone (its own message)
+    until(lambda: waiting(phone_origin()) == [])  # acknowledged by the phone (its own message)
     assert phone.locator("#card-other-page").count() == 0  # the PC's election is not its business
 
     # The PC: listed in its task panel, nothing else.
@@ -171,14 +171,14 @@ def test_each_absence_message_holds_its_own_device_s_messages(no_pc_page, open_p
     phone.goto("about:blank")  # the phone closed too
     publish("reminder", {"id": "r-pc", "title": "Arroser", "text": "Arroser les plantes", "late_minutes": 0})
     publish("task", {"id": "t-phone", "title": "Trajet", "status": "done", "output": "20 minutes.",
-                     "origin": "voix", "via": PHONE})
-    assert waiting("pc") == ["r-pc"] and waiting(PHONE) == ["t-phone"]
+                     "origin": "voix", "via": phone_origin()})
+    assert waiting("pc") == ["r-pc"] and waiting(phone_origin()) == ["t-phone"]
 
     # The phone opens with no PC page at all (no leader): it catches up on its own at once.
     with_spies(phone, app_server.remote_url)
     phone.wait_for_function("__spoken.length === 1")
     assert phone.evaluate("__spoken") == ["Pendant votre absence : la tâche « Trajet » est terminée."]
-    until(lambda: waiting(PHONE) == [])
+    until(lambda: waiting(phone_origin()) == [])
     assert waiting("pc") == ["r-pc"]  # the PC's reminder waits for the PC
     assert phone.locator(".card:has-text('Arroser les plantes')").count() == 0
 

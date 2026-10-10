@@ -984,7 +984,9 @@ export async function runTool(name, args) {
     if (answer) return answer;
   }
   if (LOCAL_TOOLS[name]) return LOCAL_TOOLS[name](args);
-  if (name === "open_app" || name === "open_url") {
+  // Not on the phone: nothing opens on the PC from there (open_url comes back
+  // as confirm.js's link card, open_app is refused by the server).
+  if (!state.remote && (name === "open_app" || name === "open_url")) {
     const label = args.name || args.url || "";
     addCard(T.voice.launchTitle, T.voice.opening(label, args.monitor), "info");
   }

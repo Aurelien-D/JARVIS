@@ -2,14 +2,14 @@
 open in one test: a request is launched only where it may be (canLaunch, the
 server's own rule); the other device sees [Annuler] and a note. open_url from
 the phone comes back as a link card with [Ouvrir le lien], and nothing opens
-on the PC. The phone is remote_page (fake-guard mode); voice is the fake WebRTC."""
+on the PC. The phone is remote_page (real gate); voice is the fake WebRTC."""
 import json
 
 import pytest
+from conftest import phone_origin
 
 pytestmark = pytest.mark.e2e
 
-PHONE = "app:d_e2e0000000000001"
 COMPLET = {"title": "Ranger les téléchargements", "prompt": "Range ~/Downloads par type de fichier",
            "profile": "complet"}
 CARD = ".card.confirm[data-state='pending']"
@@ -75,7 +75,7 @@ def test_a_pc_action_asked_on_the_phone_launches_from_the_phone_only(remote_page
     assert req.value.post_data_json == {"decision": "oui"}
     remote_page.wait_for_selector(".card[data-state='done']")
     assert nothing_real == [("volume_up", None)]
-    assert confirm.PENDING[asked["pending_id"]]["via"] == PHONE
+    assert confirm.PENDING[asked["pending_id"]]["via"] == phone_origin()
     # The PC's card hears the outcome from the server.
     jarvis.wait_for_selector(".card[data-state='done']")
     assert jarvis.locator(CARD).count() == 0
@@ -116,6 +116,8 @@ def test_open_url_from_the_phone_is_a_link_card_and_nothing_opens_on_the_pc(remo
     card.wait_for()
     assert card.locator(".body").inner_text().strip() == "example.org"
     assert buttons(card) == ["Ouvrir le lien"]
+    # No « Ouverture de … » card beside it: nothing opens on the PC from the phone.
+    assert remote_page.locator(".card", has_text="Ouverture de").count() == 0
     card.locator("button", has_text="Ouvrir le lien").click()
     assert remote_page.evaluate("__opened") == [["https://example.org/page?x=1", "_blank", "noopener,noreferrer"]]
     # After outside content: the whole address and a warning, as text.

@@ -9,11 +9,15 @@ pytestmark = pytest.mark.e2e
 
 
 def test_remote_page_is_the_paired_iphone(remote_page):
+    from jarvis import devices
+    # The real gate: the device devices.add created (a random id), known by its cookie.
+    [device] = devices.active()
+    origin = f"app:{device['id']}"
     state = remote_page.evaluate("({remote: __jarvis.state.remote, origin: __jarvis.state.origin})")
-    assert state == {"remote": True, "origin": "app:d_e2e0000000000001"}
+    assert state == {"remote": True, "origin": origin} and origin.startswith("app:d_")
     # The server says the same in /api/config, and a phone never listens for the wake word.
     config = remote_page.evaluate("__jarvis.state.config")
-    assert config["remote"] is True and config["origin"] == "app:d_e2e0000000000001"
+    assert config["remote"] is True and config["origin"] == origin
     assert config["wake_word"] is False
     assert remote_page.evaluate("navigator.userAgent").find("iPhone") > 0
 
@@ -41,7 +45,7 @@ def test_the_serve_listener_is_remote_by_its_port(app_server, monkeypatch):
     with httpx.Client(trust_env=False, timeout=10) as client:  # never through a proxy
         for path in ("", "api/config"):
             r = client.get(app_server.remote_url + path, headers={"X-Jarvis-Token": security.TOKEN})
-            # The gate of this version refuses every remote request, and never hands out the PC token.
+            # Remote access is off by default: every remote request is refused, never with the PC token.
             assert r.status_code == 403 and security.TOKEN not in r.text, path
         assert client.get(app_server.url + "healthz").json() == {"app": "jarvis"}  # the PC port: local
     assert seen == [(config.REMOTE_PORT, True)] * 2

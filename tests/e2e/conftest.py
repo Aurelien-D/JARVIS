@@ -240,11 +240,27 @@ def jarvis(request):
     assert not errors, f"erreurs dans la page : {errors}"
 
 
+def phone_origin() -> str:
+    """The origin of the iPhone remote_page paired. Under the real gate it is the
+    device devices.add created, with a random id; in fake-guard mode the
+    device record remote_page wrote."""
+    from jarvis import devices
+    [device] = devices.active()
+    return f"app:{device['id']}"
+
+
 @pytest.fixture
 def remote_page(request, app_server, monkeypatch):
     """A page the server treats as the paired iPhone.
     param (optional dict): {"device": "d_e2e0000000000001", "ios": True, "size": (390, 844),
-                            "pair_state": None, "real_gate": False}"""
+                            "pair_state": None, "real_gate": True, "bypass_csp": True}
+
+    Real-gate mode (the default since the remote core is merged) fakes nothing
+    about the guard: the device is a real one (devices.add, a random id) with its
+    __Host- cookie, and a pair_state is the real server state that leads to it
+    (window open, closed, remote off, paused, a login Serve no longer allows,
+    a locked address, a revoked device). Fake-guard mode ("real_gate": False)
+    stamps the caller from the e2e_device cookie and renders pair_state as is."""
     pytest.importorskip("pytest_playwright", reason="pip install -r requirements-dev.txt")
     from fastapi.responses import HTMLResponse
 
@@ -252,20 +268,32 @@ def remote_page(request, app_server, monkeypatch):
     from jarvis import page as pages
 
     browser = request.getfixturevalue("browser")
-    opts = {"device": E2E_DEVICE, "ios": True, "size": (390, 844), "pair_state": None, "real_gate": False,
-            **(getattr(request, "param", None) or {})}
+    opts = {"device": E2E_DEVICE, "ios": True, "size": (390, 844), "pair_state": None, "real_gate": True,
+            "bypass_csp": True, **(getattr(request, "param", None) or {})}
     device, pair_state = opts["device"], opts["pair_state"]
     monkeypatch.setattr(config, "DAILY_BUDGET_USD", 5.0)  # the real check_voice lets the phone talk
     if opts["real_gate"]:
-        # The remote core's module: imported only when this mode is asked for.
         from jarvis import devices
+        # The test hook of remote.READY (spec 3.17): the module constant itself stays False until C2.
         monkeypatch.setattr(remote, "READY", True)
-        store.save("remote.json", {"enabled": True, "host": REMOTE_HOST, "logins": [LOGIN], "paused_until": 0,
+        store.save("remote.json", {"enabled": pair_state != "off", "host": REMOTE_HOST, "logins": [LOGIN],
+                                   "paused_until": time.time() + 3600 if pair_state == "paused" else 0,
                                    "complet_until": 0, "published": False, "changed_at": time.time(),
                                    "changed_by": "pc"})
-        dev, secret = devices.add("iPhone de test", ip=IP, login=LOGIN, os="iOS", ips=(IP,))
-        cookie = {"name": "__Host-jarvis", "value": f"{dev['id']}.{secret}", "domain": "127.0.0.1", "path": "/",
-                  "secure": True, "httpOnly": True, "sameSite": "Strict"}
+        cookie = None
+        if pair_state in (None, "revoked"):
+            dev, secret = devices.add("iPhone de test", ip=IP, login=LOGIN, os="iOS", ips=(IP,))
+            cookie = {"name": "__Host-jarvis", "value": f"{dev['id']}.{secret}", "domain": "127.0.0.1",
+                      "path": "/", "secure": True, "httpOnly": True, "sameSite": "Strict"}
+            if pair_state == "revoked":
+                devices.revoke(dev["id"])
+        elif pair_state == "pair":
+            remote.open_pairing()
+        elif pair_state == "refused":  # Serve vouches for a login the PC does not allow
+            monkeypatch.setattr(config, "REMOTE_LOGINS", "autre@example.com")
+        elif pair_state == "locked":  # this address failed too often
+            for _ in range(remote.FAIL_MAX):
+                remote._fail(("ip", IP), IP)
     else:
         # The device record the remote core will know (it reads devices.json).
         store.save("devices.json", {"version": 1, "revoked_ids": [], "devices": [{
@@ -294,14 +322,20 @@ def remote_page(request, app_server, monkeypatch):
         cookie = {"name": "e2e_device", "value": device, "domain": "127.0.0.1", "path": "/"}
     width, height = opts["size"]
     # new_context does not apply browser_context_args: everything is given here.
+    # The real gate sends the remote CSP (no 'unsafe-eval', no inline script), which
+    # would break Playwright's string waits (new Function) and axe's injected script,
+    # this fixture's wait_ready included: a proof of the page under the CSP opens its
+    # own context without the bypass and polls with page.evaluate
+    # (tests/e2e/test_integration_remote.py::test_the_phone_pages_run_under_the_remote_csp).
     context = browser.new_context(viewport={"width": width, "height": height}, has_touch=True, is_mobile=True,
                                   user_agent=IPHONE_UA if opts["ios"] else None, permissions=["microphone"],
-                                  ignore_https_errors=True)
+                                  ignore_https_errors=True, bypass_csp=opts["bypass_csp"])
     context.set_default_timeout(10_000)
     context.add_init_script(FAKE_RTC + FAKE_SR)
     context.route("https://api.openai.com/**", lambda route: route.fulfill(
         status=201, body=SDP_ANSWER, headers={"Content-Type": "application/sdp"}))
-    context.add_cookies([cookie])  # one device per browser context
+    if cookie:
+        context.add_cookies([cookie])  # one device per browser context
     page = context.new_page()
     errors = []
     page.on("pageerror", lambda err: errors.append(str(err)))

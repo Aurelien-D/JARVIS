@@ -283,3 +283,28 @@ def test_pc_only_handlers_refuse_a_remote_caller_even_past_the_table(monkeypatch
         r = client.request(method, path, json=body)
         assert r.status_code == 403 and r.json()["detail"] == "Réservé au PC.", path
     assert not remote.complet_allowed()
+
+
+def test_the_pairing_page_can_say_why_while_off_paused_or_refused(monkeypatch):
+    """The guard answers off, paused and a refused login with pair.html: the four
+    files that page loads are served then (public, no credential read), and
+    nothing else is."""
+    enable_remote(monkeypatch)
+
+    def check(client, state):
+        page = client.get("/")
+        assert page.status_code == 403 and f'content="{state}"' in page.text, state
+        for path in remote.PAIR_ASSETS:
+            r = client.get(path)
+            assert r.status_code == 200 and r.headers["content-security-policy"] == remote.CSP, (state, path)
+        for path in ("/static/js/main.js", "/static/js/core.js", "/healthz", "/api/config"):
+            assert client.get(path).status_code == 403, (state, path)
+
+    check(remote_client(login="autre@example.com"), "refused")
+    remote.pause(1, by=remote.PC)
+    check(remote_client(), "paused")
+    remote.set_enabled(False)
+    check(remote_client(), "off")
+    # The Serve name, the forwarded scheme and the tailnet address still apply to them.
+    for kw in ({"host": "evil.example"}, {"ip": "8.8.8.8"}):
+        assert remote_client(**kw).get(remote.PAIR_ASSETS[0]).status_code == 403, kw

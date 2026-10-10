@@ -75,15 +75,15 @@ def test_restricted_profiles_are_allowlists_with_mcp_denied_holds(fake_claude, m
 
 def _windows_install(monkeypatch):
     """JARVIS installed in a Windows folder with spaces and accents."""
-    monkeypatch.setattr(config, "ROOT", r"C:\Users\Aurélien Dujeux\Mes Programmes\JARVIS")
-    monkeypatch.setattr(config, "DATA_DIR", r"C:\Users\Aurélien Dujeux\Mes Programmes\JARVIS\données")
+    monkeypatch.setattr(config, "ROOT", r"C:\Users\Hélène Exemple\Mes Programmes\JARVIS")
+    monkeypatch.setattr(config, "DATA_DIR", r"C:\Users\Hélène Exemple\Mes Programmes\JARVIS\données")
     monkeypatch.setattr(config, "ARES_MCP_NAME", "ares")
     monkeypatch.setattr(config, "SAFE_MODE", "on")  # no state.json to read in that folder here
 
 
 def test_complet_keeps_the_protected_path_rules_holds(fake_claude, monkeypatch):
     _windows_install(monkeypatch)
-    root = "//c/Users/Aurélien Dujeux/Mes Programmes/JARVIS"
+    root = "//c/Users/Hélène Exemple/Mes Programmes/JARVIS"
     data = f"{root}/données"
     protected = {"mcp__ares__remember", f"Edit({root}/**)", f"Write({root}/**)", f"Edit({data}/**)",
                  f"Write({data}/**)", "Edit(~/.claude/**)", "Write(~/.claude/**)", "Edit(~/.mcp.json)",
@@ -101,7 +101,7 @@ def test_complet_keeps_the_protected_path_rules_holds(fake_claude, monkeypatch):
 
 
 @pytest.mark.parametrize("given, expected", [
-    (r"C:\Users\Aurélien Dujeux\Documents\Été 2026", "/c/Users/Aurélien Dujeux/Documents/Été 2026"),
+    (r"C:\Users\Hélène Exemple\Documents\Été 2026", "/c/Users/Hélène Exemple/Documents/Été 2026"),
     (r"C:\Users\X", "/c/Users/X"),
     (r"c:\users\x\\", "/c/users/x"),
     (r"D:\Données personnelles\JARVIS\data" + "\\", "/d/Données personnelles/JARVIS/data"),
@@ -120,7 +120,7 @@ def test_windows_paths_become_posix_permission_paths_holds(given, expected):
 
 def test_windows_paths_with_backslashes_only_become_posix_on_windows_holds(monkeypatch):
     monkeypatch.setattr(config, "IS_WINDOWS", True)
-    assert tasks.posix(r"\Users\Aurélien\JARVIS" + "\\") == "/Users/Aurélien/JARVIS"
+    assert tasks.posix(r"\Users\Hélène\JARVIS" + "\\") == "/Users/Hélène/JARVIS"
 
 
 BAD_PROFILES = [None, "", "xyz", "Complet", " complet", "COMPLET", "complet\u200b", "full", 3,
