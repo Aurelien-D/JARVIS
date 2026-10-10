@@ -8,7 +8,9 @@
    - While the server can't be reached, #serverChip says so (on the paired
      iPhone, a stopped JARVIS reads « JARVIS est fermé sur le PC »).
    - Every PING_SECONDS the server sends a 'ping' frame (no id): it arrives
-     here as server:ping. */
+     here as server:ping. A page back on screen (iOS froze it while locked or
+     in the background) whose stream said nothing for STALE_MS opens a new
+     one at once, instead of waiting for the browser to notice. */
 import { $, TOKEN, api, bus, state } from "./core.js";
 import { T } from "./strings-fr.js";
 
@@ -16,6 +18,7 @@ const SERVER_DOWN = T.status?.serverDown || "Serveur JARVIS déconnecté · reco
 const SERVER_CLOSED = T.status?.serverClosed || "JARVIS est fermé · relancez JARVIS.bat";
 const PC_CLOSED = T.delivery?.pcClosed || "JARVIS est fermé sur le PC";
 const ID_KEY = "jarvis.client";
+const STALE_MS = 30e3;  // two pings (15 s) missed: the stream is dead, whatever its readyState says
 
 let es = null;
 let panelsLoaded = false;
@@ -25,6 +28,7 @@ let lastPresence = "";
 let opened = 0;
 let closed = false;  // « Quitter JARVIS »: the server said it stops
 let closedText = SERVER_CLOSED;
+let lastFrameAt = Date.now();  // the stream's last sign of life (opened, an event, a ping)
 
 /* This page's id. Kept across a reload (sessionStorage), but taken out of
    storage while the page lives and put back when it goes: a duplicated tab
@@ -48,7 +52,9 @@ export function listenEvents() {
   // A stream re-created by hand doesn't send Last-Event-ID itself.
   if (lastEventId) params.set("last_event_id", lastEventId);
   const source = es = new EventSource(`/api/events?${params}`);
+  lastFrameAt = Date.now();  // a fresh stream gets its own 30 s
   source.onopen = () => {
+    lastFrameAt = Date.now();
     // JARVIS relaunched while this page stayed open (its window couldn't
     // close): a fresh page brings the wake word and the panels back.
     if (closed) { location.reload(); return; }
@@ -61,6 +67,7 @@ export function listenEvents() {
     refreshPanels();
   };
   source.onmessage = (e) => {
+    lastFrameAt = Date.now();  // every frame, the pings included
     if (e.lastEventId) lastEventId = e.lastEventId;
     let ev;
     try { ev = JSON.parse(e.data); } catch { return; }
@@ -74,6 +81,11 @@ export function listenEvents() {
     // The browser gives up for good on an HTTP error: start a new stream later.
     if (source.readyState === EventSource.CLOSED && source === es) reopenLater();
   };
+}
+
+/* Back on screen, or back from the back/forward cache: a silent stream is reopened now. */
+function reopenIfStale() {
+  if (Date.now() - lastFrameAt > STALE_MS) listenEvents();
 }
 
 function reopenLater() {
@@ -154,7 +166,9 @@ export function init() {
   addEventListener("pageshow", (e) => {
     if (!e.persisted) return;  // back from the back/forward cache: still this page
     try { sessionStorage.removeItem(ID_KEY); } catch { /* storage blocked */ }
+    reopenIfStale();
   });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reopenIfStale(); });
   // Back from sleep or offline: a stream the browser gave up on starts again now.
   addEventListener("online", () => { if (!es || es.readyState === EventSource.CLOSED) listenEvents(); });
 }

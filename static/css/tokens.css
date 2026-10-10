@@ -34,6 +34,21 @@
   --lh-body: 1.45;
   --lh-label: 1.2;
   --radius: 4px;
+
+  /* The iPhone's notch, rounded corners and home bar (viewport-fit=cover in
+     index.html and pair.html): 0 everywhere else. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+/* An explicit page colour: what iOS shows under the safe areas and when the
+   page bounces. No font inflation in landscape, no bounce of the whole page. */
+html {
+  background-color: var(--bg);
+  -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+  overscroll-behavior: none;
 }
 
 /* One focus ring for every control (keyboard only). */

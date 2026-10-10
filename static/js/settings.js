@@ -17,7 +17,7 @@
    - Everything from the server is set as text, never as HTML. Inside a
      modal dialog the page's toasts and live regions are out of reach, so
      each field has its own status line. */
-import { $, api, bus, settings as prefs, state } from "./core.js";
+import { $, api, bus, isIOS, settings as prefs, state } from "./core.js";
 import { audio, earcon } from "./audio-fx.js";
 import { T, explainError, fr } from "./strings-fr.js";
 import { SR, toggleWake, wakeEngine, wakeWanted } from "./wake.js";
@@ -383,7 +383,8 @@ function deviceSelect(kind, labelText, prefKey, nth) {
 function sectionDevices() {
   const box = h("div", { class: "set-devices" });
   const mic = deviceSelect("audioinput", S.devices.mic, "micId", S.devices.micN);
-  const sinkOk = typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype;
+  // iOS: the output is iOS's own choice (speaker, earphones, AirPlay), never the page's.
+  const sinkOk = !isIOS() && typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype;
   const speaker = sinkOk ? deviceSelect("audiooutput", S.devices.speaker, "speakerId", S.devices.speakerN) : null;
   const names = button(S.devices.names, async () => {
     try {
@@ -407,7 +408,8 @@ function sectionDevices() {
     navigator.mediaDevices.addEventListener?.("devicechange", refill);
   }
   mic.append(h("p", { class: "set-help", text: S.devices.wakeNote }));
-  box.append(mic, speaker || h("p", { class: "set-help", text: S.devices.noSink }), h("div", { class: "set-actions" }, names));
+  const noSpeaker = h("p", { class: "set-help", text: isIOS() ? T.ios.speakerNote : S.devices.noSink });
+  box.append(mic, speaker || noSpeaker, h("div", { class: "set-actions" }, names));
   return box;
 }
 
@@ -432,8 +434,12 @@ function sectionEcoute() {
 }
 
 function sectionSysteme() {
-  const out = [];
-  // Autostart: the shortcut in the Windows Startup folder (desktop.set_autostart).
+  return [...(state.remote ? [] : [autostartField()]), ...entriesOf("systeme").map(field), ...browserPrefs()];
+}
+
+/* Autostart: the shortcut in the Windows Startup folder (desktop.set_autostart).
+   This PC's business only: never on the paired iPhone's page. */
+function autostartField() {
   const id = "set-autostart";
   const input = h("input", { type: "checkbox", id, class: "set-checkbox", checked: model.autostart === true,
                              disabled: model.autostart === null || model.autostart === undefined });
@@ -452,9 +458,11 @@ function sectionSysteme() {
       say(auto, explainError(err), true);
     }
   });
-  out.push(auto, ...entriesOf("systeme").map(field));
+  return auto;
+}
 
-  // Animations and sounds: this browser only.
+/* Animations and sounds: this browser only. */
+function browserPrefs() {
   const motion = h("select", { id: "set-motion", class: "set-input" },
     h("option", { value: "auto", text: S.motionAuto }), h("option", { value: "reduced", text: S.motionReduced }));
   motion.value = prefs.get("motion", "auto") === "reduced" ? "reduced" : "auto";
@@ -482,8 +490,7 @@ function sectionSysteme() {
     prefs.set("earconVolume", Number(range.value) / 100);
     earcon("unmute", { userInitiated: true });  // a sample at the new level
   });
-  out.push(motionWrap, volWrap);
-  return out;
+  return [motionWrap, volWrap];
 }
 
 function sectionCouts() {
@@ -492,6 +499,8 @@ function sectionCouts() {
 }
 
 function sectionDonnees() {
+  // The data folder lives on the PC (open it, purge the journal): not from the iPhone.
+  if (state.remote) return [h("p", { class: "set-where", text: TS.data }), ...entriesOf("donnees").map(field)];
   const status = h("p", { class: "set-status", role: "status" });
   const actions = h("div", { class: "set-field", "data-key": "data-actions" });
   const open = button(TS.openData, async () => {

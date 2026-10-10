@@ -247,6 +247,11 @@
 .tv-steps time { color: var(--amber); }
 .tv-empty { list-style: none; color: var(--muted); font-style: italic; }
 @media (max-width: 600px) {
-  #taskView { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 0 14px 16px; }
+  /* a phone: the whole width and height, minus its safe areas (tokens.css) */
+  #taskView {
+    width: calc(100vw - 16px - var(--safe-left) - var(--safe-right));
+    max-height: calc(100dvh - 16px - var(--safe-top) - var(--safe-bottom));
+    padding: 0 14px 16px;
+  }
   .tv-head { margin: 0 -14px 10px; padding: 12px 14px 10px; }
 }
