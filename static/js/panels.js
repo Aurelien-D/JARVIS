@@ -12,7 +12,7 @@
    - Reminders by day, memory facts; deleting hides the row at once and the
      DELETE leaves only when the 'Annuler' toast goes (6 s). Editing appears
      only when the server has the PATCH routes (WP14, WP17). */
-import { $, TOKEN, api, bus, md, settings } from "./core.js";
+import { $, TOKEN, api, bus, md, settings, state } from "./core.js";
 import { T, fmtElapsed, fmtRelative, fmtTime } from "./strings-fr.js";
 import { setSideOpen, toast } from "./hud.js";
 import { openTask } from "./taskview.js";
@@ -679,22 +679,17 @@ function startEdit(row, { key, text, url, edit }) {
 }
 
 /* Edit buttons only when the server can PATCH (WP14 memory, WP17 reminders):
-   a route that does not exist yet answers 405 (the path has DELETE). */
-async function probeEditing() {
-  const probe = async (url) => {
-    try {
-      await api(url, { method: "PATCH", body: {} });
-      return true;
-    } catch (err) {
-      // 405: no PATCH on that path; 404 'Not Found': no such path; 401/403: no answer at all.
-      const missing = !Number.isFinite(err.status) || [401, 403, 405, 501].includes(err.status)
-        || (err.status === 404 && /^not found$/i.test(err.message));
-      return !missing;
-    }
-  };
-  const [s, m] = await Promise.all([probe("/api/schedules/__sonde__"), probe("/api/memory/__sonde__")]);
+   /api/config says so (server.py _can_patch), with no request that fails. */
+async function loadEditing() {
+  let edit = state.config?.edit;
+  if (!edit || typeof edit !== "object") {
+    try { edit = (await api("/api/config")).edit; } catch { return; }  // the next connection asks again
+  }
+  if (!edit || typeof edit !== "object") return;
+  const s = edit.schedules === true, m = edit.memory === true;
   if (s !== editable.schedules) { editable.schedules = s; drawSchedules(); }
   if (m !== editable.memory) { editable.memory = m; drawMemory(); }
+  return true;
 }
 
 /* ---------------------------------------------------------- sections */
@@ -761,7 +756,7 @@ export function init() {
       (Array.isArray(items) ? items : []).forEach(onPending);
       renderTasks();
     }).catch((err) => console.warn(err));
-    if (!probed) { probed = true; probeEditing().catch((err) => console.warn(err)); }
+    if (!probed) loadEditing().then((ok) => { probed = !!ok; }).catch((err) => console.warn(err));
   });
   setInterval(tick, 1000);
   // Relative times, the move to 'Historique', expired requests, the day groups.

@@ -100,7 +100,7 @@ SCHEMA = [
     Setting("reasoning", "REASONING_EFFORT", "choice", "voix", "Effort de réflexion",
             "Modèles gpt-realtime-2.x seulement : plus d'effort, réponses plus lentes.",
             choices=(("minimal", "minimal · le plus rapide"), ("low", "low · rapide (conseillé)"),
-                     ("medium", "medium"), ("high", "high · plus lent"), ("xhigh", "xhigh · le plus lent")),
+                     ("medium", "medium · équilibré"), ("high", "high · plus lent"), ("xhigh", "xhigh · le plus lent")),
             live=SESSION),
     # ---------------------------------------------------------------- Écoute
     Setting("wake_word", "WAKE_WORD", "bool", "ecoute", "Mot d'éveil « Jarvis »",
@@ -165,7 +165,7 @@ SCHEMA = [
             "conversation payante. 0 = pas de plafond.", minimum=0, maximum=1000, step=1, unit="$"),
     # ---------------------------------------------------------------- Système
     Setting("hotkey", "HOTKEY", "hotkey", "systeme", "Raccourci global",
-            "Pour parler à JARVIS depuis n'importe quelle application, par exemple ctrl+alt+maj+j.",
+            "Pour parler à JARVIS depuis n'importe quelle application, par exemple Ctrl+Alt+Maj+J.",
             maximum=40, live=RESTART),
     Setting("browser", "BROWSER", "choice", "systeme", "Navigateur de la fenêtre JARVIS",
             choices=(("auto", "Automatique (Chrome de préférence)"), ("chrome", "Google Chrome"),
@@ -204,6 +204,19 @@ def _put(s: Setting, value):
 
 def values() -> dict:
     return {s.key: _get(s) for s in SCHEMA}
+
+
+def shown_values() -> dict:
+    """values() as the dialog shows them: the hotkey the way the keyboard and
+    Aide name it ('Ctrl+Alt+Maj+J', which normalize_hotkey reads back)."""
+    out = values()
+    shown = shell.hotkey_label(out["hotkey"])
+    try:
+        if shown and normalize_hotkey(shown) == out["hotkey"]:  # never a label it would not read back
+            out["hotkey"] = shown
+    except SettingError:
+        pass
+    return out
 
 
 # What each setting was when this JARVIS started (after its saved overrides):
@@ -388,7 +401,7 @@ def normalize_hotkey(text: str) -> str:
     """'Ctrl + Alt + Maj + J' -> 'ctrl+alt+shift+j'; SettingError (French) otherwise."""
     parts = [p.strip().lower() for p in str(text or "").replace(" ", "").split("+")]
     if not parts or any(not p for p in parts):
-        raise SettingError("Raccourci invalide : par exemple ctrl+alt+maj+j.")
+        raise SettingError("Raccourci invalide : par exemple Ctrl+Alt+Maj+J.")
     *mods, key = parts
     mods = [_MODIFIERS.get(m, "") for m in mods]
     if not mods or "" in mods or len(set(mods)) != len(mods):
@@ -654,6 +667,17 @@ def versions() -> dict:
             "transcribe_model": realtime.transcribe_model(), "claude_models": dict(config.MODELS)}
 
 
+def deadlines() -> list | None:
+    """OpenAI's retirement dates that concern the models in use (À propos)."""
+    from . import health
+    try:
+        found = health.check_deadlines()
+    except Exception:  # noqa: BLE001 - À propos says 'inconnu' rather than break the dialog
+        logging.exception("JARVIS: échéances inconnues")
+        return None
+    return [" ".join(x for x in (c.get("message_fr"), c.get("fix_fr")) if x) for c in found]
+
+
 def autostart_state():
     """True or False on Windows; None where JARVIS can't start with the system."""
     probe = getattr(desktop, "autostart_enabled", None)
@@ -715,10 +739,10 @@ def _schema_entry(s: Setting) -> dict:
 def get_settings():
     key = config.OPENAI_API_KEY or ""
     return {"sections": [{"id": i, "title": t} for i, t in SECTIONS],
-            "schema": [_schema_entry(s) for s in SCHEMA], "values": values(),
+            "schema": [_schema_entry(s) for s in SCHEMA], "values": shown_values(),
             "overridden": overridden(), "restart": restart_pending(),
             "key": {"present": bool(key.strip()), "masked": mask(key)},
-            "autostart": autostart_state(), "versions": versions(),
+            "autostart": autostart_state(), "versions": versions(), "deadlines": deadlines(),
             "data_dir": str(config.DATA_DIR), "platform": _platform()}
 
 
@@ -736,8 +760,9 @@ def put_settings(body: dict):
     except OSError:
         raise HTTPException(500, "Réglages non enregistrés : le dossier des données n'est pas "
                                  "modifiable (disque plein ou protégé).") from None
-    return {"ok": True, "applied": applied, "values": values(), "restart": restart_pending(),
-            "overridden": overridden()}
+    # The models may have changed: À propos shows their versions and deadlines.
+    return {"ok": True, "applied": applied, "values": shown_values(), "restart": restart_pending(),
+            "overridden": overridden(), "versions": versions(), "deadlines": deadlines()}
 
 
 class KeyIn(BaseModel):

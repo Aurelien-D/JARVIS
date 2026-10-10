@@ -89,11 +89,19 @@ def healthz():
     return {"app": "jarvis"}
 
 
+def _can_patch(router, prefix: str) -> bool:
+    """The router has a PATCH route under prefix: the side panel shows its ✎ only then."""
+    return any(getattr(r, "path", "").startswith(prefix) and "PATCH" in (getattr(r, "methods", None) or ())
+               for r in router.routes)
+
+
 @app.get("/api/config")
 def get_config():
     # + quiet hours, the daily cap reached, versions (settings.py)
     return {"wake_word": config.WAKE_WORD, "speech_lang": config.SPEECH_LANG,
-            "idle_minutes": config.IDLE_MINUTES, **settings.public_config()}
+            "idle_minutes": config.IDLE_MINUTES, **settings.public_config(),
+            "edit": {"memory": _can_patch(api_memory.router, "/api/memory/"),
+                     "schedules": _can_patch(api_schedules.router, "/api/schedules/")}}
 
 # ---------------------------------------------------------------- realtime session
 

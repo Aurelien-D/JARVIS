@@ -1,12 +1,15 @@
 """The report window (WP11): a real modal dialog, in French, with a native
 sortable table instead of Grid.js and ApexCharts loaded only when needed."""
 import json
+import re
+from pathlib import Path
 
 import pytest
 
 pytestmark = pytest.mark.e2e
 
 NNBSP = "\u202f"
+AXE = Path(__file__).resolve().parent / "vendor" / "axe.min.js"
 APEX_HASH = "sha384-fnhrfzODrKsQTTXTYoDIc5f/SIP1KuiO4hz6PmkcIBHYVaAj8QpSOtByqodkU2iO"
 
 SALES = {
@@ -161,8 +164,36 @@ def test_chart_is_loaded_on_demand_with_its_hash_and_speaks_french(jarvis):
       return [y.labels.formatter(1234.5), o.tooltip.y.formatter(2.25), o.chart.defaultLocale,
               o.chart.locales[0].options.shortMonths[1]]; })""")
     assert fmt == [f"1{NNBSP}234,5", "2,25", "fr", "févr."]
-    assert jarvis.get_attribute("#rchart", "role") == "img"
-    assert jarvis.get_attribute("#rchart", "aria-label") == f"Graphique{NNBSP}: 2026"
+    # The chart is one image named in French (by its svg; no role around it to nest it).
+    assert jarvis.get_attribute("#rchart svg.apexcharts-svg", "role") == "img"
+    assert jarvis.get_attribute("#rchart svg.apexcharts-svg", "aria-label") == f"Graphique{NNBSP}: 2026"
+    assert jarvis.get_attribute("#rchart", "role") is None
+
+
+def test_the_chart_adds_no_tab_stop_no_english_and_passes_axe(jarvis):
+    two = {**SALES, "chart": {"type": "line", "categories": ["janvier", "février", "mars"],
+                              "series": [{"name": "2025", "data": [1, 2, 3]}, {"name": "2026", "data": [2, 3, 4]}]}}
+    show(jarvis, two)
+    if wait_chart(jarvis) != "ready":
+        pytest.skip("ApexCharts (CDN) indisponible")
+    jarvis.wait_for_selector("#rchart .apexcharts-legend-series")  # two series: a legend
+    parts = jarvis.evaluate("""[...document.querySelectorAll('#rchart [tabindex], #rchart [role]')]
+      .map(e => ({tag: e.tagName.toLowerCase(), role: e.getAttribute('role'), tab: e.getAttribute('tabindex'),
+                  label: e.getAttribute('aria-label') || ''}))""")
+    assert not [p for p in parts if p["tab"] is not None and p["tab"] != "-1"], parts  # no Tab stop
+    assert not [p for p in parts if p["role"] in ("application", "button")], parts
+    assert not [p for p in parts if re.search(r"\b(chart|series|press|visible|toggle)\b", p["label"], re.I)], parts
+    svg = next(p for p in parts if p["tag"] == "svg")
+    assert svg == {"tag": "svg", "role": "img", "tab": None, "label": f"Graphique{NNBSP}: 2025, 2026"}
+    # From the ✕, Tab goes straight to the table's 'Copier CSV' (the chart sits between them).
+    jarvis.focus("#report .rhead .x")
+    jarvis.keyboard.press("Tab")
+    assert jarvis.evaluate("!!document.activeElement.closest('#rtable .rtable-bar')")
+    jarvis.add_script_tag(path=str(AXE))
+    serious = jarvis.evaluate("""async () => (await axe.run(document.getElementById('report'),
+      {resultTypes: ['violations']})).violations.filter(v => ['serious', 'critical'].includes(v.impact))
+      .map(v => v.id)""")
+    assert serious == []
 
 
 def test_chart_offline_says_so_and_the_table_still_shows(jarvis):

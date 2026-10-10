@@ -528,6 +528,55 @@ function renderServerChip() {
   if (state.synced) ui.wasSynced = true;
 }
 
+/* ---------------------------------------------------------- weather and headlines */
+/* Say it short, show it full (design spec §0.4): JARVIS sums the 'info' tool
+   up aloud; the card keeps the full forecast with its credit, or every
+   headline with its link. Headlines are written by others: text only, and
+   only web links. */
+export function showInfo({ name, result } = {}) {
+  if (name !== "info" || !result || typeof result !== "object" || result.ok !== true) return null;
+  if (Array.isArray(result.headlines)) {
+    const el = makeCard(T.info.newsTitle, "info", { id: "info-actus" });
+    const ul = document.createElement("ul");
+    ul.className = "info-news";
+    for (const h of result.headlines.slice(0, 8)) {
+      if (!h || typeof h !== "object") continue;
+      const li = document.createElement("li");
+      const link = String(h.link || "");
+      const title = String(h.title || "").slice(0, 300);
+      if (/^https?:\/\//i.test(link)) {
+        const a = document.createElement("a");
+        a.href = link;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = title;
+        li.append(a);
+      } else {
+        li.append(title);
+      }
+      if (h.source) li.append(` · ${String(h.source).slice(0, 80)}`);
+      ul.append(li);
+    }
+    const body = el.querySelector(".body");
+    body.classList.add("md");
+    body.replaceChildren(ul);
+    return el;
+  }
+  if (typeof result.text === "string" && result.text) {
+    const el = makeCard(T.info.weatherTitle(String(result.city || "").slice(0, 80)), "info", { id: "info-meteo" });
+    const p = document.createElement("p");
+    p.textContent = result.text;
+    const credit = document.createElement("p");
+    credit.className = "meta";
+    credit.textContent = String(result.source || "");
+    const body = el.querySelector(".body");
+    body.classList.add("md");
+    body.replaceChildren(p, credit);
+    return el;
+  }
+  return null;
+}
+
 /* ---------------------------------------------------------- init */
 export function init() {
   statusEl = $("statusPill"); statusActions = $("statusActions");
@@ -600,6 +649,7 @@ export function init() {
     renderStatus();
   });
   bus.on("tool:start", ({ label = "" } = {}) => { if (label) ui.label = label; renderStatus(); });
+  bus.on("tool:result", showInfo);
   bus.on("muted", renderStatus);
   bus.on("wake:engine", () => renderStatus());  // ' · écoute locale' / ' · écoute via Google'
   bus.on("error", setStatusError);

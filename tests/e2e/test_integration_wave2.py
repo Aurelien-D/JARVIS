@@ -11,10 +11,12 @@
 - the help card lists the journal, A.R.E.S and the instant information.
 The server runs in this process: every setting changed is put back."""
 import time
-from datetime import date
+from datetime import date, datetime, timedelta
 
+import httpx
 import pytest
 from fake_ares import FakeAres
+from test_untrusted_text import call, go_live
 
 from jarvis import config, events, health, settings
 
@@ -135,11 +137,31 @@ def test_ares_switched_on_in_reglages_reaches_chip_agenda_help_and_the_voice(
 
 def test_quiet_hours_set_in_reglages_reach_the_page_at_once(restore_settings, jarvis):
     jarvis.wait_for_function("__jarvis.state.quiet === false")
-    jarvis.evaluate("__jarvis.api('/api/settings', {method: 'PUT', body: {quiet_hours: '00:00-23:59'}})")
+    assert jarvis.locator("#dndChip").is_hidden()
+    now = datetime.now()  # an hour each side: true whatever the time, midnight included
+    calm = f"{now - timedelta(hours=1):%H:%M}-{now + timedelta(hours=1):%H:%M}"
+    jarvis.evaluate("v => __jarvis.api('/api/settings', {method: 'PUT', body: {quiet_hours: v}})", calm)
     # delivery.js reads them again on 'config', not at its next 2-minute poll.
     jarvis.wait_for_function("__jarvis.state.quiet === true", timeout=5000)
+    # One glance says why reminders are silent: the chip, which opens the setting.
+    chip = jarvis.locator("#dndChip button")
+    chip.wait_for()
+    assert chip.inner_text() == "Heures calmes"
+    assert chip.get_attribute("aria-label") == "Heures calmes · Modifier dans Réglages › Proactivité"
+    assert jarvis.get_attribute("#dndChip", "class") == "chip quiet"
+    chip.click()
+    jarvis.wait_for_selector("#settingsDialog[open] .set-tab[aria-current='true']:has-text('Proactivité')")
+    close_settings(jarvis)
     jarvis.evaluate("__jarvis.api('/api/settings', {method: 'PUT', body: {quiet_hours: ''}})")
     jarvis.wait_for_function("__jarvis.state.quiet === false", timeout=5000)
+    jarvis.wait_for_selector("#dndChip", state="hidden")
+    # « Ne pas déranger » during quiet hours: the chip names it, its button ends it.
+    jarvis.evaluate("v => __jarvis.api('/api/settings', {method: 'PUT', body: {quiet_hours: v}})", calm)
+    jarvis.wait_for_function("document.querySelector('#dndChip button')?.textContent === 'Heures calmes'")
+    jarvis.click("#dndToggle")
+    jarvis.wait_for_function("document.querySelector('#dndChip button')?.textContent.startsWith('Ne pas déranger')")
+    jarvis.click("#dndChip button")
+    jarvis.wait_for_function("document.querySelector('#dndChip button')?.textContent === 'Heures calmes'")
 
 
 def test_the_help_card_names_the_hotkey_set_in_reglages(restore_settings, jarvis, reload_jarvis):
@@ -216,6 +238,34 @@ def test_hotkey_starts_the_voice_and_hands_the_keyboard_to_the_composer(jarvis):
         jarvis.evaluate("__jarvis.settings.set('ptt', false)")
 
 
+def test_the_hotkey_closes_reglages_first_and_never_confirms_a_sensitive_change(restore_settings, jarvis):
+    """A modal makes the page inert: the conversation must not start behind it."""
+    before = config.PERMISSION_MODE
+    puts = []
+    jarvis.on("request", lambda r: puts.append(r.post_data) if r.method == "PUT" and "/api/settings" in r.url else None)
+    jarvis.wait_for_function(ASLEEP)
+    open_settings(jarvis, "Claude Code")
+    jarvis.select_option("#set-permission_mode", "bypassPermissions")
+    jarvis.click("#settingsDialog [data-key='permission_mode'] button.set-apply")
+    jarvis.wait_for_selector("#settingsConfirm[open]")
+    hotkey()
+    jarvis.wait_for_function("__jarvis.state.mode === 'live'")
+    jarvis.wait_for_function("!document.getElementById('settingsDialog').open"
+                             " && !document.getElementById('settingsConfirm').open")
+    jarvis.wait_for_function("document.activeElement && document.activeElement.id === 'askInput'")
+    jarvis.wait_for_timeout(300)  # the dialogs' own close handlers ran: the focus stays
+    assert jarvis.evaluate("document.activeElement.id") == "askInput"
+    assert puts == [] and config.PERMISSION_MODE == before
+    # A report open: the same.
+    hotkey()
+    jarvis.wait_for_function(ASLEEP)
+    jarvis.evaluate("import('/static/js/report.js').then(m => m.showReport({title: 'Rapport'}))")
+    jarvis.wait_for_selector("#report[open]")
+    hotkey("talk")
+    jarvis.wait_for_function("__jarvis.state.mode === 'live' && !document.getElementById('report').open")
+    jarvis.wait_for_function("document.activeElement && document.activeElement.id === 'askInput'")
+
+
 # ---------------------------------------------------------------- panel -> confirmation -> task -> journal
 
 def test_full_access_retry_waits_for_lancer_then_runs_and_the_journal_notes_it(jarvis):
@@ -254,4 +304,63 @@ def test_full_access_retry_waits_for_lancer_then_runs_and_the_journal_notes_it(j
         assert any(t.startswith("Tâche lancée") and "Rangement des factures" in t for t in lines), lines
     finally:
         tasks.TASKS.pop(old["id"], None)
+        confirm.PENDING.clear()
+
+
+# ---------------------------------------------------------------- instant information on screen
+
+NEWS = ('<?xml version="1.0"?><rss version="2.0"><channel><title>Fil</title>'
+        + "".join(f"<item><title>Titre {i}</title><link>https://news.example/{i}</link></item>" for i in range(1, 5))
+        + "<item><title>Titre 5</title><link>javascript:alert(1)</link></item>"
+        + "</channel></rss>").encode()
+
+
+def open_meteo_and_news(request):
+    if request.url.host.startswith("geocoding"):
+        return httpx.Response(200, json={"results": [{"name": "Laon", "latitude": 49.56, "longitude": 3.62}]})
+    if "open-meteo" in request.url.host:
+        return httpx.Response(200, json={"current": {"temperature_2m": 12, "weather_code": 61}, "daily": {}})
+    return httpx.Response(200, content=NEWS)
+
+
+def test_weather_and_headlines_show_themselves_on_a_card(jarvis, monkeypatch):
+    """Say it short, show it full: JARVIS sums up, the card keeps it all."""
+    from jarvis import confirm, info
+    info._feeds.clear()
+    info._forecasts.clear()
+    monkeypatch.setattr(info, "TRANSPORT", httpx.MockTransport(open_meteo_and_news))
+    monkeypatch.setattr(config, "NEWS_FEEDS", "https://news.example/rss.xml")
+    try:
+        go_live(jarvis)
+        call(jarvis, "info", {"type": "meteo", "ville": "Laon"}, "m1")
+        card = jarvis.locator("#card-info-meteo")
+        card.wait_for()
+        assert card.locator("h3").inner_text() == "Météo · Laon"
+        assert card.locator(".body p").first.inner_text().startswith("À Laon, en ce moment : 12 °C")
+        assert card.locator(".body .meta").inner_text() == info.CREDIT  # Open-Meteo's credit (CC-BY)
+
+        call(jarvis, "info", {"type": "actus"}, "a1")
+        jarvis.wait_for_selector("#card-info-actus li")
+        items = jarvis.evaluate("""[...document.querySelectorAll('#card-info-actus li')].map(li => {
+          const a = li.querySelector('a');
+          return {text: li.textContent, href: a && a.getAttribute('href'), target: a && a.target, rel: a && a.rel}; })""")
+        assert [i["text"] for i in items] == [f"Titre {n} · news.example" for n in range(1, 6)]
+        assert items[0] == {"text": "Titre 1 · news.example", "href": "https://news.example/1",
+                            "target": "_blank", "rel": "noopener noreferrer"}
+        assert items[4]["href"] is None  # a javascript: link stays text
+        assert jarvis.locator("#card-info-actus h3").inner_text() == "Titres de l'actualité"
+        # Asked again: the same card, updated in place.
+        call(jarvis, "info", {"type": "actus"}, "a2")
+        jarvis.wait_for_timeout(300)
+        assert jarvis.locator("#cards [id^='card-info-actus']").count() == 1
+        # A failure shows nothing (JARVIS says why).
+        monkeypatch.setattr(info, "TRANSPORT", httpx.MockTransport(lambda r: httpx.Response(503)))
+        info._forecasts.clear()
+        jarvis.evaluate("document.getElementById('card-info-meteo').remove()")
+        call(jarvis, "info", {"type": "meteo", "ville": "Paris"}, "m2")
+        jarvis.wait_for_timeout(300)
+        assert jarvis.locator("#card-info-meteo").count() == 0
+    finally:
+        info._feeds.clear()
+        info._forecasts.clear()
         confirm.PENDING.clear()

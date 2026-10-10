@@ -223,6 +223,8 @@ export const T = typeset({
     otherTitle: "Autre fenêtre",
     dndHour: "Ne pas déranger 1 h",
     dndEnd: "Arrêter « Ne pas déranger »",
+    quietHours: "Heures calmes",
+    quietEdit: "Modifier dans Réglages › Proactivité",
     dndFailed: "« Ne pas déranger » n'a pas pu être enregistré : réessayez.",
     notifTitle: "Notifications",
     warning: "Attention",
@@ -371,7 +373,6 @@ export const T = typeset({
     micKinds: { headset: "Un casque", builtin: "Le micro du PC ou de la webcam" },
     states: { ok: "OK", fix: "À corriger", info: "Info" },
     ares: "A.R.E.S répond aussi à « Hey Jarvis ». Pour éviter deux voix, laissez son mode mains-libres désactivé ou choisissez le moteur Vosk avec le mot « Arès ».",
-    deadlines: "OpenAI arrête gpt-realtime le 20 janvier 2027 et whisper-1 le 26 février 2027.",
     buttons: { recheck: "Revérifier", testMic: "Tester le micro", testVoice: "Tester la voix", finish: "Terminer" },
     // ---- the Mise en route dialog (onboarding.js, WP12)
     intro: "Quelques vérifications avant de commencer. Ce qui est marqué « À corriger » empêche JARVIS de fonctionner normalement ; le reste est pour information.",
@@ -451,6 +452,8 @@ export const T = typeset({
     confirmTitle: "Réglage sensible",
     confirmValue: (label, value) => `${label} : ${value}`,
     confirmOk: "Confirmer la modification",
+    apply: "Appliquer",
+    notApplied: "Pas encore appliqué : choisissez « Appliquer ».",
     keyReplace: (old) => `La clé OpenAI enregistrée (${old}) sera remplacée.`,
     cancel: "Annuler",
     empty: "(vide)",
@@ -461,6 +464,7 @@ export const T = typeset({
     openOnboarding: "Ouvrir la mise en route",
     checking: "Vérification…",
     healthFailed: "Le bilan de santé n'a pas pu être fait : le serveur JARVIS ne répond pas.",
+    keyAbove: "ci-dessus",  // the key's fix in Réglages › Connexion, where the key form is
     hours: { on: "Activées", from: "De", to: "à" },
     time: { on: "Activé" },
     days: { lun: "Lun", mar: "Mar", mer: "Mer", jeu: "Jeu", ven: "Ven", sam: "Sam", dim: "Dim" },
@@ -501,11 +505,17 @@ export const T = typeset({
       deadlines: "Échéances", update: "Mise à jour",
       updateText: "Pour mettre JARVIS à jour, suivez le README, section « Mise à jour ».",
       checking: "vérification…", unknown: "inconnu",
+      noDeadline: "Aucune pour les modèles choisis.",
       models: (m) => `simple : ${m.simple || "défaut"} · normale : ${m.normale || "défaut"} · complexe : ${m.complexe || "défaut"}`,
       wakeLocal: "écoute locale", wakeCloud: "écoute via Google", wakeNone: "indisponible dans ce navigateur",
     },
   },
   // The conversation journal (journal.js, WP14).
+  // The weather and headlines cards (hud.js showInfo, WP16).
+  info: {
+    newsTitle: "Titres de l'actualité",
+    weatherTitle: (city) => (city ? `Météo · ${city}` : "Météo"),
+  },
   journal: {
     days: ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"],
     months: ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",

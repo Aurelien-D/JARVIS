@@ -388,8 +388,16 @@ def test_bypass_is_sent_only_after_the_warning_is_accepted_holds(server_side, ja
     before = config.PERMISSION_MODE
     sent = api_requests(jarvis)
     open_settings(jarvis, "Claude Code")
+    apply = "#settingsDialog [data-key='permission_mode'] button.set-apply"
+    # Choosing it only previews the warning in the field: no confirmation yet, nothing sent.
+    jarvis.select_option("#set-permission_mode", "bypassPermissions")
+    jarvis.wait_for_selector("#settingsDialog [data-key='permission_mode'] .set-danger:not([hidden])")
+    jarvis.wait_for_timeout(1200)
+    assert not jarvis.evaluate("document.getElementById('settingsConfirm').open")
+    assert not [r for r in sent if r[0] == "PUT" and "/api/settings" in r[1]]
     for dismiss in ("Escape", "cancel"):
         jarvis.select_option("#set-permission_mode", "bypassPermissions")
+        jarvis.click(apply)
         jarvis.wait_for_selector("#settingsConfirm[open] .set-danger:not([hidden])")
         if dismiss == "Escape":
             jarvis.keyboard.press("Escape")
@@ -401,6 +409,7 @@ def test_bypass_is_sent_only_after_the_warning_is_accepted_holds(server_side, ja
     assert not [r for r in sent if r[0] == "PUT" and "/api/settings" in r[1]]
     assert config.PERMISSION_MODE == before
     jarvis.select_option("#set-permission_mode", "bypassPermissions")
+    jarvis.click(apply)
     jarvis.wait_for_selector("#settingsConfirm[open]")
     jarvis.click("#settingsConfirm button[value='ok']")
     jarvis.wait_for_function("() => document.querySelector(\"#settingsDialog [data-key='permission_mode'] "

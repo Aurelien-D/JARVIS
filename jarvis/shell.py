@@ -54,9 +54,9 @@ def parse_hotkey(spec: str) -> tuple:
     text = str(spec or "").strip().lower().replace(" ", "")
     parts = text.split("+") if text else []
     if not parts:
-        raise ValueError("Raccourci vide : par exemple ctrl+alt+maj+j.")
+        raise ValueError("Raccourci vide : par exemple Ctrl+Alt+Maj+J.")
     if any(not p for p in parts):
-        raise ValueError(f"Raccourci « {spec} » invalide : par exemple ctrl+alt+maj+j.")
+        raise ValueError(f"Raccourci « {spec} » invalide : par exemple Ctrl+Alt+Maj+J.")
     *mods, key = parts
     flags = 0
     for m in mods:

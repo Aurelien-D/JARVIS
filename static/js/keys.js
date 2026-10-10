@@ -164,6 +164,22 @@ function onKeyUp(e) {
    reconnection (older than a few seconds) must not open the microphone. */
 const HOTKEY_FRESH_S = 8;
 
+/* A modal dialog (Réglages, a report, the Mise en route…) makes the rest of
+   the page inert: the conversation would start behind it, the composer out
+   of reach. The hotkey closes them first; a sensitive change waiting for its
+   confirmation is cancelled, never confirmed. Resolves once their own 'close'
+   handlers have run (Réglages hands the focus back to its button there). */
+function closeModals() {
+  let open = [];
+  try { open = [...document.querySelectorAll("dialog:modal")]; } catch { open = [...document.querySelectorAll("dialog[open]")]; }
+  if (!open.length) return null;
+  const closed = open.map(d => new Promise(resolve => d.addEventListener("close", resolve, { once: true })));
+  const pending = $("settingsConfirm");
+  if (pending?.open) pending.close("cancel");
+  for (const d of open.reverse()) if (d.open) d.close();
+  return Promise.race([Promise.all(closed), new Promise(resolve => setTimeout(resolve, 500))]);
+}
+
 export function onShellAction(ev = {}) {
   const at = Number(ev.at);
   if (!Number.isFinite(at) || Math.abs(Date.now() / 1000 - at) > HOTKEY_FRESH_S) return;
@@ -177,12 +193,16 @@ export function onShellAction(ev = {}) {
   const awake = state.mode === "live" || state.mode === "connecting";
   if (ev.action === "toggle" && awake) { sleep(); return; }
   if (ev.action !== "toggle" && ev.action !== "talk") return;
+  const closing = closeModals();
   if (!awake) connect();
   // Voice-first, never voice-only: the window just came to the front, so the
   // keyboard is ready too. The composer takes it, so monsieur can speak or type
   // at once; with 'Maintenir Espace pour parler' the orb does (Espace talks).
-  if (settings.get("ptt", false)) $("orbBtn")?.focus({ preventScroll: true });
-  else focusInput();
+  const focus = () => {
+    if (settings.get("ptt", false)) $("orbBtn")?.focus({ preventScroll: true });
+    else focusInput();
+  };
+  if (closing) closing.then(focus); else focus();
 }
 
 export function init() {

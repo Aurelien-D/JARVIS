@@ -371,4 +371,6 @@ def instructions_block() -> str:
     return ("# Météo et actualités\n"
             "Outil info (instantané), jamais delegate_to_claude : type « meteo » (ville "
             "facultative, quand : maintenant, aujourdhui ou demain) ou « actus » (les titres du "
-            f"jour, à résumer en deux ou trois phrases).{city} Dis les températures en degrés.")
+            f"jour, à résumer en deux ou trois phrases).{city} Dis les températures en degrés. "
+            "La météo complète et les titres avec leurs liens s'affichent d'eux-mêmes à l'écran : "
+            "pas de display_card pour eux.")

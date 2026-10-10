@@ -23,6 +23,7 @@ const TS = T.settings;
 const S = TS;  // strings-fr.js, T.settings: one dictionary for the whole page
 const SECTION_ORDER = ["connexion", "voix", "ecoute", "proactivite", "claude", "couts", "systeme", "donnees", "apropos"];
 const DAY_KEYS = ["lun", "mar", "mer", "jeu", "ven", "sam", "dim"];
+const SELECT_SETTLE_MS = 800;  // a list looked through with the arrow keys is saved once it settles
 
 let dialog = null, ui = null, model = null, invoker = null;
 let current = prefs.get("settingsSection", "") || "voix";
@@ -197,11 +198,34 @@ function field(entry) {
   ctl.write(model.values[entry.key]);
   showDanger();
   const onChange = async () => {
+    clearTimeout(wrap._t);
+    wrap._t = null;
     showDanger();
     await commit(entry, ctl, wrap);
     showDanger();
   };
-  for (const el of wrap.querySelectorAll("input, select")) el.addEventListener("change", onChange);
+  for (const el of wrap.querySelectorAll("input")) el.addEventListener("change", onChange);
+  // A closed list changes on each arrow key (Chrome on Windows fires 'change'
+  // every time): looking through the choices must not save at each step, nor
+  // open the confirmation (WCAG 3.2.2).
+  const sel = wrap.querySelector("select");
+  if (sel && entry.sensitive) {
+    // A sensitive choice waits for 'Appliquer'; the red warning previews meanwhile.
+    const apply = button(S.apply, onChange, "ctl set-apply");
+    apply.setAttribute("aria-label", fr(`${S.apply} : ${entry.label}`));
+    sel.after(apply);
+    sel.addEventListener("change", () => {
+      showDanger();
+      say(wrap, sameValue(ctl.read(), model.values[entry.key]) ? "" : S.notApplied);
+    });
+  } else if (sel) {
+    // Saved once the choice settles, or when the focus leaves the list.
+    sel.addEventListener("change", () => {
+      clearTimeout(wrap._t);
+      wrap._t = setTimeout(onChange, SELECT_SETTLE_MS);
+    });
+    sel.addEventListener("blur", () => { if (wrap._t) onChange(); });
+  }
   wrap._ctl = ctl;
   return wrap;
 }
@@ -216,10 +240,12 @@ async function commit(entry, ctl, wrap) {
     if (entry.key === "wake_word") { await afterChange(entry.key, value); say(wrap, S.when.now); } else say(wrap, "");
     return;
   }
-  if (entry.sensitive && !(await confirmChange(entry, value))) {
-    ctl.write(before);
-    say(wrap, "");
-    return;
+  if (entry.sensitive) {
+    say(wrap, "");  // 'pas encore appliqué' no more: the confirmation, then the server's answer
+    if (!(await confirmChange(entry, value))) {
+      ctl.write(before);
+      return;
+    }
   }
   // Quick changes (days ticked one after the other) may be answered out of
   // order: only the latest answer redraws the field.
@@ -230,6 +256,8 @@ async function commit(entry, ctl, wrap) {
     const r = await api("/api/settings", { method: "PUT", body });
     if (seq !== wrap._seq) return;
     Object.assign(model, { values: r.values, restart: r.restart, overridden: r.overridden });
+    if (r.versions) model.versions = r.versions;
+    if ("deadlines" in r) model.deadlines = r.deadlines;
     ctl.write(model.values[entry.key]);  // as the server normalised it ('8h' -> '08:00')
     say(wrap, S.when[r.applied?.[entry.key]] || S.when.now);
     renderRestart();
@@ -503,7 +531,9 @@ function sectionApropos() {
     [S.about.claudeModels, S.about.models(v.claude_models || {})],
     [S.about.browser, browserName()],
     [S.about.wake, engine === "local" ? S.about.wakeLocal : engine === "cloud" ? S.about.wakeCloud : S.about.wakeNone],
-    [S.about.deadlines, T.onboarding.deadlines],
+    // The dates that concern the models chosen above, as the health check says them.
+    [S.about.deadlines, Array.isArray(model.deadlines)
+      ? (model.deadlines.map(fr).join(" ") || S.about.noDeadline) : S.about.unknown],
     [S.about.update, S.about.updateText],
   ];
   const dl = h("dl", { class: "set-about" });
@@ -548,7 +578,8 @@ export function showSection(id) {
   for (const b of ui.nav.querySelectorAll("button")) {
     if (b.dataset.section === id) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
   }
-  if (model && !ui.panels.get(id).childElementCount) renderSection(id);
+  // À propos follows what changed in the other sections (models, their deadlines).
+  if (model && (id === "apropos" || !ui.panels.get(id).childElementCount)) renderSection(id);
 }
 
 function renderRestart() {
@@ -563,7 +594,10 @@ async function loadHealth(force) {
   ui.health.replaceChildren(checkRow({ state: "wait", title: S.checking }));
   if (ui.recheck) ui.recheck.disabled = true;
   try {
-    renderChecks(await checkHealth(force), ui.health);
+    // Here, the key's fix points at the form just above, not at 'Réglages › Connexion'.
+    const list = (await checkHealth(force)).map(c => (c && c.id === "openai" && typeof c.fix_fr === "string"
+      ? { ...c, fix_fr: c.fix_fr.replace(/\s+dans Réglages\s*›\s*Connexion/g, ` ${S.keyAbove}`) } : c));
+    renderChecks(list, ui.health);
   } catch {
     ui.health.replaceChildren(checkRow({ state: "fix", title: S.healthTitle, message: S.healthFailed }));
   } finally {

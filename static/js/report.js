@@ -141,6 +141,11 @@ function chartOptions(c) {
       foreColor: cssVar("--muted", "#7aa7c2"), fontFamily: "Rajdhani, sans-serif",
       animations: { enabled: !reducedMotion() },
       locales: [frenchLocale()], defaultLocale: "fr",
+      // The svg is an image named in French: no keyboard navigation (its
+      // focusable svg and legend buttons speak English, and nest inside the
+      // chart). The figures are in the table, reachable with the keyboard.
+      accessibility: { description: R.chartLabel(names.filter(Boolean).slice(0, 6).join(", ")),
+                       keyboard: { enabled: false } },
     },
     theme: { mode: "dark" },
     colors: SERIES_COLORS,
@@ -187,7 +192,7 @@ async function renderChart(c, seq) {
   el.hidden = true;
   const made = c && typeof c === "object" ? chartOptions(c) : null;
   if (!made) return;
-  const { opts, names } = made;
+  const { opts } = made;
   el.hidden = false;
   setChartState(el, "loading", R.chartLoading);
   const Apex = await loadApexCharts();
@@ -219,9 +224,7 @@ async function renderChart(c, seq) {
   }
   if (seq !== renderSeq) return;
   setChartState(el, "ready");
-  el.setAttribute("role", "img");
-  // The figures themselves are in the table and the tooltip; this names the chart.
-  el.setAttribute("aria-label", R.chartLabel(names.filter(Boolean).slice(0, 6).join(", ")));
+  // Named by its svg (chart.accessibility above): a role here would nest it.
 }
 
 /* The options of the chart on screen (null when there is none). */

@@ -66,6 +66,9 @@ def open_settings(page, section=None):
         page.wait_for_selector(f"#settingsDialog .set-tab[aria-current='true']:has-text('{section}')")
 
 
+APPLY_PERMISSION = "#settingsDialog [data-key='permission_mode'] button.set-apply"
+
+
 def field_status(page, key):
     page.wait_for_function("k => { const s = document.querySelector(`#settingsDialog [data-key='${k}'] .set-status`);"
                            " return s && s.textContent.trim().length > 0; }", arg=key)
@@ -225,6 +228,7 @@ def test_bypass_needs_a_confirmation_with_a_red_warning(server_side, jarvis):
     open_settings(jarvis, "Claude Code")
     assert jarvis.is_visible("#settingsDialog [data-key='permission_mode'] .set-lock")
     jarvis.select_option("#set-permission_mode", "bypassPermissions")
+    jarvis.click(APPLY_PERMISSION)
     jarvis.wait_for_selector("#settingsConfirm[open]")
     assert jarvis.is_visible("#settingsConfirm .set-danger")
     assert "Mode sans garde-fou" in jarvis.text_content("#settingsConfirm .set-danger")
@@ -235,6 +239,7 @@ def test_bypass_needs_a_confirmation_with_a_red_warning(server_side, jarvis):
     jarvis.wait_for_function("v => document.getElementById('set-permission_mode').value === v", arg=before)
     assert config.PERMISSION_MODE == before
     jarvis.select_option("#set-permission_mode", "bypassPermissions")
+    jarvis.click(APPLY_PERMISSION)
     jarvis.wait_for_selector("#settingsConfirm[open]")
     jarvis.click("#settingsConfirm button[value='ok']")
     assert field_status(jarvis, "permission_mode") == "Enregistré · appliqué à la prochaine tâche."
@@ -242,12 +247,56 @@ def test_bypass_needs_a_confirmation_with_a_red_warning(server_side, jarvis):
     assert jarvis.is_visible("#settingsDialog [data-key='permission_mode'] .set-danger")
 
 
+def test_arrow_keys_look_through_a_list_without_saving_or_confirming_at_each_step(server_side, jarvis):
+    """WCAG 3.2.2: a closed list changes on each arrow key (and fires 'change')."""
+    before = config.PERMISSION_MODE
+    config.VOICE = "ballad"  # put back by server_side; three steps down stay in the list
+    puts = []
+    jarvis.on("request", lambda r: puts.append(r.post_data) if r.method == "PUT" and "/api/settings" in r.url else None)
+    open_settings(jarvis, "Claude Code")
+    jarvis.focus("#set-permission_mode")
+    for _ in range(2):
+        jarvis.keyboard.press("ArrowDown")
+    assert jarvis.input_value("#set-permission_mode") != before  # the list did move
+    jarvis.wait_for_timeout(1200)  # longer than a plain list waits before it saves
+    assert not jarvis.evaluate("document.getElementById('settingsConfirm').open")
+    assert puts == [] and config.PERMISSION_MODE == before
+    assert field_status(jarvis, "permission_mode") == "Pas encore appliqué\u202f: choisissez «\u202fAppliquer\u202f»."
+    assert jarvis.get_attribute(APPLY_PERMISSION, "aria-label") == "Appliquer\u202f: Mode de permission des tâches"
+    # 'Appliquer' asks first; Échap puts the saved value back, nothing sent.
+    jarvis.click(APPLY_PERMISSION)
+    jarvis.wait_for_selector("#settingsConfirm[open]")
+    jarvis.keyboard.press("Escape")
+    jarvis.wait_for_function("v => document.getElementById('set-permission_mode').value === v", arg=before)
+    assert puts == [] and config.PERMISSION_MODE == before
+
+    # A plain list: two steps in a row are saved once, when the choice settles.
+    jarvis.click("#settingsDialog .set-tab:has-text('Voix')")
+    jarvis.wait_for_selector("#set-voice")
+    jarvis.focus("#set-voice")
+    jarvis.keyboard.press("ArrowDown")
+    jarvis.keyboard.press("ArrowDown")
+    chosen = jarvis.input_value("#set-voice")
+    assert field_status(jarvis, "voice") == "Enregistré · appliqué à la prochaine conversation."
+    jarvis.wait_for_timeout(300)
+    assert len(puts) == 1 and json.loads(puts[0]) == {"voice": chosen}
+    assert config.VOICE == chosen
+    # Leaving the list saves at once, without waiting.
+    jarvis.keyboard.press("ArrowDown")
+    third = jarvis.input_value("#set-voice")
+    assert third != chosen
+    jarvis.keyboard.press("Tab")
+    until(jarvis, lambda: len(puts) == 2, timeout=0.6)  # sent before the list would have settled
+    until(jarvis, lambda: config.VOICE == third)
+
+
 def test_restart_settings_say_so(server_side, jarvis):
     open_settings(jarvis, "Système")
     jarvis.fill("#set-hotkey", "Ctrl+Alt+Maj+K")
     jarvis.locator("#set-hotkey").blur()
     assert field_status(jarvis, "hotkey") == "Enregistré · redémarrage nécessaire."
-    assert jarvis.input_value("#set-hotkey") == "ctrl+alt+shift+k"  # as the server normalised it
+    assert config.HOTKEY == "ctrl+alt+shift+k"  # stored as the server normalised it...
+    assert jarvis.input_value("#set-hotkey") == "Ctrl+Alt+Maj+K"  # ...shown as the keyboard names it
     banner = jarvis.text_content("#settingsDialog .set-restart")
     assert "Redémarrage nécessaire pour" in banner and "Raccourci global" in banner
     # A.R.E.S's own shortcut is refused, in French.
@@ -337,6 +386,48 @@ def test_connexion_shows_the_masked_key_and_the_health_check(server_side, jarvis
     jarvis.click("#settingsDialog button:has-text('Ouvrir la mise en route')")
     jarvis.wait_for_selector("#onboarding[open]")
     assert not jarvis.evaluate("document.getElementById('settingsDialog').open")
+
+
+def test_connexion_points_the_key_fix_at_the_form_above(server_side, jarvis, monkeypatch):
+    """In Réglages › Connexion, 'go to Réglages › Connexion' would send monsieur where he is."""
+    monkeypatch.setattr(config, "OPENAI_API_KEY", "")
+    absent = health.check_openai()  # the real check, the real words
+    monkeypatch.setattr(config, "OPENAI_API_KEY", "sk-fake")
+    assert "Réglages › Connexion" in absent["fix_fr"]
+    server_side["list"] = [absent, *CHECKS[1:]]
+    open_settings(jarvis, "Connexion")
+    row = "#setHealth .ob-row[data-check='openai']"
+    jarvis.wait_for_selector(row)
+    text = jarvis.text_content(row)
+    assert "Collez votre clé ci-dessus. Elle se crée sur platform.openai.com/api-keys." in text
+    assert "Réglages › Connexion" not in text
+
+
+def about_row(page, name):
+    return page.evaluate("""n => { const dt = [...document.querySelectorAll('#set-sec-apropos dt')]
+      .find(d => d.textContent === n); return dt ? dt.nextElementSibling.textContent : null; }""", name)
+
+
+def test_about_names_the_deadlines_of_the_models_in_use(server_side, jarvis, monkeypatch):
+    from jarvis import realtime
+    monkeypatch.setattr(config, "REALTIME_MODEL", "gpt-realtime-2.1")
+    monkeypatch.setattr(config, "TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
+    monkeypatch.setattr(config, "TRANSCRIBE_FALLBACK", "whisper-1")
+    monkeypatch.setattr(realtime, "_REJECTED_TRANSCRIBE", set())
+    open_settings(jarvis, "À propos")
+    jarvis.wait_for_selector("#set-sec-apropos dt")
+    deadlines = about_row(jarvis, "Échéances")
+    assert "gpt-4o-mini-transcribe et whisper-1" in deadlines and "26 février 2027" in deadlines
+    assert "gpt-realtime " not in deadlines  # gpt-realtime-2.1, in use, is not retired
+    # The voice model changed in Voix: À propos follows at once.
+    jarvis.click("#settingsDialog .set-tab:has-text('Voix')")
+    jarvis.select_option("#set-realtime_model", "gpt-realtime")
+    assert field_status(jarvis, "realtime_model") == "Enregistré · appliqué à la prochaine conversation."
+    jarvis.click("#settingsDialog .set-tab:has-text('À propos')")
+    jarvis.wait_for_function("""() => { const dt = [...document.querySelectorAll('#set-sec-apropos dt')]
+      .find(d => d.textContent === 'Échéances'); return dt && dt.nextElementSibling.textContent
+      .includes('gpt-realtime le 20 janvier 2027'); }""")
+    assert about_row(jarvis, "Modèle vocal") == "gpt-realtime"
 
 
 def test_server_text_stays_inert(server_side, jarvis):

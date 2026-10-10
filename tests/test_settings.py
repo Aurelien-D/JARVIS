@@ -481,3 +481,55 @@ def test_config_event_reaches_the_pages(client, monkeypatch):
     client.put("/api/settings", json={"idle_minutes": 5})
     assert seen == [("config", {"keys": ["idle_minutes"], "restart": []})]
     assert client.get("/api/config").json()["idle_minutes"] == 5
+
+# ---------------------------------------------------------------- what the dialog shows (review)
+
+
+def test_the_dialog_shows_the_hotkey_as_the_keyboard_names_it(client, monkeypatch):
+    monkeypatch.setattr(config, "HOTKEY", "ctrl+alt+shift+j")
+    assert client.get("/api/settings").json()["values"]["hotkey"] == "Ctrl+Alt+Maj+J"
+    r = client.put("/api/settings", json={"hotkey": "Ctrl+Alt+Maj+K"})
+    assert r.status_code == 200, r.text
+    assert config.HOTKEY == "ctrl+alt+shift+k"  # stored the normalised way
+    assert r.json()["values"]["hotkey"] == "Ctrl+Alt+Maj+K"
+    assert settings.normalize_hotkey(r.json()["values"]["hotkey"]) == config.HOTKEY  # read back the same
+    # One the dialog could not read back is shown as it is (A.R.E.S's own, from .env).
+    monkeypatch.setattr(config, "HOTKEY", "ctrl+alt+j")
+    assert client.get("/api/settings").json()["values"]["hotkey"] == "ctrl+alt+j"
+    monkeypatch.setattr(config, "HOTKEY", "")
+    assert client.get("/api/settings").json()["values"]["hotkey"] == ""
+    # Its help and its refusals give the same example.
+    assert "Ctrl+Alt+Maj+J" in settings.BY_KEY["hotkey"].help
+    with pytest.raises(settings.SettingError, match="Ctrl\\+Alt\\+Maj\\+J"):
+        settings.normalize_hotkey("j+")
+
+
+def test_every_reasoning_choice_says_what_it_does_in_french():
+    labels = dict(settings.BY_KEY["reasoning"].choices)
+    assert labels["medium"] == "medium · équilibré"
+    assert all(" · " in label for label in labels.values()), labels
+
+
+def test_about_gets_the_deadlines_of_the_models_in_use(client, monkeypatch):
+    from jarvis import health, realtime
+    monkeypatch.setattr(health, "_today", lambda: __import__("datetime").date(2026, 10, 9))
+    monkeypatch.setattr(config, "REALTIME_MODEL", "gpt-realtime-2.1")
+    monkeypatch.setattr(config, "TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
+    monkeypatch.setattr(config, "TRANSCRIBE_FALLBACK", "whisper-1")
+    monkeypatch.setattr(realtime, "_REJECTED_TRANSCRIBE", set())
+    got = client.get("/api/settings").json()["deadlines"]
+    assert got == ["OpenAI arrête gpt-4o-mini-transcribe et whisper-1 (transcription de ce que vous dites) "
+                   "le 26 février 2027 (dans 140 jours). Une mise à jour de JARVIS proposera un remplaçant "
+                   "avant cette date."]
+    assert not any("gpt-realtime " in d for d in got)  # gpt-realtime-2.1 is not retired
+    # The voice model changed in Réglages: the answer carries the new deadlines (and versions).
+    r = client.put("/api/settings", json={"realtime_model": "gpt-realtime"})
+    assert r.status_code == 200, r.text
+    assert r.json()["versions"]["realtime_model"] == "gpt-realtime"
+    assert r.json()["deadlines"][0] == ("OpenAI arrête gpt-realtime le 20 janvier 2027 (dans 103 jours). "
+                                        "Choisissez gpt-realtime-2.1 dans Réglages › Voix.")
+    # None when the models in use have none.
+    monkeypatch.setattr(config, "REALTIME_MODEL", "gpt-realtime-2.1")
+    monkeypatch.setattr(config, "TRANSCRIBE_MODEL", "gpt-realtime-whisper")
+    monkeypatch.setattr(config, "TRANSCRIBE_FALLBACK", "")
+    assert client.get("/api/settings").json()["deadlines"] == []

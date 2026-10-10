@@ -376,6 +376,22 @@ def test_editing_appears_only_when_the_server_can_patch(jarvis, reload_jarvis):
         memory.forget_id(fact["id"])
 
 
+def test_loading_the_page_sends_no_request_that_fails(jarvis, reload_jarvis):
+    """What can be edited comes from /api/config: no PATCH probe answering 405 or 422."""
+    failed, patches = [], []
+    origin = jarvis.evaluate("location.origin")
+    jarvis.on("console", lambda m: failed.append(m.text) if m.type == "error" and "Failed to load resource" in m.text
+              and (m.location or {}).get("url", "").startswith(origin) else None)
+    jarvis.on("request", lambda r: patches.append(r.url) if r.method == "PATCH" else None)
+    jarvis.on("response", lambda r: failed.append(f"{r.status} {r.url}")
+              if "/api/" in r.url and r.status >= 400 else None)
+    reload_jarvis()
+    jarvis.wait_for_function("__jarvis.state.synced")
+    jarvis.wait_for_timeout(800)
+    assert patches == [] and failed == []
+    assert jarvis.evaluate("__jarvis.state.config.edit") == {"memory": True, "schedules": False}
+
+
 def test_sections_are_details_with_counts_and_empty_states(jarvis):
     jarvis.evaluate("__jarvis.bus.emit('server:schedules', {items: []}); __jarvis.bus.emit('server:memory', {facts: []})")
     for sec in ("tasks", "schedules", "memory"):
@@ -428,3 +444,35 @@ def test_axe_finds_nothing_serious_in_the_panel_and_the_viewer(jarvis):
     jarvis.wait_for_selector("#taskView[open]")
     jarvis.wait_for_timeout(400)
     assert axe_violations(jarvis) == []
+
+
+def test_a_narrow_panel_puts_the_status_under_the_title_never_cuts_words(jarvis):
+    """At 1280 px the status label ('En attente de confirmation') used to keep
+    its full width and squeeze the title into a column cut inside its words."""
+    jarvis.set_viewport_size({"width": 1280, "height": 720})
+    now = time.time()
+    emit_task(jarvis, id="w1", title="Ranger les téléchargements", status="attente", started=now - 20)
+    emit_task(jarvis, id="d2", title="Comparer trois aspirateurs robots silencieux", status="done",
+              output="ok", started=now - 300, ended=now - 200)
+    jarvis.wait_for_selector("#task-w1 .t")
+    jarvis.wait_for_timeout(300)  # the card's entrance finished
+    measure = """sel => { const t = document.querySelector(sel + ' .t');
+      const r = document.createRange(); r.selectNodeContents(t);
+      const tops = new Set([...r.getClientRects()].map(x => Math.round(x.top)));
+      return {width: Math.round(t.getBoundingClientRect().width), lines: tops.size,
+              visible: t.getBoundingClientRect().width > 0}; }"""
+    waiting = jarvis.evaluate(measure, "#task-w1")
+    done = jarvis.evaluate(measure, "#task-d2")
+    assert waiting["visible"] and waiting["lines"] == 1 and waiting["width"] >= 180, waiting
+    assert done["lines"] <= 3 and done["width"] >= 180, done
+    # Every word of the long title is whole: no line starts inside a word.
+    starts = jarvis.evaluate("""() => { const t = document.querySelector('#task-d2 .t'), node = t.firstChild;
+      const out = []; let top = null;
+      for (let i = 0; i < node.length; i++) {
+        const r = document.createRange(); r.setStart(node, i); r.setEnd(node, i + 1);
+        const rect = r.getClientRects()[0]; if (!rect) continue;
+        if (top !== null && Math.round(rect.top) > top + 2) out.push(node.data[i - 1] + '|' + node.data[i]);
+        top = Math.round(rect.top);
+      }
+      return out; }""")
+    assert all(pair.startswith(" ") or pair.endswith(" ") for pair in starts), starts

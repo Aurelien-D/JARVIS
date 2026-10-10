@@ -31,8 +31,11 @@
   background: linear-gradient(180deg, rgba(64, 220, 255, .06), transparent);
   animation: materialize .18s ease-out;
 }
-.task-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+/* The status drops under the title when both don't fit: a narrow panel never
+   squeezes the title into a column cut inside its words. */
+.task-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 8px; }
 .task .t {
+  flex: 1 1 12em;
   font-size: var(--fs-md); font-weight: 600; line-height: var(--lh-label); letter-spacing: .02em;
   color: var(--text); overflow-wrap: anywhere; min-width: 0;
 }

@@ -147,23 +147,31 @@ async function refreshState() {
   renderDnd();
 }
 
+/* The chip says why JARVIS keeps quiet: « Ne pas déranger » (its button ends
+   it) or the quiet hours set in Réglages (its button opens them there). */
 function renderDnd() {
   const active = dndUntil * 1000 > Date.now();
-  const label = active ? S.dnd(fmtTime(new Date(dndUntil * 1000))) : "";
+  const calm = !active && inQuietHours(quietSpec);
+  const label = active ? S.dnd(fmtTime(new Date(dndUntil * 1000))) : calm ? S.quietHours : "";
   if (label === dndShown) return;
   dndShown = label;
   const chip = $("dndChip");
   if (chip) {
     chip.replaceChildren();
-    chip.hidden = !active;
-    chip.className = active ? "chip quiet" : "chip";
-    if (active) {
+    chip.hidden = !label;
+    chip.className = label ? "chip quiet" : "chip";
+    if (label) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "ctl chip-btn";
       b.textContent = label;
-      b.setAttribute("aria-label", `${label} · ${S.dndEnd}`);
-      b.addEventListener("click", () => setDnd(false));
+      if (active) {
+        b.setAttribute("aria-label", `${label} · ${S.dndEnd}`);
+        b.addEventListener("click", () => setDnd(false));
+      } else {
+        b.setAttribute("aria-label", `${label} · ${S.quietEdit}`);
+        b.addEventListener("click", () => bus.emit("settings:open", { section: "proactivite" }));
+      }
       chip.append(b);
     }
   }
