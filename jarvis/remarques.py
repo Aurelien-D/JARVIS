@@ -15,13 +15,19 @@ The voice hears at most one remark, at the opening of a session (through the
 voice instructions, tools_agenda.instructions_block), and never the same one
 twice within 12 hours. Its wording never quotes a title: task titles and
 agenda lines are not JARVIS's own words.
+
+Past the daily cap (Réglages › Coûts, usage.py) no remark offers what would be
+refused or billed: the failed task loses its « Relancer ? » (no new Claude
+task starts today) and the voice is not told to suggest a retry.
+Remarks are never said aloud nor notified on their own: quiet hours and
+« Ne pas déranger » have nothing to hold back.
 """
 import logging
 import re
 import threading
 import time
 
-from . import ares, events, scheduler, store, tasks
+from . import ares, events, scheduler, store, tasks, usage
 
 FILE = "remarques.json"
 MAX = 3
@@ -48,6 +54,10 @@ class T:
     failed_why = "Échec il y a moins de 24 heures, sans nouvel essai depuis."
     failed_action = "Relancer ?"
     failed_voice = "Une tâche Claude a échoué ces dernières 24 heures : proposez de la relancer."
+    failed_capped_why = ("Échec il y a moins de 24 heures. Plafond du jour atteint : aucune tâche Claude "
+                         "ne démarre avant demain, ou avant de relever le plafond dans Réglages › Coûts.")
+    failed_capped_voice = ("Une tâche Claude a échoué ces dernières 24 heures, mais le plafond de dépense "
+                           "du jour est atteint : ne proposez pas de la relancer aujourd'hui.")
     missed_one = "Un rappel est arrivé en retard : JARVIS était fermé à l'heure prévue."
     missed_many = "{n} rappels sont arrivés en retard : JARVIS était fermé à l'heure prévue."
     missed_why = "Les rappels prévus pendant que JARVIS était fermé sont dits à son retour."
@@ -83,6 +93,14 @@ def _failed_task(now: float) -> dict | None:
     return None
 
 
+def _capped() -> bool:
+    try:
+        return bool(usage.over_daily_cap())
+    except Exception:  # noqa: BLE001 - a broken counter never hides a remark
+        logging.exception("JARVIS: dépense du jour illisible pour les remarques")
+        return False
+
+
 def detect(now: float | None = None) -> list:
     """Every remark that applies now, most useful first (before dismissals)."""
     now = time.time() if now is None else now
@@ -94,11 +112,14 @@ def detect(now: float | None = None) -> list:
                     "action": {"type": "compose", "label": T.overdue_action, "text": T.overdue_prompt}})
     task = _failed_task(now)
     if task:
-        out.append({"key": f"tache-{task['id']}"[:64], "kind": "question",
-                    "text": T.failed.format(title=str(task.get("title"))[:80]),
-                    "why": T.failed_why, "voice": T.failed_voice,
-                    "action": {"type": "retry", "label": T.failed_action, "task": task["id"],
-                               "title": str(task.get("title"))[:80]}})
+        remark = {"key": f"tache-{task['id']}"[:64], "kind": "question",
+                  "text": T.failed.format(title=str(task.get("title"))[:80]),
+                  "why": T.failed_why, "voice": T.failed_voice,
+                  "action": {"type": "retry", "label": T.failed_action, "task": task["id"],
+                             "title": str(task.get("title"))[:80]}}
+        if _capped():  # a retry would be refused today (tasks._check_budget)
+            remark.update(why=T.failed_capped_why, voice=T.failed_capped_voice, action=None)
+        out.append(remark)
     missed = [r for r in scheduler.recent_fired(RECENT_S / 3600, now) if r.get("late_minutes")]
     if missed:
         n = len(missed)

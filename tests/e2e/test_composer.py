@@ -119,7 +119,7 @@ def test_help_lists_what_jarvis_can_do_and_an_example_asks_it(jarvis):
     # A.R.E.S is off in the harness: its examples only show when it is on (test_integration_wave2).
     assert card.locator(".aide-cat h4").all_text_contents() == [
         "Applications et PC", "Rappels et routines", "Recherche et fichiers", "Météo et actualités",
-        "Vision", "Mémoire et journal"]
+        "Vision", "Mémoire et journal", "Point du jour"]
     # The global hotkey comes from Réglages › Système (/api/config), after the page's own keys.
     assert card.locator(".aide-keys").inner_text().replace("\n", " · ") == jarvis.evaluate(
         "import('/static/js/strings-fr.js').then(m => m.T.help.shortcuts + ' · ' + "

@@ -14,13 +14,17 @@ always give the same French text.
 - Headlines come from the RSS feeds. If the feeds can't be read, one Claude
   task (profile recherche: the web, no files) looks them up; its prompt holds
   the date and nothing else: no agenda, no reminder, no memory, no city.
+  Past the daily cap (Réglages › Coûts, usage.py) that task is not started:
+  the briefing itself costs nothing, it is still built and delivered, and the
+  payload says capped so the page reads it with the browser's own voice
+  rather than inviting monsieur into a paid conversation.
 """
 import logging
 import re
 import threading
 from datetime import datetime, timedelta
 
-from . import ares, config, events, inbox, info, scheduler, store, tasks
+from . import ares, config, events, inbox, info, scheduler, store, tasks, usage
 
 STATE_FILE = "state.json"  # 'briefing_date' is ours
 WINDOW = timedelta(hours=4)
@@ -154,11 +158,21 @@ def news_prompt(now: datetime) -> str:
             "(pas de tableau, pas de lien).")
 
 
+def capped() -> bool:
+    """The daily cap reached (voice and tasks together); a broken counter never blocks."""
+    try:
+        return bool(usage.over_daily_cap())
+    except Exception:  # noqa: BLE001
+        logging.exception("JARVIS: dépense du jour illisible pour le briefing")
+        return False
+
+
 def deliver(text: str, now: datetime) -> dict:
-    """Inbox first, then the pages; queued during quiet hours or « Ne pas déranger »."""
+    """Inbox first, then the pages; queued during quiet hours or « Ne pas déranger ».
+    capped: the page says the text itself (free) instead of offering a session."""
     quiet = inbox.is_quiet(now)
     payload = {"id": f"briefing-{now.date().isoformat()}", "title": T.title, "text": text,
-               "date": now.date().isoformat(), "queued": quiet}
+               "date": now.date().isoformat(), "queued": quiet, "capped": capped()}
     try:
         payload["inbox_id"] = inbox.add("briefing", payload)["id"]
     except Exception:  # noqa: BLE001 - events.publish records it as a fallback
@@ -178,6 +192,9 @@ def run(now: datetime | None = None) -> dict:
         news = headlines()
         need_task = news is None
     payload = deliver(local_brief(now, news), now)
+    if need_task and payload.get("capped"):
+        logging.info("JARVIS: plafond du jour atteint : pas de tâche Claude pour les actualités du briefing")
+        need_task = False
     if need_task:
         try:
             tasks.create_task(T.news_title, news_prompt(now), profile="recherche", complexity="simple",

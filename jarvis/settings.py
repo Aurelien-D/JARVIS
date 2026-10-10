@@ -121,7 +121,8 @@ SCHEMA = [
             minimum=0, maximum=120, unit="min"),
     # ---------------------------------------------------------------- Proactivité
     Setting("briefing_time", "BRIEFING_TIME", "time", "proactivite", "Briefing du matin",
-            "JARVIS fait le point à cette heure, les jours choisis ci-dessous."),
+            "JARVIS fait le point à cette heure, les jours choisis ci-dessous : rappels du "
+            "jour, agenda A.R.E.S et météo, préparés sur ce PC sans frais. Vide = pas de briefing."),
     Setting("briefing_days", "BRIEFING_DAYS", "days", "proactivite", "Jours du briefing"),
     Setting("briefing_news", "BRIEFING_NEWS", "bool", "proactivite",
             "Ajouter les titres de l'actualité au briefing"),
@@ -162,7 +163,9 @@ SCHEMA = [
     # ---------------------------------------------------------------- Coûts
     Setting("daily_budget_usd", "DAILY_BUDGET_USD", "float", "couts", "Plafond de dépense par jour",
             "Voix et tâches comprises. Une fois atteint, le mot d'éveil n'ouvre plus de "
-            "conversation payante. 0 = pas de plafond.", minimum=0, maximum=1000, step=1, unit="$"),
+            "conversation payante, aucune nouvelle tâche Claude ne démarre et le briefing du "
+            "matin est lu par la voix du navigateur. 0 = pas de plafond.",
+            minimum=0, maximum=1000, step=1, unit="$"),
     # ---------------------------------------------------------------- Système
     Setting("hotkey", "HOTKEY", "hotkey", "systeme", "Raccourci global",
             "Pour parler à JARVIS depuis n'importe quelle application, par exemple Ctrl+Alt+Maj+J.",

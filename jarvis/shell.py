@@ -7,8 +7,10 @@ start() before it and stop() after):
   then says so in French ('warning' event) instead of failing silently;
 - an icon in the notification area (pystray, optional): Ouvrir JARVIS,
   Parler, Mot d'éveil, Ne pas déranger 1 h, Démarrer avec Windows, Quitter;
-- native notifications through that icon (desktop.toast);
-- the PC kept awake while a Claude task runs.
+- native notifications through that icon (desktop.toast).
+
+The PC is kept awake while a Claude task runs by the scheduler's loop
+(scheduler.periodic, every 30 s), on every system: not here a second time.
 
 Elsewhere than Windows, or without pystray, each part is simply absent and
 JARVIS works as before.
@@ -28,7 +30,6 @@ WM_SWAP = WM_APP + 0x4A  # set_hotkey(): register another combination on the hot
 PM_NOREMOVE = 0
 ERROR_HOTKEY_ALREADY_REGISTERED = 1409
 HOTKEY_ID = 0x4A52  # any id below 0xC000 for an application
-AWAKE_SECONDS = 30
 OFF = ("", "0", "off", "non", "aucun", "none", "false")
 
 _MODIFIERS = {"ctrl": MOD_CONTROL, "control": MOD_CONTROL, "ctl": MOD_CONTROL,
@@ -288,7 +289,6 @@ class Hotkey:
 _state = {"url": "", "on_quit": None, "running": False}
 _hotkey = None   # Hotkey
 _tray = None     # pystray.Icon
-_awake_stop = threading.Event()
 
 
 def _url() -> str:
@@ -446,19 +446,6 @@ def _run_tray(icon):
         logging.exception("JARVIS: icône de la zone de notification arrêtée")
 
 
-def _awake_loop():
-    """While a Claude task runs or waits its turn, keep Windows from sleeping:
-    desktop.keep_awake() only resets the idle timer, so it is repeated and
-    simply stops once the tasks are over."""
-    from . import tasks  # late: tasks is heavy and not needed to import this module
-    while not _awake_stop.wait(AWAKE_SECONDS):
-        try:
-            if tasks.running():
-                desktop.keep_awake()
-        except Exception:  # noqa: BLE001
-            logging.exception("JARVIS: maintien en éveil")
-
-
 # ---------------------------------------------------------------- lifetime
 
 def start(url: str, on_quit):
@@ -476,8 +463,6 @@ def start(url: str, on_quit):
         _hotkey = Hotkey(api, _wanted(config.HOTKEY))
         _hotkey.start()
     _tray = _start_tray()
-    _awake_stop.clear()
-    threading.Thread(target=_awake_loop, name="jarvis-awake", daemon=True).start()
     # server.py stops us in a finally; this covers any other way out, while the
     # threads still run (a pystray icon still running at exit would wait for its
     # thread forever in its __del__).
@@ -489,7 +474,6 @@ def stop():
     """Release the hotkey and remove the icon."""
     global _hotkey, _tray
     _state["running"] = False
-    _awake_stop.set()
     hk, _hotkey = _hotkey, None
     if hk:
         _safely(hk.stop)

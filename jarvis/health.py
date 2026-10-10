@@ -515,10 +515,41 @@ def check_deadlines(refresh: bool = False) -> list:
     return out
 
 
+def _money(usd: float) -> str:
+    return f"{usd:.2f}".replace(".", ",") + "\u00a0$"
+
+
+def check_costs(refresh: bool = False) -> list:
+    """Today's spending (the top bar's chip) and the daily cap (Réglages › Coûts).
+    Nothing to say on a day with no spending and no cap; the cap reached is
+    something to know, not a fault: the Mise en route never opens for it."""
+    from . import usage
+    voice, claude = usage.realtime_spent_today(), usage.claude_spent_today()
+    total, cap = voice + claude, usage.daily_cap()
+    if not cap and not total:
+        return []
+    spent = (f"Aujourd'hui ≈ {_money(total)} (voix ≈ {_money(voice)}, Claude ≈ {_money(claude)}, "
+             "estimation).")
+    if not cap:
+        return [item("costs", "info", "Dépenses du jour", f"{spent} Aucun plafond du jour.",
+                     "Vous pouvez en fixer un dans Réglages › Coûts.")]
+    if total >= cap:
+        return [item("costs", "warning", "Dépenses du jour",
+                     f"{spent} Plafond du jour atteint ({_money(cap)}) : le mot d'éveil n'ouvre plus de "
+                     "conversation et aucune nouvelle tâche Claude ne démarre.",
+                     "Relevez le plafond dans Réglages › Coûts, ou attendez demain.")]
+    ratio = total / cap
+    if ratio >= usage.WARN_RATIO:
+        return [item("costs", "info", "Dépenses du jour",
+                     f"{spent} {int(ratio * 100)}\u00a0% du plafond du jour ({_money(cap)}).",
+                     "Le plafond se modifie dans Réglages › Coûts.")]
+    return [item("costs", "ok", "Dépenses du jour", f"{spent} Plafond du jour : {_money(cap)}.")]
+
+
 # In the order the dialog lists them.
 CHECKS = [check_openai, check_claude, check_hardening, check_permission, check_microphone,
           check_workdir, check_data, check_browser, check_pillow, check_mcp, check_git_bash,
-          check_windows, check_ares, check_deadlines]
+          check_windows, check_ares, check_deadlines, check_costs]
 
 
 def _run_one(fn, refresh: bool) -> list:

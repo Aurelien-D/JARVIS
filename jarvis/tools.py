@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from . import (ares, confirm, info, journal, scheduler, tasks, tools_agenda, tools_memory,
-               tools_pc, tools_tasks)
+               tools_pc, tools_tasks, usage)
 
 
 @dataclass
@@ -34,7 +34,7 @@ TOOLS = [{
     "type": "function",
     "name": "get_status",
     "description": ("Current date and time, running and recent Claude tasks, "
-                    "upcoming reminders and routines."),
+                    "upcoming reminders and routines, today's spending and the daily cap."),
     "parameters": {"type": "object", "properties": {}},
 }, {
     "type": "function",
@@ -112,6 +112,23 @@ CLIENT_TOOLS = {"display_card", "display_report", "look_at_camera", "end_convers
                 "wait_for_user"}
 
 
+def _money(usd: float) -> str:
+    return f"{usd:.2f} $".replace(".", ",")
+
+
+def _spending() -> dict:
+    """Today's spending as the top bar's chip says it (usage.py): the voice at
+    OpenAI's prices, Claude as Claude Code's own estimate, and the daily cap."""
+    try:
+        voice, claude, cap = usage.realtime_spent_today(), usage.claude_spent_today(), usage.daily_cap()
+    except Exception:  # noqa: BLE001 - get_status never fails for a counter
+        return {"today": "inconnue"}
+    return {"today": f"≈ {_money(voice + claude)} (voix ≈ {_money(voice)}, Claude ≈ {_money(claude)}, "
+                     "estimation)",
+            "daily_cap": _money(cap) if cap else "aucun (Réglages › Coûts)",
+            "cap_reached": bool(cap and voice + claude >= cap)}
+
+
 def _status(a: dict, ctx) -> dict:
     now = datetime.now()
     all_tasks = tasks.list_tasks()
@@ -123,6 +140,7 @@ def _status(a: dict, ctx) -> dict:
         "recent_tasks": [{"id": t["id"], "title": t["title"], "status": t["status"]}
                          for t in all_tasks if t["status"] not in tasks.ACTIVE][:5],
         "upcoming": [scheduler.describe(i, now) for i in scheduler.items()[:8]],
+        "spending": _spending(),
     }
 
 

@@ -206,9 +206,10 @@ function onDnd(ev) {
 }
 
 /* ---------------------------------------------------------- delivering */
+/* whole: what is spoken is the whole message (nothing left for a session). */
 function message({ text = "", kind = "info", priority = "normal", spoken = "", notice = "", data, label = "",
-                   inboxIds = [], count = 1 } = {}) {
-  return { text, kind, priority, spoken, notice, data, label, inboxIds: [...inboxIds], count };
+                   inboxIds = [], count = 1, whole = false } = {}) {
+  return { text, kind, priority, spoken, notice, data, label, inboxIds: [...inboxIds], count, whole: !!whole };
 }
 
 function ack(ids) {
@@ -262,7 +263,7 @@ export function deliver(msg = {}) {
   }
   earcon("alert");
   notify(m.notice || m.spoken || m.text, m.kind, m.inboxIds[0]);
-  const keep = m.kind !== "reminder";  // the details wait for the next session
+  const keep = m.kind !== "reminder" && !m.whole;  // the details wait for the next session
   if (keep) queue(m);
   delivered(m, m.spoken ? "spoken" : "queued");
   if (!m.spoken) {
@@ -514,7 +515,11 @@ export function onReminder(r) {
 
 /* The local briefing (WP17): its text on a card on every page; the leader
    tells it. Marked queued (quiet hours, « Ne pas déranger »): it waits
-   behind the badge, nothing is said aloud. */
+   behind the badge, nothing is said aloud. Past the daily cap (WP18, marked
+   capped by the server or known here): no invitation to a paid
+   conversation, the browser's own voice (free) reads it in full instead. */
+const BRIEFING_SPOKEN_MAX = 1500;
+
 function onBriefing(b) {
   const text = String(b.text || b.summary || b.output || "");
   if (text) addCard(S.briefing, text, "info", b.inbox_id ? { id: `briefing-${b.inbox_id}` } : {});
@@ -524,6 +529,10 @@ function onBriefing(b) {
     queue(m);
     delivered(m, "queued");
     return;
+  }
+  if ((b.capped || state.config.usage_capped) && !isLive() && text) {
+    m.spoken = text.slice(0, BRIEFING_SPOKEN_MAX);
+    m.whole = true;
   }
   deliver(m);
 }

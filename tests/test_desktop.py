@@ -399,7 +399,7 @@ def test_missing_pystray_degrades_quietly(monkeypatch, published, fresh_shell):
     assert shell.notify("Rappel", "x") is False
 
 
-SHELL_THREADS = ("jarvis-hotkey", "jarvis-tray", "jarvis-awake")
+SHELL_THREADS = ("jarvis-hotkey", "jarvis-tray", "jarvis-awake")  # jarvis-awake: never again (wave 3)
 
 
 def shell_threads():
@@ -469,24 +469,28 @@ def test_quit_from_the_tray_stops_the_server(monkeypatch, fake_pystray):
     assert stopped == ["tasks"] and fake_server.should_exit is True
 
 
-def test_tasks_keep_the_pc_awake_only_while_they_run(monkeypatch, fresh_shell):
+def test_the_pc_is_kept_awake_once_by_the_scheduler_not_by_the_shell(monkeypatch, fresh_shell):
+    """Wave 3: one owner for keep-awake. The scheduler's loop runs on every
+    system (scheduler.periodic, every 30 ticks while a task runs); the shell
+    starts no thread of its own for it, so Windows is not asked twice."""
+    from jarvis import scheduler
+    monkeypatch.setattr(config, "IS_WINDOWS", True)
+    monkeypatch.setattr(config, "TRAY", False)
+    monkeypatch.setattr(shell, "_win", lambda: FakeHotkeyApi())
+    assert wait_for(lambda: "jarvis-awake" not in shell_threads())
+    shell.start("http://127.0.0.1:8788", lambda: None)
+    assert "jarvis-awake" not in shell_threads() and not hasattr(shell, "_awake_loop")
+    shell.stop()
     calls = []
     running = [{"id": "t1", "status": "running"}]
-    monkeypatch.setattr(shell, "AWAKE_SECONDS", 0.01)
     monkeypatch.setattr(tasks, "running", lambda: list(running))
     monkeypatch.setattr(desktop, "keep_awake", lambda: calls.append(1) or True)
-    shell._awake_stop.clear()
-    thread = threading.Thread(target=shell._awake_loop, daemon=True)
-    thread.start()
-    assert wait_for(lambda: len(calls) >= 3)
+    for n in range(1, scheduler.KEEP_AWAKE_TICKS * 3 + 1):  # 90 ticks: before the 5-minute refresh
+        scheduler.periodic(n)
+    assert len(calls) == 3
     running.clear()
-    time.sleep(0.3)  # a round that saw the task just before may still finish
-    count = len(calls)
-    time.sleep(0.2)
-    assert len(calls) == count  # no task: Windows may sleep again
-    shell._awake_stop.set()
-    thread.join(2)
-    assert not thread.is_alive()
+    scheduler.periodic(scheduler.KEEP_AWAKE_TICKS * 4)
+    assert len(calls) == 3  # no task: Windows may sleep again
 
 
 # ---------------------------------------------------------------- one window

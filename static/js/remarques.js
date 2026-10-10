@@ -8,7 +8,10 @@
    - ✕ hides a remark, longer each time (the server doubles the delay).
    A remark may quote a task's title: shown as text only, never as markup.
    The voice hears at most one remark, at the opening of a session: the
-   server puts it in the voice instructions, nothing to do here. */
+   server puts it in the voice instructions, nothing to do here.
+   Past the daily cap (WP18) the server drops « Relancer ? » (no Claude task
+   starts today): the list is read again whenever the cap is reached or
+   lifted, and when Réglages change it. */
 import { $, api, bus, settings } from "./core.js";
 import { T } from "./strings-fr.js";
 import { toast } from "./hud.js";
@@ -21,6 +24,7 @@ const FINAL = new Set(["done", "error", "cancelled", "interrompue", "interrupted
 let section, details, heading, listEl;
 let items = [];
 let soon = null;
+let capped = null;  // the daily cap as last pushed ('usage' events)
 
 function el(tag, cls, text) {
   const node = document.createElement(tag);
@@ -145,6 +149,12 @@ export function init() {
   bus.on("server:task", (tk) => { if (tk && FINAL.has(tk.status)) loadSoon(); });
   bus.on("server:reminder", loadSoon);
   bus.on("server:ares", loadSoon);
+  bus.on("server:config", loadSoon);  // Réglages: the cap, A.R.E.S...
+  bus.on("server:usage", (ev) => {
+    const now = !!(ev && ev.capped);
+    if (now !== capped && (capped !== null || now)) loadSoon();  // unknown until then: not capped
+    capped = now;
+  });
   bus.on("sse:open", load);  // back after a disconnection: read them again
   setInterval(load, POLL_MS);
   load();

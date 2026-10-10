@@ -644,13 +644,16 @@ export const T = typeset({
       "Qu'est-ce que j'ai aujourd'hui ?",
       "Note que je dois rappeler le garage",
       "De quoi on a parlé hier ?",
+      "Reporte le rappel de 10 minutes",
+      "Combien j'ai dépensé aujourd'hui ?",
     ],
     // The "Ce que je sais faire" card: every example is a button that asks it.
     categories: [
       { title: "Applications et PC",
         examples: ["Jarvis, ouvre Spotify sur l'écran de gauche", "Baisse le volume à 30 %"] },
       { title: "Rappels et routines",
-        examples: ["Rappelle-moi dans 20 minutes de sortir le pain", "Tous les matins à 8 h, fais-moi un point météo"] },
+        examples: ["Rappelle-moi dans 20 minutes de sortir le pain", "Reporte le rappel de 10 minutes",
+                   "Tous les lundis et jeudis à 18 h, rappelle-moi le sport"] },
       { title: "Recherche et fichiers",
         examples: ["Cherche les meilleurs aspirateurs robots sous 400 €",
                    "Analyse le fichier ventes.xlsx et fais-moi un tableau de bord"] },
@@ -659,6 +662,9 @@ export const T = typeset({
       { title: "Vision",
         examples: ["Regarde mon écran : tu vois l'erreur ?", "Regarde-moi avec la caméra : je suis bien coiffé ?"] },
       { title: "Mémoire et journal", examples: ["Retiens que je préfère le thé", "De quoi on a parlé hier ?"] },
+      // get_status: running tasks, coming reminders, today's spending and the cap (WP18).
+      { title: "Point du jour",
+        examples: ["Qu'est-ce qui tourne en ce moment ?", "Combien j'ai dépensé aujourd'hui ?"] },
       { title: "Agenda A.R.E.S", ares: true,
         examples: ["Qu'est-ce que j'ai aujourd'hui ?", "Note que je dois rappeler le garage"] },
     ],

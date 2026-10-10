@@ -135,8 +135,9 @@ def _write(path, raw: bytes):
 
 
 def save(name: str, data):
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    path = config.DATA_DIR / name
+    folder = config.DATA_DIR  # read once: the folder made is the one written to
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / name
     raw = json.dumps(data, ensure_ascii=False, indent=1).encode("utf-8")
     with LOCK:
         try:
