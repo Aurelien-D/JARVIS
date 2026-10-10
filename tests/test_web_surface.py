@@ -162,7 +162,8 @@ def test_replayed_events_carry_no_secret_holds(client, fake_claude, monkeypatch)
                 profile="complet")["status"] == "needs_confirmation"
     started = tool("delegate_to_claude", title="Avec refus", prompt="REFUS lis le dossier", profile="lecture")
     wait(tasks.TASKS[started["task_id"]])
-    tool("remember", fact="Le portail est vert")
+    # A tainted session parks remember (spec 4.11 rule c'): launch its card so a memory event exists.
+    api.post(f"/api/pending/{tool('remember', fact='Le portail est vert')['pending_id']}/decide", json={"decision": "oui"})
     tool("schedule", kind="reminder", title="Arrosage", text="Arroser", delay_minutes=60)
     events.publish("reminder", {"id": "r1", "title": "Arrosage", "text": "Arroser"})
     api.post("/api/dnd", json={"minutes": 5})

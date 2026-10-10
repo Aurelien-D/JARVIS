@@ -488,6 +488,75 @@ def test_full_access_routine_keeps_its_instruction_and_frequency(published):
     assert out["title"] == "Grand ménage" and out["text"] == "Vide la corbeille" and out["profile"] == "complet"
     assert datetime.fromtimestamp(out["due"]).hour == 9
 
+
+
+PHONE = "app:d_0123456789abcdef"
+
+
+def test_a_full_access_routine_is_the_pcs_alone(published):
+    """Whatever allow_complet says: from a phone or Siri (or an origin not
+    recognised) it would run with full access after the opt-in or the device is gone."""
+    for via in (PHONE, "siri:k_9b8a7c6d5e4f3a21", "unpaired", "x:y"):
+        with pytest.raises(PermissionError):
+            scheduler.add("task", "Ménage", "Vide la corbeille", at="08:00", profile="complet", allow_complet=True,
+                          via=via)
+    assert scheduler.items() == []
+    item = scheduler.add("task", "Veille", "Actus", at="08:00", profile="recherche", via=PHONE)
+    assert item["via"] == PHONE and item["profile"] == "recherche"
+    assert scheduler.add("task", "Ménage", "Vide", at="08:00", profile="complet", allow_complet=True)["via"] == "pc"
+
+
+def test_the_agenda_tool_never_allows_full_access_for_a_phone(published):
+    from jarvis import confirm
+    routine = {"kind": "task", "title": "Ménage", "text": "Vide la corbeille", "at": "08:00", "profile": "complet"}
+    # Its handler reached directly (as a decided card would): only the PC's origin may.
+    with pytest.raises(PermissionError):
+        tools.handlers()["schedule"](dict(routine), tools.ToolCtx(confirm.new_session(origin=PHONE), origin=PHONE))
+    assert tools.handlers()["schedule"](dict(routine), tools.ToolCtx(confirm.new_session()))["ok"]
+    [item] = scheduler.items()
+    assert item["via"] == "pc" and item["profile"] == "complet"
+
+
+def test_the_agenda_tool_asks_full_access_only_for_the_pc(monkeypatch):
+    """The handler's own reading, before scheduler.add's: allow_complet only for the PC's origin."""
+    from jarvis import confirm
+    asked = []
+    monkeypatch.setattr(scheduler, "add", lambda *a, **k: asked.append((k["allow_complet"], k["via"])) or
+                        {"id": "x", "kind": "task", "title": "t", "due": time.time() + 60, "repeat": "none"})
+    monkeypatch.setattr(scheduler, "describe", lambda item, now=None: "t")
+    routine = {"kind": "task", "title": "Ménage", "text": "Vide la corbeille", "at": "08:00", "profile": "complet"}
+    for origin in (PHONE, "siri:k_9b8a7c6d5e4f3a21", "x:y"):
+        tools.handlers()["schedule"](dict(routine), tools.ToolCtx(None, origin=origin))
+    tools.handlers()["schedule"](dict(routine), tools.ToolCtx(confirm.new_session()))
+    assert asked == [(False, PHONE), (False, "siri:k_9b8a7c6d5e4f3a21"), (False, "x:y"), (True, "pc")]
+
+
+def test_a_phone_routine_runs_only_while_its_device_is_allowed_and_never_with_full_access(published, monkeypatch):
+    from jarvis import remote
+    started = []
+    monkeypatch.setattr(tasks, "create_task", lambda *a, **k: started.append(k))
+    active = {"pc", PHONE}
+    monkeypatch.setattr(remote, "origin_active", lambda origin: origin in active)
+    due = time.time() - 10
+    base = {"kind": "task", "text": "Actus", "due": due, "repeat": "daily", "profile": "recherche",
+            "complexity": "normale", "created": due}
+    write([{**base, "id": "a1", "title": "Veille", "via": PHONE},
+           {**base, "id": "a2", "title": "Ménage", "profile": "complet", "via": PHONE},
+           {**base, "id": "a3", "title": "Retirée", "via": "app:d_fedcba9876543210"},
+           {**base, "id": "a4", "title": "Du PC", "profile": "complet"}])
+    scheduler.tick()
+    assert sorted((k["via"], k["profile"]) for k in started) == [("app:d_0123456789abcdef", "recherche"),
+                                                                 ("pc", "complet")]
+    warnings = sorted(e["text"] for e in published if e["type"] == "warning")
+    assert warnings == [f"Routine « {t} » non lancée : elle venait d'un appareil retiré ou demandait l'accès complet."
+                        for t in ("Ménage", "Retirée")]
+    assert {i["id"] for i in scheduler.items()} == {"a1", "a2", "a3", "a4"}  # still listed, rescheduled
+    # The phone removed: its routine stops firing too.
+    active.discard(PHONE)
+    started.clear()
+    scheduler.tick(max(i["due"] for i in scheduler.items()) + 10)  # the next morning, on time
+    assert [k["via"] for k in started] == ["pc"]
+
 # ---------------------------------------------------------------- briefing hook
 
 

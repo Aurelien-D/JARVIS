@@ -94,6 +94,8 @@ class T:
     skipped = "Routine « {title} » non lancée : JARVIS était éteint à l'heure prévue ({when})."
     skipped_next = " Prochaine fois : {when}."
     failed = "Routine « {title} » non lancée : {why}"
+    remote_refused = ("Routine « {title} » non lancée : elle venait d'un appareil retiré ou demandait "
+                      "l'accès complet.")
 
 
 class Ambiguous(ValueError):
@@ -539,7 +541,8 @@ def add(kind: str, title: str, text: str, at: str | None = None, delay_minutes=N
         days=None, allow_complet: bool = False, *, via: str = "pc") -> dict:
     """A new reminder or routine. allow_complet: only past confirm.gate (the
     voice tool, once monsieur said "oui"); every other caller is refused.
-    via: who asked, the origin string of remote.Caller ("pc", "app:d_…")."""
+    via: who asked, the origin string of remote.Caller ("pc", "app:d_…"); a
+    full-access routine is the PC's alone."""
     text = (text or "").strip()
     if not text:
         raise ValueError(T.empty)
@@ -554,7 +557,9 @@ def add(kind: str, title: str, text: str, at: str | None = None, delay_minutes=N
     if repeat == "days" and not day_list:
         raise ValueError(T.need_days)
     profile = profile if is_task and profile in tasks.PROFILES else "recherche"
-    if profile == "complet" and not allow_complet:
+    if profile == "complet" and (not allow_complet or _kind(via) != "pc"):
+        # From a phone or Siri never, whatever allow_complet says: an approved
+        # routine would run with full access after the opt-in or the device is gone.
         raise PermissionError(T.complet_api)
     due = compute_due(at, delay_minutes).timestamp()
     item = {
@@ -845,10 +850,27 @@ def tick(now: float | None = None):
     _maybe_briefing(now)
 
 
+def _kind(via) -> str:
+    from . import remote  # remote is imported late (spec: no import cycle)
+    return remote.kind_of(via)
+
+
+def _may_run(item: dict, via: str) -> bool:
+    """A routine set from a phone or Siri runs only while that device is still
+    allowed, and never with full access (old data or any path that slipped by)."""
+    from . import remote
+    if _kind(via) == "pc":
+        return True
+    return item.get("profile") != "complet" and remote.origin_active(via)
+
+
 def _fire(item: dict, late: float, now: float | None = None):
     now = time.time() if now is None else now
     via = item.get("via") or "pc"  # who set it (older items: the PC)
     if item.get("kind") == "task":
+        if not _may_run(item, via):
+            _warn(T.remote_refused.format(title=item.get("title", "")), f"routine-refusee-{item['id']}-{int(now)}")
+            return
         tasks.create_task(item.get("title", ""), item.get("text", ""), profile=item.get("profile", "recherche"),
                           complexity=item.get("complexity", "normale"), origin="routine", via=via)
         return
