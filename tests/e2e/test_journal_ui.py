@@ -275,3 +275,11 @@ def test_no_serious_axe_issue_with_the_drawer_open_and_the_agenda(jarvis, reload
     assert axe_violations(jarvis) == []
     jarvis.click(".jr-clear")  # the confirmation row too
     assert axe_violations(jarvis) == []
+
+
+def test_the_phone_journal_never_offers_to_empty_it(remote_page):
+    """DELETE /api/journal is the PC's: the phone's drawer has no « Effacer l'historique »."""
+    remote_page.wait_for_selector("#topActions [aria-controls=journalDrawer]")
+    open_journal(remote_page)
+    remote_page.wait_for_selector("#journalDrawer .jr-foot")
+    assert remote_page.locator("#journalDrawer .jr-clear").count() == 0

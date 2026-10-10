@@ -553,8 +553,9 @@ REMOTE_FIX = "Réglages › Accès à distance › Publier sur Tailscale."
 
 def check_remote(refresh: bool = False) -> list:
     """Tailscale Serve (remote access from the iPhone). Funnel, a TCP forward or
-    another target are errors even while remote access is off: something else
-    may answer on the published name. Nothing to say without Tailscale."""
+    another target are errors even while remote access is off (serve_status
+    counts only what reaches JARVIS until remote access is in use): something
+    else may answer on the published name. Nothing to say without Tailscale."""
     # remote and tailscale are imported inside functions everywhere (section 0)
     from . import remote, tailscale
     if tailscale.exe_path() is None:
@@ -564,7 +565,7 @@ def check_remote(refresh: bool = False) -> list:
     title = "Accès à distance"
     if state in tailscale.DANGEROUS:
         return [item("remote", "error", title, detail,
-                     f"Tapez tailscale serve reset dans PowerShell, puis {REMOTE_FIX}")]
+                     f"Tapez la commande indiquée ci-dessus dans PowerShell, puis {REMOTE_FIX}")]
     if not remote.is_enabled():
         return []
     if state == "ready":

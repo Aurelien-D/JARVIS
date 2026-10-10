@@ -11,7 +11,11 @@
   ever shown.
 - serve_status() reads what Tailscale publishes and flags what would be
   dangerous: Funnel (the internet), a raw TCP forward (no proxy header: aimed
-  at the PC port it would hand out the PC page), or another target.
+  at the PC port it would hand out the PC page), or another target. While
+  remote access was never switched on nor published, only what reaches one of
+  JARVIS's two ports counts: another service published with Serve is the
+  user's own business. Each danger names the command that removes just it,
+  never `tailscale serve reset` (that would delete the user's other services).
 - A watch thread re-checks that every 10 minutes and alerts the PC (and the
   iPhone through ntfy), whether remote access is on or off.
 
@@ -58,18 +62,21 @@ WATCH_EVERY = 600
 DETAILS = {
     "ready": "Tailscale publie JARVIS sur votre réseau Tailscale seulement, vers le port {port} de ce PC.",
     "absent": "JARVIS n'est pas publié sur Tailscale : cliquez Publier sur Tailscale.",
-    "funnel": "Funnel actif : Tailscale publie ce PC sur internet. Tapez tailscale serve reset dans "
+    "funnel": "Funnel actif : Tailscale publie ce PC sur internet. Tapez {fix} dans "
               "PowerShell, puis cliquez Publier sur Tailscale.",
     "tcp": "Relais TCP actif : Tailscale transmet des connexions brutes à ce PC, sans contrôle. Tapez "
-           "tailscale serve reset dans PowerShell, puis cliquez Publier sur Tailscale.",
+           "{fix} dans PowerShell, puis cliquez Publier sur Tailscale.",
     "wrong_target": "Cible inattendue : Tailscale publie autre chose que JARVIS (port {port}). Tapez "
-                    "tailscale serve reset dans PowerShell, puis cliquez Publier sur Tailscale.",
+                    "{fix} dans PowerShell, puis cliquez Publier sur Tailscale.",
     "stopped": "Tailscale est arrêté ou déconnecté sur ce PC : connectez-le (icône près de l'horloge).",
     "no_tailscale": "Tailscale n'est pas installé sur ce PC.",
     "unknown": "La configuration de Tailscale Serve n'a pas pu être lue : réessayez.",
 }
-MISCONFIG_TEXT = ("Tailscale publie JARVIS d'une façon dangereuse (Funnel ou relais TCP) : "
-                  "ouvrez Réglages › Accès à distance.")
+MISCONFIG_TEXTS = {  # the PC's alert, per dangerous state
+    "funnel": "Tailscale publie JARVIS sur internet (Funnel) : ouvrez Réglages › Accès à distance.",
+    "tcp": "Tailscale transmet des connexions brutes à JARVIS (relais TCP) : ouvrez Réglages › Accès à distance.",
+    "wrong_target": "Tailscale publie JARVIS vers une cible inattendue : ouvrez Réglages › Accès à distance.",
+}
 PC_LOGIN_TEXT = "Le compte Tailscale du PC a changé : vérifiez Réglages › Accès à distance."
 
 _lock = threading.Lock()          # caches
@@ -241,14 +248,46 @@ def _configs(data: dict) -> list:
     return out
 
 
-def _status(state: str, url: str = "") -> dict:
-    return {"state": state, "detail": DETAILS[state].format(port=config.REMOTE_PORT), "url": url}
+def _status(state: str, url: str = "", fix: str = "") -> dict:
+    detail = DETAILS[state].format(port=config.REMOTE_PORT, fix=fix or "tailscale serve --https=443 off")
+    return {"state": state, "detail": detail, "url": url}
+
+
+def _jarvis_target(target) -> bool:
+    """A Serve target (Proxy or TCPForward) that reaches JARVIS: this PC's
+    loopback on the page's port or the Serve port."""
+    text = re.sub(r"^[a-z][a-z0-9+.-]*://", "", str(target or "").strip().lower()).split("/", 1)[0]
+    if not text:
+        return False
+    host, _, port = ("127.0.0.1", "", text) if text.isdigit() else text.rpartition(":")
+    host = host.strip("[]")
+    try:
+        addr = ipaddress.ip_address(host)
+        local = addr.is_loopback or addr.is_unspecified
+    except ValueError:
+        local = host == "localhost"
+    return local and port in (str(config.PORT), str(config.REMOTE_PORT))
+
+
+def _in_use() -> bool:
+    """Remote access is on or JARVIS was published: then any Funnel, TCP forward
+    or other target counts, not only what reaches JARVIS's ports."""
+    from . import remote  # late: remote imports this module inside its functions too
+    try:
+        return remote.is_enabled() or remote.published()
+    except Exception:  # noqa: BLE001 - unreadable: the strict reading
+        return True
+
+
+def _port_of(hostport) -> str:
+    return str(hostport).rpartition(":")[2] or "443"
 
 
 def serve_status() -> dict:
     """What Tailscale Serve publishes: {state, detail, url}. state, checked in
     this order: no_tailscale, stopped, funnel, tcp, absent, wrong_target, ready
-    (unknown when the config cannot be read)."""
+    (unknown when the config cannot be read). Until remote access is in use,
+    Funnel, TCP and other targets count only when they reach JARVIS's ports."""
     if exe_path() is None:
         return _status("no_tailscale")
     info = self_info()
@@ -261,21 +300,41 @@ def serve_status() -> dict:
     except Exception:  # noqa: BLE001 - an older CLI, no rights, a timeout
         return _status("unknown", url)
     configs = _configs(data)
-    if any(any(_dict(c.get("AllowFunnel")).values()) for c in configs):
-        return _status("funnel", url)
-    for conf in configs:
-        if any(_dict(h).get("TCPForward") or _dict(h).get("TerminateTLS") for h in _dict(conf.get("TCP")).values()):
-            return _status("tcp", url)
+    strict = _in_use()
+    tcps = [(str(port), _dict(h)) for conf in configs for port, h in _dict(conf.get("TCP")).items()]
     webs = {}
     for conf in configs:
         webs.update(_dict(conf.get("Web")))
+
+    def web_hits(hostport) -> bool:
+        return any(_jarvis_target(_dict(h).get("Proxy"))
+                   for h in _dict(_dict(webs.get(hostport)).get("Handlers")).values())
+
+    def tcp_hits(port) -> bool:
+        return any(_jarvis_target(h.get("TCPForward")) for p, h in tcps if p == port)
+
+    def web_off(hostport) -> str:
+        port = _port_of(hostport)
+        scheme = "http" if any(h.get("HTTP") for p, h in tcps if p == port) else "https"
+        return f"tailscale serve --{scheme}={port} off"
+
+    for conf in configs:
+        for hostport, on in _dict(conf.get("AllowFunnel")).items():
+            if on and (strict or web_hits(hostport) or tcp_hits(_port_of(hostport))):
+                return _status("funnel", url, f"tailscale funnel --https={_port_of(hostport)} off")
+    for port, h in tcps:
+        if (h.get("TCPForward") or h.get("TerminateTLS")) and (strict or _jarvis_target(h.get("TCPForward"))):
+            flag = "--tls-terminated-tcp" if h.get("TerminateTLS") else "--tcp"
+            return _status("tcp", url, f"tailscale serve {flag}={port} off")
     ours = next((k for k in webs if (k == f"{dns}:443" if dns else str(k).endswith(":443"))), None)
-    if ours is None:
-        return _status("absent", url)
-    handlers = _dict(webs[ours]).get("Handlers")
+    others = [k for k in webs if k != ours and (strict or web_hits(k))]
     expected = {"/": {"Proxy": f"http://127.0.0.1:{config.REMOTE_PORT}"}}
-    if len(webs) != 1 or handlers != expected:
-        return _status("wrong_target", url)
+    if ours is not None and _dict(webs[ours]).get("Handlers") != expected and (strict or web_hits(ours)):
+        return _status("wrong_target", url, web_off(ours))
+    if others:
+        return _status("wrong_target", url, web_off(others[0]))
+    if ours is None or _dict(webs[ours]).get("Handlers") != expected:
+        return _status("absent", url)  # nothing, or another service of the user's on that name
     return _status("ready", url)
 
 # ---------------------------------------------------------------- publishing
@@ -398,8 +457,9 @@ def _watch_once() -> None:
     if exe_path() is None:
         return
     from . import audit, remote
-    if serve_status()["state"] in DANGEROUS:
-        audit.alert("serve_misconfig", MISCONFIG_TEXT)
+    state = serve_status()["state"]
+    if state in DANGEROUS:
+        audit.alert("serve_misconfig", MISCONFIG_TEXTS[state])
     if remote.is_enabled():
         allowed = remote.logins()
         login = self_info().get("login") or ""

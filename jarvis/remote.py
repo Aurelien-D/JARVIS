@@ -30,6 +30,7 @@ runs in the thread pool, as it reads devices.json and may ask tailscale whois.
 """
 import email.header
 import hashlib
+import html
 import ipaddress
 import itertools
 import logging
@@ -131,6 +132,10 @@ T_PROXY = "Requête refusée : un proxy ou un antivirus modifie les requêtes lo
 T_OFF = "Accès à distance coupé sur le PC."
 T_PAUSED = "Accès à distance en pause jusqu'à {until}."
 T_REFUSED = "Requête distante refusée."
+# The page of a refusal pair.html's own files would share (steps 6 to 8): it says it alone.
+T_ADDRESS = "Requête distante refusée : ouvrez JARVIS à l'adresse affichée sur le PC (Réglages › Accès à distance)."
+T_BAD_PORT = "JARVIS_REMOTE_PORT invalide : choisissez un port entre 1024 et 65535."
+T_SAME_PORT = "JARVIS_REMOTE_PORT doit différer de JARVIS_PORT."
 T_LOGIN = "Compte Tailscale non autorisé : connectez l'iPhone avec le même compte que le PC."
 T_LOCKED = "Trop d'échecs : réessayez dans 15 minutes."
 T_SIRI_UNKNOWN = "Clé Siri inconnue : recréez-la sur le PC."
@@ -212,11 +217,16 @@ def kind_of(origin: str) -> str:
     return head if sep and head in ("app", "siri") else "unknown"
 
 
+def serve_port() -> int | None:
+    """The Serve listener's port; None while it equals the PC's (that one stays the PC's)."""
+    return config.REMOTE_PORT if config.REMOTE_PORT != config.PORT else None
+
+
 def is_remote_request(request) -> bool:
     """Arrived on the Serve port, or carries any proxy header: remote. A proxy
     header on the PC port still counts (fail closed); the gate then refuses it."""
     server = request.scope.get("server") or ()
-    if len(server) > 1 and server[1] == config.REMOTE_PORT:
+    if len(server) > 1 and serve_port() is not None and server[1] == serve_port():
         return True
     return any(h in PROXY_MARKERS or h.startswith(("x-forwarded-", "tailscale-"))
                for h in (k.lower() for k in request.headers))
@@ -230,6 +240,7 @@ _fails: dict = {}      # credential key -> deque of failure times
 _locks: dict = {}      # credential key -> locked until
 _hits: dict = {}       # rate key -> deque of request times
 _mints: dict = {}      # device id -> deque of voice session times (10-minute window)
+_reserved: dict = {}   # device id -> deque of slots check_voice holds until note_mint or release_voice
 _unknown: dict = {}    # ip -> deque of unknown-cookie times
 _touched: dict = {}    # (kind, id) -> last devices.json touch
 _pairing = {"until": 0.0}
@@ -244,7 +255,7 @@ def _now() -> float:
 def reset_memory() -> None:
     """Tests: forget tokens, lockouts, rate windows, the pairing window and requests."""
     with _lock:
-        for store_ in (_tokens, _fails, _locks, _hits, _mints, _unknown, _touched, _requests):
+        for store_ in (_tokens, _fails, _locks, _hits, _mints, _reserved, _unknown, _touched, _requests):
             store_.clear()
         _pairing["until"] = 0.0
 
@@ -362,16 +373,24 @@ def set_enabled(on: bool, *, host: str | None = None, login: str | None = None, 
         if usage.daily_cap() <= 0:
             raise RemoteError("Fixez d'abord un plafond de dépense par jour (Réglages › Coûts) : il protège "
                               "votre crédit OpenAI quand JARVIS est utilisé à distance.")
+        if not listener.port_ok(config.REMOTE_PORT):
+            raise RemoteError(T_BAD_PORT)
         if config.REMOTE_PORT == config.PORT:
-            raise RemoteError("JARVIS_REMOTE_PORT doit différer de JARVIS_PORT.")
+            raise RemoteError(T_SAME_PORT)
         started = listener.start()
         if not started.get("running"):
             raise RemoteError(started.get("error")
                               or f"Port {config.REMOTE_PORT} déjà utilisé : choisissez un autre JARVIS_REMOTE_PORT.")
+        before = (_host_of(saved), _logins_of(saved))
         saved = _save_settings(
             enabled=True, host=given_host if HOST_RE.fullmatch(given_host) else saved["host"],
             logins=given_logins if given_logins and LOGIN_RE.fullmatch(given_logins[0]) else saved["logins"],
             changed_at=now, changed_by="pc")
+        if (_host_of(saved), _logins_of(saved)) != before:
+            # Another Serve name or account: what the old one opened ends now (its
+            # streams are never checked again, its page tokens would be).
+            events.close_streams(lambda c: c is not None and c.remote)
+            _drop_tokens()
         audit.event(by, "state", text="Accès à distance activé.")
         audit.alert("remote_on", "Accès à distance activé.")
         if saved["published"]:  # switched off earlier: Serve comes back as it was
@@ -450,6 +469,11 @@ def set_complet(duration: str) -> float:
     return until
 
 
+def published() -> bool:
+    """JARVIS's Serve configuration was published (and not withdrawn by the user)."""
+    return _settings()["published"]
+
+
 def note_published(on: bool) -> None:
     """Remembers whether JARVIS's Serve configuration is published (A4's routes)."""
     _save_settings(published=bool(on))
@@ -457,8 +481,26 @@ def note_published(on: bool) -> None:
 # ---------------------------------------------------------------- remote voice cost (4.8)
 
 
+RESERVE_S = 30  # a slot check_voice holds while OpenAI answers, at most
+
+
+def _held_slots(device_id: str, now: float) -> deque:
+    """The device's slots held by mints still in flight (caller holds _lock)."""
+    held = _reserved.get(device_id)
+    if held is None:
+        return deque()
+    while held and now - held[0] >= RESERVE_S:
+        held.popleft()
+    if not held:
+        del _reserved[device_id]
+    return held
+
+
 def check_voice(caller) -> tuple[int, str] | None:
-    """(status, French reason) when a remote voice session must be refused. Never counts."""
+    """(status, French reason) when a remote voice session must be refused.
+    Never counts a mint, but holds a slot for this one (under the lock, so
+    concurrent requests cannot all pass the limits): note_mint turns it into a
+    mint, release_voice frees it, and it lapses after RESERVE_S seconds."""
     from . import usage
     if caller is None or not caller.remote:
         return None
@@ -472,23 +514,44 @@ def check_voice(caller) -> tuple[int, str] | None:
     with _lock:
         window = _mints.get(caller.device_id) or deque()
         recent = sum(1 for t in window if now - t < MINT_WINDOW_S)
-    if recent >= MINTS_PER_WINDOW or mints_today(caller.device_id) >= MINTS_PER_DAY:
-        return (429, T_MINTS)
+        held = len(_held_slots(caller.device_id, now))
+        if recent + held >= MINTS_PER_WINDOW or mints_today(caller.device_id) + held >= MINTS_PER_DAY:
+            return (429, T_MINTS)
+        _reserved.setdefault(caller.device_id, deque()).append(now)
     return None
 
 
+def _free_slot(device_id: str, now: float) -> None:
+    """One held slot of the device goes (caller holds _lock)."""
+    held = _held_slots(device_id, now)
+    if held:
+        held.popleft()
+        if not held:
+            del _reserved[device_id]
+
+
+def release_voice(caller) -> None:
+    """The mint check_voice held a slot for failed: the slot is free again."""
+    if caller is None or not caller.remote or not caller.device_id:
+        return
+    with _lock:
+        _free_slot(caller.device_id, _now())
+
+
 def note_mint(caller) -> None:
-    """One successful remote mint (counted after OpenAI answered)."""
+    """One successful remote mint (counted after OpenAI answered): its held
+    slot becomes a mint, in memory and in usage.json, in one step."""
     from . import usage
     if caller is None or not caller.remote or not caller.device_id:
         return
     now = _now()
     with _lock:
+        usage.note_remote_mint(caller.device_id, now)
         window = _mints.setdefault(caller.device_id, deque())
         while window and now - window[0] >= MINT_WINDOW_S:
             window.popleft()
         window.append(now)
-    usage.note_remote_mint(caller.device_id, now)
+        _free_slot(caller.device_id, now)
 
 
 def mints_today(device_id: str) -> int:
@@ -719,6 +782,8 @@ def request_pairing(caller, name="", ua: str = "") -> tuple[dict, str]:
     info = _whois(ip, WHOIS_WAIT_S)
     secret = secrets.token_urlsafe(32)
     with _lock:
+        for rid in [rid for rid, r in _requests.items() if r["ip"] == ip and r["status"] == "waiting"]:
+            del _requests[rid]  # one sent meanwhile from this address (whois was outside the lock)
         if sum(r["status"] == "waiting" for r in _requests.values()) >= MAX_WAITING:
             refusal = T_TOO_MANY
         else:
@@ -992,6 +1057,7 @@ class _Verdict:
     route: str = "?"
     clear_cookie: bool = False
     quiet: bool = False       # no audit line (iOS icon probes)
+    throttle: str = ""        # refusal lines counted under this key, not the claimed address
     extra: dict = field(default_factory=dict)
 
 
@@ -1090,8 +1156,25 @@ def _template(app, path: str) -> str:
     return next((t for t, regex in _served_templates(app) if regex.match(path)), "?")
 
 
-def _refusal(status: int, text: str, where: str, state: str = "refused"):
+def _plain_page(text: str, status: int):
+    """A refusal page that needs no file of its own: the steps that answer with
+    it refuse pair.html's script and styles too, so pair.html would stay blank."""
+    body = ('<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>JARVIS</title>'
+            '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
+            '<meta name="jarvis-pair-state" content="refused">'
+            '<style>html,body{margin:0;background:#05080d;color:#e6eef8}'
+            'body{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;'
+            'box-sizing:border-box;font:17px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif}'
+            'main{max-width:32em;text-align:center}h1{font-size:1.4em;letter-spacing:.3em;margin:0 0 1em}'
+            '</style></head><body><main><h1>J.A.R.V.I.S.</h1>'
+            f'<p>{html.escape(text, quote=False)}</p></main></body></html>')
+    return HTMLResponse(body, status_code=status)
+
+
+def _refusal(status: int, text: str, where: str, state: str = "refused", plain: str = ""):
     if where == "page":
+        if plain:
+            return _plain_page(plain, status)
         return HTMLResponse(page.pairing_html(state), status_code=status)
     if where == "siri":  # Siri reads it aloud
         return PlainTextResponse(text, status_code=status)
@@ -1144,17 +1227,29 @@ def _decide(ask: _Ask, app) -> _Verdict:
     login = _decode_login(ask.headers.get("tailscale-user-login"))
     base = Caller(kind="unpaired", ip=str(raw_ip) if raw_ip else "", login=login)
 
-    def refuse(status, text, reason, state="refused", caller=None, clear=False):
-        return _Verdict(caller=caller or base, response=_refusal(status, text, where, state), reason=reason,
-                        route=route, clear_cookie=clear)
+    on_serve_port = serve_port() is not None and ask.port == serve_port()
+    # Until the Serve name matched (step 6), anyone on this PC (a DNS-rebinding
+    # page included) may have written X-Forwarded-For: refusals are throttled
+    # under one key then, never one per claimed address.
+    unverified = "unverified" if on_serve_port else "pc-port"
 
-    # 1. Funnel: from the internet, whatever the switch says.
+    def refuse(status, text, reason, state="refused", caller=None, clear=False, plain="", throttle=""):
+        return _Verdict(caller=caller or base, response=_refusal(status, text, where, state, plain), reason=reason,
+                        route=route, clear_cookie=clear, throttle=throttle)
+
+    given = ask.headers.get("host", "").strip().lower().removesuffix(":443")
+    # 1. Funnel: from the internet, whatever the switch says. The PC is told only
+    #    when Serve brought it (the Serve port, this PC's Serve name): a local
+    #    page (DNS rebinding) can add the header, never a *.ts.net Host.
     if "tailscale-funnel-request" in ask.headers:
-        audit.alert("funnel", "Requête refusée venant d'internet (Funnel) : vérifiez Tailscale.", base)
-        return refuse(403, T_FUNNEL, "funnel")
-    # 2. Only the Serve listener is a remote door.
-    if ask.port != config.REMOTE_PORT:
-        return refuse(403, T_PROXY, "proxy_on_pc_port")
+        expected = _host_of(_settings())
+        if on_serve_port and (given == expected if expected else HOST_RE.fullmatch(given)):
+            audit.alert("funnel", "Requête refusée venant d'internet (Funnel) : vérifiez Tailscale.", base)
+        return refuse(403, T_FUNNEL, "funnel", plain=T_FUNNEL, throttle=unverified)
+    # 2. Only the Serve listener is a remote door (never the PC's own port, even
+    #    when JARVIS_REMOTE_PORT names it).
+    if not on_serve_port:
+        return refuse(403, T_PROXY, "proxy_on_pc_port", plain=T_PROXY, throttle=unverified)
     # 3. iOS probes these icons on its own: a quiet 404.
     if path in QUIET_PATHS:
         return _Verdict(caller=base, response=Response(status_code=404), route=route, quiet=True)
@@ -1162,29 +1257,27 @@ def _decide(ask: _Ask, app) -> _Verdict:
     pair_asset = reading and path in PAIR_ASSETS
     # 4. Off (READY False counts as off).
     if not _enabled_of(saved) and not pair_asset:
-        return refuse(403, T_OFF, "off", "off")
+        return refuse(403, T_OFF, "off", "off", throttle=unverified)
     # 5. Paused.
     until = _paused_of(saved)
     if until and not pair_asset:
-        return refuse(403, T_PAUSED.format(until=_until_text(until)), "paused", "paused")
+        return refuse(403, T_PAUSED.format(until=_until_text(until)), "paused", "paused", throttle=unverified)
     # 6. The exact Serve name.
     expected = _host_of(saved)
-    given = ask.headers.get("host", "").strip().lower()
-    given = given.removesuffix(":443")
     if not expected or given != expected:
-        return refuse(403, T_REFUSED, "host")
+        return refuse(403, T_REFUSED, "host", plain=T_ADDRESS, throttle=unverified)
     # 7. Serve terminated TLS.
     if ask.headers.get("x-forwarded-proto") != "https":
-        return refuse(403, T_REFUSED, "proto")
+        return refuse(403, T_REFUSED, "proto", plain=T_ADDRESS)
     # 8. One tailnet address, neither loopback nor this PC's own.
     ip_obj = _parse_ip(ask.headers.get("x-forwarded-for", ""))
     if ip_obj is not None and ip_obj.is_loopback:
-        return refuse(403, T_REFUSED, "self")
+        return refuse(403, T_REFUSED, "self", plain=T_ADDRESS)
     if ip_obj is None or not _in_tailnet(ip_obj):
-        return refuse(403, T_REFUSED, "xff")
+        return refuse(403, T_REFUSED, "xff", plain=T_ADDRESS)
     ip = str(ip_obj)
     if ip in _self_ips():
-        return refuse(403, T_REFUSED, "self")
+        return refuse(403, T_REFUSED, "self", plain=T_ADDRESS)
     base = Caller(kind="unpaired", ip=ip, login=login)
     # 9. An allowed Tailscale login.
     if (not login or login not in _logins_of(saved)) and not pair_asset:
@@ -1322,7 +1415,7 @@ def _finish(ask: _Ask, verdict: _Verdict, response) -> None:
             ask.path.startswith("/static/") or ask.path == "/api/remote/pair-status"):
         return  # every page load and every 2 s poll would drown the rest
     audit.event(verdict.caller, "request", method=ask.method, route=verdict.route, status=status,
-                reason=verdict.reason)
+                reason=verdict.reason, throttle_key=verdict.throttle)
 
 
 async def remote_guard(request, call_next):

@@ -5,12 +5,17 @@
   title), so no cookie, token, secret, prompt or URL can reach the file.
   Refusal lines are throttled per IP (a flood leaves a count, not 10 000 lines).
 - data/remote-alerts.jsonl: every alert line again, so a flood of refused
-  requests can never push an alert out of the record.
+  requests can never push an alert out of the record. A repeat within its
+  kind's dedupe window is counted, not written: the count goes in one line
+  before the next line of that alert, so a flood of repeats cannot push the
+  others out either.
 - Each line is written open-append-close under one lock, and rotation happens
   under that same lock: Windows cannot rename a file another thread holds open.
-- alert(): the audit line always; then, unless the same alert just went out, a
-  PC toast, a PC warning card and the hooks (ntfy). Hooks get the kind's fixed
-  sentence, never the PC text: no device name, IP or login leaves the PC.
+- alert(): unless the same alert just went out, the audit line, a PC toast, a
+  PC warning card and the hooks (ntfy). Hooks get the kind's fixed sentence,
+  never the PC text: no device name, IP or login leaves the PC. Funnel and
+  Serve alerts have one window for all callers: the address a refused request
+  claims is the caller's to choose.
 
 Nothing here ever raises: an audit failure must never break a request.
 """
@@ -61,6 +66,10 @@ AUDIT_MAX_BYTES = 5 * 1024 * 1024  # remote-audit.jsonl beyond this becomes remo
 ALERTS_MAX_LINES = 500             # remote-alerts.jsonl reaching this becomes remote-alerts.1.jsonl
 THROTTLE_WINDOW_S = 600
 THROTTLE_MAX = 20                  # refusal lines per IP per window, then one count line
+MAX_KEYS = 1000                    # dedupe and throttle keys kept: stale ones go first
+REPEATS_TEXT = "Répétitions de cette alerte regroupées."
+# One dedupe window per kind, whoever the caller claims to be.
+DEDUPE_PER_KIND = frozenset({"funnel", "serve_misconfig"})
 
 # The only keys a line may hold, with the longest text each may carry.
 FIELDS = {"kind": 16, "caller": 16, "device": 24, "key": 24, "ip": 64, "login": 200, "method": 10,
@@ -71,8 +80,9 @@ NUMBERS = ("status", "count")
 _lock = threading.Lock()       # the two files: one write or rotation at a time
 _mem_lock = threading.Lock()   # dedupe and throttle windows
 _last_alert: dict = {}         # (kind, device or ip) -> when it last reached the PC
-_refusals: dict = {}           # ip -> deque of refusal line times
-_suppressed: dict = {}         # ip -> refusal lines left out since the last one written
+_held: dict = {}               # (kind, device or ip) -> repeats left out since it last did
+_refusals: dict = {}           # throttle key (ip) -> deque of refusal line times
+_suppressed: dict = {}         # throttle key (ip) -> refusal lines left out since the last one written
 
 
 def _now() -> float:
@@ -130,34 +140,39 @@ def _write(line: dict, alert: bool = False) -> None:
             _append(path, old, line, max_lines=ALERTS_MAX_LINES)
 
 
-def _throttled(line: dict) -> dict | None:
-    """For a refusal line: None when this IP is over its quota (counted), else
-    the count line to write first ({} when there is none)."""
+def _throttled(line: dict, key: str = "") -> dict | None:
+    """For a refusal line: None when its key (the line's IP unless given) is
+    over its quota (counted), else the count line to write first ({} when
+    there is none)."""
     ip = line.get("ip", "")
+    key = key or ip
     now = _now()
     with _mem_lock:
-        if len(_refusals) > 1000:  # addresses seen once never make it grow for good
+        if len(_refusals) > MAX_KEYS:  # addresses seen once never make it grow for good
             for stale in [k for k, w in _refusals.items() if not w or now - w[-1] > THROTTLE_WINDOW_S]:
                 del _refusals[stale]
-        window = _refusals.setdefault(ip, deque())
+                _suppressed.pop(stale, None)
+        window = _refusals.setdefault(key, deque())
         while window and now - window[0] > THROTTLE_WINDOW_S:
             window.popleft()
         if len(window) >= THROTTLE_MAX:
-            _suppressed[ip] = _suppressed.get(ip, 0) + 1
+            _suppressed[key] = _suppressed.get(key, 0) + 1
             return None
         window.append(now)
-        count = _suppressed.pop(ip, 0)
+        count = _suppressed.pop(key, 0)
     if not count:
         return {}
-    return {"t": line["t"], "kind": "request", "ip": ip, "reason": "throttled", "count": count}
+    first = {"t": line["t"], "kind": "request", "reason": "throttled", "count": count}
+    return {**first, "ip": ip} if key == ip and ip else first
 
 
-def event(caller, kind: str, **fields) -> None:
-    """One audit line; never raises."""
+def event(caller, kind: str, *, throttle_key: str = "", **fields) -> None:
+    """One audit line; never raises. throttle_key: what refusal lines are
+    throttled under instead of their IP (an address nobody vouched for)."""
     try:
         line = _line(kind, caller, fields)
         if kind == "request" and line.get("status", 0) >= 400:
-            first = _throttled(line)
+            first = _throttled(line, throttle_key)
             if first is None:
                 return
             if first:
@@ -167,24 +182,51 @@ def event(caller, kind: str, **fields) -> None:
         log.exception("JARVIS: journal d'accès distant non écrit")
 
 
+def _deduped(kind: str, spec: dict, caller, fields: dict) -> int | None:
+    """None when the same alert went out within its window (the repeat is
+    counted), else how many repeats were left out since it last did."""
+    if spec["dedupe_s"] <= 0:
+        return 0
+    # Per device when one is named, else per address; one window per kind for some.
+    who = "" if kind in DEDUPE_PER_KIND else (
+        getattr(caller, "device_id", "") or str(fields.get("device") or "")
+        or getattr(caller, "ip", "") or str(fields.get("ip") or ""))
+    key = (kind, who)
+    now = _now()
+    with _mem_lock:
+        if len(_last_alert) > MAX_KEYS:  # windows over: nothing more to dedupe them against
+            for stale in [k for k, t in _last_alert.items()
+                          if now - t >= (ALERTS.get(k[0]) or {"dedupe_s": 0})["dedupe_s"]]:
+                del _last_alert[stale]
+                _held.pop(stale, None)
+        last = _last_alert.get(key)
+        if last is not None and now - last < spec["dedupe_s"]:
+            _held[key] = _held.get(key, 0) + 1
+            return None
+        _last_alert[key] = now
+        return _held.pop(key, 0)
+
+
 def alert(kind: str, text: str, caller=None, **fields) -> None:
-    """An audit line, then (unless deduplicated) a PC toast, a PC warning card and the hooks."""
+    """Unless deduplicated (then only counted), an audit line, a PC toast, a PC
+    warning card and the hooks."""
     spec = ALERTS.get(kind) or _kind(True, False, 0)
     text = str(text or "")[:160]
     try:
-        _write(_line("alert", caller, {**fields, "alert": kind, "text": text}), alert=True)
+        held = _deduped(kind, spec, caller, fields)
+    except Exception:  # an alert must still go out
+        log.exception("JARVIS: fenêtre d'alerte illisible (%s)", kind)
+        held = 0
+    if held is None:
+        return
+    try:
+        line = _line("alert", caller, {**fields, "alert": kind, "text": text})
+        if held:  # the repeats left out since the last one: one line, before this one
+            _write({"t": line["t"], "kind": "alert", "alert": kind, "reason": "throttled", "count": held,
+                    "text": REPEATS_TEXT}, alert=True)
+        _write(line, alert=True)
     except Exception:  # a full disk must not hide the alert itself
         log.exception("JARVIS: alerte d'accès distant non écrite (%s)", kind)
-    if spec["dedupe_s"] > 0:
-        # Per device when one is named, else per address.
-        who = getattr(caller, "device_id", "") or str(fields.get("device") or "") \
-            or getattr(caller, "ip", "") or str(fields.get("ip") or "")
-        now = _now()
-        with _mem_lock:
-            last = _last_alert.get((kind, who))
-            if last is not None and now - last < spec["dedupe_s"]:
-                return
-            _last_alert[(kind, who)] = now
     if spec["toast"]:
         try:
             desktop.toast(spec["title"], text)
@@ -237,5 +279,6 @@ def reset_memory() -> None:
     """Tests: forget the dedupe and throttle windows."""
     with _mem_lock:
         _last_alert.clear()
+        _held.clear()
         _refusals.clear()
         _suppressed.clear()

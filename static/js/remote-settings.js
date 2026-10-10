@@ -105,6 +105,15 @@ function dateLong(epoch) {
   return `${d.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}, ${fmtTime(d)}`;
 }
 
+/* When a pause ends, with its day (as remote._until_text): '15 h 30' today,
+   'demain à 14 h 30' tomorrow, else the date. A 24 h pause never reads as 'now'. */
+function untilText(epoch) {
+  const d = new Date(Number(epoch) * 1000), today = new Date(now());
+  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((day(d) - day(today)) / 86400e3);
+  return days <= 0 ? fmtTime(d) : days === 1 ? T.time.tomorrow(fmtTime(d)) : dateLong(epoch);
+}
+
 function heading(text, id) { return h("h4", { class: "set-sub", id, text }); }
 
 /* ---------------------------------------------------------- the QR code */
@@ -259,7 +268,7 @@ function renderSwitch(v) {
     if (paused) {
       const resume = button(R.resume, () => resumeNow(v));
       resume.id = "rm-resume";
-      out.push(h("p", { class: "set-note", text: R.pausedUntil(fmtTime(new Date(st.paused_until * 1000))) }),
+      out.push(h("p", { class: "set-note", text: R.pausedUntil(untilText(st.paused_until)) }),
                h("div", { class: "set-actions" }, resume));
     }
     return out;
@@ -761,7 +770,7 @@ function renderPhone(v) {
     const forget = button(R.forget, () => forgetNow(v));
     forget.id = "rm-forget";
     const out = [h("p", { class: "rm-phone-name" }, h("strong", { text: String(st.device?.name || R.thisPhone) })),
-                 h("p", { class: "rm-phone-state", text: v.paused ? R.pausedUntil(fmtTime(new Date(v.paused * 1000)))
+                 h("p", { class: "rm-phone-state", text: v.paused ? R.pausedUntil(untilText(v.paused))
                                                                   : R.phoneActive })];
     if (Number(st.complet_until) * 1000 > now()) {
       out.push(h("p", { class: "set-help", text: R.phoneComplet(dateLong(st.complet_until)) }));
@@ -800,7 +809,7 @@ async function pauseNow(v) {
   try {
     const r = await api("/api/remote/pause", { method: "POST", body: { hours } });
     v.paused = Number(r.paused_until) || (now() / 1000 + hours * 3600);
-    note(v, "phone", R.pausedNow(fmtTime(new Date(v.paused * 1000))));
+    note(v, "phone", R.pausedNow(untilText(v.paused)));
   } catch (err) {
     note(v, "phone", explainError(err), true);
   }

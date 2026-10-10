@@ -16,7 +16,8 @@ TEXTS = {
     "closed": ("Association fermée", "Associer un iPhone, puis touchez Réessayer"),
     "off": ("Accès à distance coupé", "L'accès à distance est coupé sur le PC"),
     "paused": ("Accès à distance en pause", "Il reprendra seul à la fin de la pause"),
-    "refused": ("Accès refusé", "Ouvrez JARVIS depuis son icône"),
+    # The likeliest refusal: the iPhone's Tailscale app is signed in to another account.
+    "refused": ("Accès refusé", "connecté à Tailscale avec le même compte que le PC"),
     "locked": ("Accès bloqué", "réessayez dans 15 minutes"),
     "revoked": ("Appareil retiré", "Cet appareil a été retiré sur le PC"),
 }
@@ -63,9 +64,11 @@ class Pairing:
 
 @pytest.mark.parametrize("remote_page", [{"pair_state": s} for s in TEXTS], indirect=True,
                          ids=list(TEXTS))
-def test_every_refusal_state_says_why_with_a_retry(remote_page):
+def test_every_refusal_state_says_why_with_a_retry(remote_page, request):
     ready(remote_page)
     state = remote_page.evaluate("window.__pair.state")
+    # The state the real server led to is the one this case set up, never another one's.
+    assert state == request.node.callspec.params["remote_page"]["pair_state"]
     title, sentence = TEXTS[state]
     assert norm(remote_page.text_content(".pair-title")) == title
     assert sentence in norm(remote_page.text_content(".pair-text"))
@@ -88,6 +91,9 @@ def test_an_iphone_outside_the_home_screen_is_told_how_to_add_it(remote_page):
     assert "« Ouvrir comme app web »" in steps[2] and "Ajouter" in steps[2]
     assert "Ouvrez l'icône JARVIS" in steps[3]
     assert remote_page.locator("#pairName").count() == 0
+    # Safari tabs share their cookie: it is the Home Screen app that needs its own pairing.
+    assert "l'icône de l'écran d'accueil devra alors être associée à part" in norm(
+        remote_page.text_content(".pair-note"))
     remote_page.click("button:has-text('Utiliser JARVIS dans Safari')")
     remote_page.wait_for_selector("#pairName")
     assert remote_page.input_value("#pairName") == "iPhone"

@@ -30,6 +30,11 @@ def configure(app) -> None:
     _APP = app
 
 
+def port_ok(port) -> bool:
+    """A port the Serve listener may use: a number from 1024 to 65535."""
+    return isinstance(port, int) and not isinstance(port, bool) and 1024 <= port <= 65535
+
+
 def _bind(port):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -43,7 +48,7 @@ def _bind(port):
         s.bind(("127.0.0.1", port))  # literal: checked by the bind test
         s.listen(128)
         s.setblocking(False)
-    except OSError:
+    except (OSError, OverflowError, ValueError):
         s.close()
         raise
     return s
@@ -62,8 +67,10 @@ def state() -> dict:
 
 def start() -> dict:
     """Start serving on 127.0.0.1:REMOTE_PORT; the state, with a French error
-    when the port is taken. Already running: the current state."""
+    when the port is taken, impossible or the PC's own. Already running: the
+    current state."""
     from . import audit  # late: audit is imported by modules this one serves
+    from . import remote  # late: remote imports this module inside its functions too
     with _lock:
         if _running():
             return {"running": True, "port": _run["port"], "error": ""}
@@ -71,9 +78,13 @@ def start() -> dict:
         if _APP is None:
             _run["error"] = "Serveur JARVIS pas encore prêt."
             return {"running": False, "port": port, "error": _run["error"]}
+        if not port_ok(port) or port == config.PORT:
+            # Never the PC's own port: bound first at startup, the PC's server could not start.
+            _run["error"] = remote.T_BAD_PORT if not port_ok(port) else remote.T_SAME_PORT
+            return {"running": False, "port": port, "error": _run["error"]}
         try:
             sock = _bind(port)  # a clash fails here, synchronously, with its errno
-        except OSError:
+        except (OSError, OverflowError, ValueError):
             _run["error"] = f"Port {port} déjà utilisé : choisissez un autre JARVIS_REMOTE_PORT."
             clash = True
         else:

@@ -1528,3 +1528,229 @@ def test_device_and_key_counts_are_capped_holds(monkeypatch, pc):
     devices.add_siri_key(made[1]["id"])
     with pytest.raises(ValueError):
         devices.add_siri_key(made[1]["id"])
+
+# ---------------------------------------------------------------- wave A verification
+
+
+def _alert_file_lines() -> list:
+    out = []
+    for name in ("remote-alerts.1.jsonl", "remote-alerts.jsonl"):
+        path = config.DATA_DIR / name
+        if path.exists():
+            out += [json.loads(t) for t in path.read_text("utf-8").splitlines()]
+    return out
+
+
+def test_forged_funnel_requests_never_flood_the_pc_with_alerts_holds(monkeypatch, alerts, clock):
+    """A DNS-rebinding page in the PC's browser may add Tailscale-Funnel-Request and
+    any X-Forwarded-For, never a *.ts.net Host: on either port it is refused without
+    an alert. What Serve does bring from Funnel alerts once per window, whatever
+    address it claims; no table grows and the trail keeps a count, not a line per address."""
+    enable_remote(monkeypatch)
+    for base_url, host in (("http://127.0.0.1:8788", "evil.example:8788"),
+                           (f"http://127.0.0.1:{config.REMOTE_PORT}", f"evil.example:{config.REMOTE_PORT}")):
+        local = TestClient(server.app, base_url=base_url)
+        for n in range(50):
+            r = local.get("/", headers={"Host": host, "Tailscale-Funnel-Request": "1",
+                                        "X-Forwarded-For": f"203.0.113.{n}"})
+            assert r.status_code == 403 and remote.T_FUNNEL in r.text
+    # The PC's own port never alerts, not even with this PC's Serve name.
+    TestClient(server.app, base_url="http://127.0.0.1:8788").get("/", headers={
+        "Host": REMOTE_HOST, "Tailscale-Funnel-Request": "1"})
+    assert alerts.toasts == [] and alerts.hooks == [] and alerts.warnings == []
+    for n in range(50):  # Funnel misconfigured: internet clients rotating their addresses
+        r = remote_client(ip=f"2001:db8::{n + 1:x}", extra={"Tailscale-Funnel-Request": "?1"}).get("/")
+        assert r.status_code == 403
+    assert alerts.hooks == [("funnel", audit.ALERTS["funnel"]["ntfy_text"])] and len(alerts.toasts) == 1
+    clock["t"] += 601
+    remote_client(ip="198.51.100.1", extra={"Tailscale-Funnel-Request": "?1"}).get("/api/config")
+    assert len(alerts.hooks) == len(alerts.toasts) == 2
+    assert len(audit._last_alert) == 1 and len(audit._refusals) <= 2
+    requests = [line for line in audit.tail(500) if line["kind"] == "request"]
+    assert len(requests) <= 2 * audit.THROTTLE_MAX + 2
+
+
+def test_a_flood_of_repeated_alerts_never_pushes_an_earlier_one_out_holds(monkeypatch, alerts, clock):
+    """Deduplicated repeats are counted, not written: 4000 of them leave the pairing
+    alert in remote-alerts.jsonl, then one count line before the next alert of a kind."""
+    phone = remote.Caller(kind="app", device_id="d_0123456789abcdef", ip=IP, login=LOGIN, name="iPhone de test")
+    audit.alert("new_device", "Nouvel appareil associé : « iPhone de test » (100.101.102.103).", phone)
+    for n in range(2000):
+        audit.alert("funnel", "Requête refusée venant d'internet (Funnel) : vérifiez Tailscale.",
+                    remote.Caller(kind="unpaired", ip=f"2001:db8::{n + 1:x}"))
+        audit.alert("login_change", "Compte Tailscale inattendu pour « iPhone de test » : refusé.",
+                    remote.Caller(kind="unpaired", ip=IP, login="intrus@example.com"), device=phone.device_id)
+    assert [a["alert"] for a in _alert_file_lines()] == ["new_device", "funnel", "login_change"]
+    assert len(alerts.toasts) == len(alerts.warnings) == 3
+    clock["t"] += 601
+    audit.alert("funnel", "Requête refusée venant d'internet (Funnel) : vérifiez Tailscale.")
+    kept = _alert_file_lines()
+    assert kept[-2] == {"t": kept[-2]["t"], "kind": "alert", "alert": "funnel", "reason": "throttled", "count": 1999,
+                        "text": audit.REPEATS_TEXT}
+    assert kept[-1]["alert"] == "funnel" and kept[0]["alert"] == "new_device"
+    # Through the real gate: a refused account presenting a paired cookie, over and over.
+    enable_remote(monkeypatch)
+    device, secret = devices.add("iPhone de test", ip=IP, login=LOGIN, ips=(IP,))
+    intruder = with_cookie(f"{device['id']}.{secret}", login="intrus@example.com")
+    for _ in range(600):
+        assert intruder.get("/api/config").status_code == 403
+    assert [a["alert"] for a in _alert_file_lines()].count("login_change") == 2
+    assert _alert_file_lines()[0]["alert"] == "new_device"
+
+
+def test_concurrent_voice_mints_respect_the_per_device_limit_holds(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    phone, device, _ = paired_client(monkeypatch)
+    minted = []
+
+    def slow(recent="", scope="pc"):
+        time.sleep(0.3)  # OpenAI takes its time: every request is in flight at once
+        minted.append(scope)
+        return {"value": "ek_fake"}
+    monkeypatch.setattr(realtime, "mint", slow)
+
+    def burst(n):
+        with ThreadPoolExecutor(n) as pool:
+            return list(pool.map(lambda _: phone.post("/api/session", json={}).status_code, range(n)))
+    codes = burst(30)
+    assert codes.count(200) == len(minted) == remote.MINTS_PER_WINDOW and codes.count(429) == 30 - 12
+    assert remote.mints_today(device["id"]) == remote.MINTS_PER_WINDOW
+    # 40 a day: a burst at 39 gets one more, not one per request in flight.
+    remote.reset_memory()  # the 10-minute window forgotten (a restart), the day kept
+    for _ in range(27):
+        usage.note_remote_mint(device["id"], time.time() - 3600)
+    phone.headers["X-Jarvis-Token"] = page_token(phone.get("/").text)
+    codes = burst(10)
+    assert codes.count(200) == 1 and remote.mints_today(device["id"]) == remote.MINTS_PER_DAY
+    # A failed mint frees its slot at once.
+    remote.reset_memory()
+    store.save(usage.FILE, {})
+    phone.headers["X-Jarvis-Token"] = page_token(phone.get("/").text)
+
+    def down(recent="", scope="pc"):
+        raise realtime.MintError(502, "OpenAI injoignable.")
+    monkeypatch.setattr(realtime, "mint", down)
+    assert [phone.post("/api/session", json={}).status_code for _ in range(20)] == [502] * 20
+    assert remote._reserved == {}
+
+
+def test_a_snoozed_phone_reminder_stays_the_phones_holds(monkeypatch):
+    shown = []
+    monkeypatch.setattr(desktop, "toast", lambda title, body: shown.append((title, body)))
+    monkeypatch.setattr(desktop, "show_app_window", lambda url: shown.append(("show", url)))
+    monkeypatch.setattr(config, "QUIET_HOURS", "")
+    phone, device, _ = paired_client(monkeypatch)
+    origin = f"app:{device['id']}"
+    r = phone.post("/api/schedules", json={"kind": "reminder", "title": "Sortir le pain", "text": "Sortir le pain",
+                                           "delay_minutes": 1})
+    item = r.json()["item"]
+    assert r.status_code == 200 and item["via"] == origin
+    scheduler.tick(now=item["due"] + 1)
+    assert [i["via"] for i in inbox.pending(via=None)] == [origin] and shown == []
+    # « +10 min » on the phone: the copy is still the phone's...
+    r = phone.post(f"/api/schedules/{item['id']}/snooze", json={"minutes": 10})
+    copy = r.json()["item"]
+    assert r.status_code == 200 and copy["via"] == origin
+    # ...so when it goes off, the PC neither toasts it nor keeps it for its own page.
+    scheduler.tick(now=copy["due"] + 1)
+    assert [i["via"] for i in inbox.pending(via=None)] == [origin, origin]
+    assert inbox.pending(via="pc") == [] and shown == []
+    # Snoozing it again moves that same copy, still the phone's.
+    r = phone.post(f"/api/schedules/{copy['id']}/snooze", json={"minutes": 10})
+    assert r.json()["item"]["via"] == origin
+
+
+def test_one_waiting_pairing_request_per_address_even_when_concurrent_holds(monkeypatch, pc):
+    from concurrent.futures import ThreadPoolExecutor
+    enable_remote(monkeypatch)
+    monkeypatch.setattr(tailscale, "whois", lambda ip: time.sleep(0.5) or {})  # whois runs outside the lock
+    assert pc.post("/api/remote/pairing", json={"open": True}).status_code == 200
+    node = remote_client(ip="100.64.0.42")
+    with ThreadPoolExecutor(3) as pool:
+        codes = list(pool.map(lambda n: node.post("/api/remote/pair-request", json={"name": f"Faux {n}"}).status_code,
+                              range(3)))
+    assert codes == [200, 200, 200]
+    assert [r["ip"] for r in remote.pairing_requests() if r["status"] == "waiting"] == ["100.64.0.42"]
+    # The real iPhone still finds a free place.
+    assert remote_client().post("/api/remote/pair-request", json={"name": "iPhone"}).status_code == 200
+
+
+def test_changing_the_allowed_account_or_name_ends_the_old_sessions_holds(monkeypatch):
+    phone_client, device, _ = paired_client(monkeypatch)
+    phone = remote.Caller(kind="app", device_id=device["id"], ip=IP, login=LOGIN, name="iPhone de test")
+
+    async def scenario(change, cut):
+        pc_stream = await opened("page-pc")
+        phone_stream = await opened("", phone)
+        change()
+        marker = events.publish("task", {"id": "t1", "title": "Secret", "prompt": "Données privées"})
+        if cut:
+            assert await asyncio.wait_for(_drain(phone_stream), 2) == []
+        else:
+            assert (await until(phone_stream, marker))[-1][0] == marker
+            await phone_stream.aclose()
+        assert (await until(pc_stream, marker))[-1][0] == marker
+        await pc_stream.aclose()
+    # Switched on again with the same name and account: nothing ends.
+    asyncio.run(scenario(lambda: remote.set_enabled(True, host=REMOTE_HOST, login=LOGIN), cut=False))
+    assert phone_client.get("/api/config").status_code == 200
+    # Another account: the old one's stream ends at once and its page tokens die.
+    asyncio.run(scenario(lambda: remote.set_enabled(True, host=REMOTE_HOST, login="autre@example.com"), cut=True))
+    assert remote._tokens == {}
+    # Back to this account, then another Serve name: the same.
+    remote.set_enabled(True, host=REMOTE_HOST, login=LOGIN)
+    phone_client.headers["X-Jarvis-Token"] = page_token(phone_client.get("/").text)
+    asyncio.run(scenario(lambda: remote.set_enabled(True, host="autre-pc.tail0000.ts.net"), cut=True))
+    assert remote._tokens == {}
+
+
+def test_equal_pc_and_serve_ports_never_make_the_pc_page_remote_holds(monkeypatch):
+    """JARVIS_PORT=8789 left over in .env: the PC's page stays the PC's, a proxy
+    header there is still refused, and the Serve listener never takes that port."""
+    monkeypatch.setattr(config, "PORT", 8789)
+    monkeypatch.setattr(config, "REMOTE_PORT", 8789)
+    out = listener.start()
+    assert out == {"running": False, "port": 8789, "error": "JARVIS_REMOTE_PORT doit différer de JARVIS_PORT."}
+    local = TestClient(server.app, base_url="http://127.0.0.1:8789")
+    page = local.get("/")
+    assert page.status_code == 200 and page_token(page.text) == security.TOKEN
+    assert local.get("/api/config", headers=AUTH).json()["remote"] is False
+    enable_remote(monkeypatch)
+    r = remote_client(token="x").get("/api/config")
+    assert r.status_code == 403 and r.json()["detail"] == remote.T_PROXY
+
+
+def test_an_impossible_serve_port_is_refused_in_french_holds(monkeypatch):
+    monkeypatch.setattr(remote, "READY", True)
+    monkeypatch.setattr(config, "DAILY_BUDGET_USD", 5.0)
+    for port in (87890, 65536, 0, -1):
+        monkeypatch.setattr(config, "REMOTE_PORT", port)
+        out = listener.start()
+        assert out["running"] is False and out["error"] == remote.T_BAD_PORT, port
+        with pytest.raises(remote.RemoteError, match=re.escape(remote.T_BAD_PORT)):
+            remote.set_enabled(True, host=REMOTE_HOST, login=LOGIN)
+        assert remote.is_enabled() is False
+        # A switch left on with such a port never stops JARVIS from starting.
+        store.save(remote.REMOTE_FILE, {"enabled": True, "host": REMOTE_HOST, "logins": [LOGIN]})
+        listener.start_if_enabled()
+        assert listener.state()["running"] is False
+        store.save(remote.REMOTE_FILE, {})
+
+
+def test_a_refused_page_explains_itself_without_its_files_holds(monkeypatch):
+    """Steps 1, 2 and 6 to 8 refuse pair.html's own script and styles too: the page
+    they answer with carries its sentence itself, with nothing to load."""
+    def plain(r, text):
+        assert r.status_code == 403 and r.headers["content-type"].startswith("text/html"), r.text[:200]
+        assert text in r.text and "<script" not in r.text and "<link" not in r.text
+        assert r.headers["content-security-policy"] == remote.CSP
+    on_pc_port = TestClient(server.app, base_url="http://127.0.0.1:8788")
+    for headers in ({"Via": "1.1 antivirus"}, {"X-Forwarded-For": "127.0.0.1"}, {"Forwarded": "for=127.0.0.1"}):
+        plain(on_pc_port.get("/", headers={**AUTH, **headers}), remote.T_PROXY)
+        assert on_pc_port.get("/static/js/pair.js", headers=headers).status_code == 403
+    plain(remote_client(extra={"Tailscale-Funnel-Request": "?1"}).get("/"), remote.T_FUNNEL)
+    enable_remote(monkeypatch)
+    for kw in ({"host": "ancien-pc.tail0000.ts.net"}, {"ip": "8.8.8.8"}, {"extra": {"X-Forwarded-Proto": "http"}}):
+        plain(remote_client(**kw).get("/"), remote.T_ADDRESS)
+        r = remote_client(**kw).get("/api/config")
+        assert r.status_code == 403 and r.json()["detail"] == remote.T_REFUSED

@@ -184,19 +184,43 @@ def test_toast_only_kinds_never_reach_the_hooks(seen):
 
 
 def test_dedupe_per_kind_and_device_or_address(seen, clock):
-    funnel = "Requête refusée venant d'internet (Funnel) : vérifiez Tailscale."
+    failures = "Échecs répétés d'authentification depuis 100.101.102.103 : bloqué 15 minutes."
     other = remote.Caller(kind="unpaired", ip="100.64.0.9")
-    audit.alert("funnel", funnel, PHONE)
-    audit.alert("funnel", funnel, PHONE)          # same device within 10 minutes: silent
-    audit.alert("funnel", funnel, other)          # another address: told
+    audit.alert("auth_failures", failures, PHONE)
+    audit.alert("auth_failures", failures, PHONE)    # same device within 10 minutes: silent
+    audit.alert("auth_failures", failures, other)    # another address: told
     audit.alert("login_change", "Compte Tailscale inattendu pour « iPhone de test » : refusé.", PHONE)  # another kind
-    assert [k for k, _ in seen["hooks"]] == ["funnel", "funnel", "login_change"]
+    assert [k for k, _ in seen["hooks"]] == ["auth_failures", "auth_failures", "login_change"]
     clock["t"] += 601
-    audit.alert("funnel", funnel, PHONE)          # the window passed
-    assert [k for k, _ in seen["hooks"]] == ["funnel", "funnel", "login_change", "funnel"]
+    audit.alert("auth_failures", failures, PHONE)    # the window passed
+    assert [k for k, _ in seen["hooks"]] == ["auth_failures", "auth_failures", "login_change", "auth_failures"]
     assert len(seen["toasts"]) == len(seen["pc"]) == 4
-    # Every one of them is in the record, the silenced one included.
-    assert len([a for a in lines("remote-alerts.jsonl") if a["alert"] == "funnel"]) == 4
+    # The silenced one is counted, not written: one line before that alert's next one.
+    kept = [a for a in lines("remote-alerts.jsonl") if a["alert"] == "auth_failures"]
+    assert [a.get("count") for a in kept] == [None, None, 1, None]
+    assert kept[2] == {"t": kept[2]["t"], "kind": "alert", "alert": "auth_failures", "reason": "throttled",
+                       "count": 1, "text": audit.REPEATS_TEXT}
+
+
+def test_funnel_and_serve_alerts_have_one_window_for_all_callers(seen, clock):
+    """The address a refused Funnel request claims is the caller's own choice."""
+    funnel = "Requête refusée venant d'internet (Funnel) : vérifiez Tailscale."
+    for n in range(50):
+        audit.alert("funnel", funnel, remote.Caller(kind="unpaired", ip=f"203.0.113.{n}"))
+    audit.alert("serve_misconfig", "Tailscale publie JARVIS sur internet (Funnel) : ouvrez Réglages.")
+    audit.alert("serve_misconfig", "Tailscale publie JARVIS sur internet (Funnel) : ouvrez Réglages.", PHONE)
+    assert [k for k, _ in seen["hooks"]] == ["funnel", "serve_misconfig"]
+    assert len(audit._last_alert) == 2
+
+
+def test_the_dedupe_table_never_grows_for_good(seen, clock, monkeypatch):
+    monkeypatch.setattr(audit, "MAX_KEYS", 10)
+    for n in range(30):
+        audit.alert("auth_failures", "x", remote.Caller(kind="unpaired", ip=f"100.64.1.{n}"))
+    clock["t"] += 601
+    for n in range(30):
+        audit.alert("auth_failures", "x", remote.Caller(kind="unpaired", ip=f"100.64.2.{n}"))
+    assert len(audit._last_alert) <= 30 + 1
 
 
 def test_a_device_named_in_the_fields_is_the_dedupe_key(seen):

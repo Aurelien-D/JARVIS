@@ -746,7 +746,8 @@ def recent_fired(hours: float | None = None, now: float | None = None) -> list:
 
 def _remember_fired(payload: dict, now: float):
     entry = {"id": payload["id"], "title": payload.get("title", ""), "text": payload.get("text", ""),
-             "due": now, "fired": now, "late_minutes": payload.get("late_minutes", 0)}
+             "due": now, "fired": now, "late_minutes": payload.get("late_minutes", 0),
+             "via": str(payload.get("via") or "pc")}  # a snoozed copy goes back to whoever set it
     with store.LOCK:
         state = store.load(STATE_FILE, {})
         recent = [r for r in _recent(state) if r["id"] != entry["id"]] + [entry]
@@ -796,7 +797,9 @@ def snooze(ref: str = "last", minutes=10, now: float | None = None, exact: bool 
                     "title": (entry.get("title") or entry.get("text") or "Rappel")[:80],
                     "text": (entry.get("text") or entry.get("title") or "")[:4000],
                     "due": due, "repeat": "none", "profile": "recherche", "complexity": "normale",
-                    "created": now, "snoozed_from": entry["id"]}
+                    "created": now, "snoozed_from": entry["id"],
+                    # Still that device's reminder: the PC never tells a phone's, nor the phone the PC's.
+                    "via": str(entry.get("via") or "pc")}
             all_items.append(item)
             if stored is not None:
                 stored["snoozed_to"] = item["id"]

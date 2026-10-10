@@ -127,7 +127,8 @@ class SessionIn(BaseModel):
 @app.post("/api/session")
 def create_session(request: Request, body: SessionIn | None = None):
     caller = remote.caller_of(request)
-    # A remote voice session needs a daily cap and a free slot; checking never counts.
+    # A remote voice session needs a daily cap and a free slot; checking holds
+    # that slot (concurrent requests can't all pass) but never counts a mint.
     refusal = remote.check_voice(caller)
     if refusal is not None:
         raise HTTPException(*refusal)
@@ -136,7 +137,11 @@ def create_session(request: Request, body: SessionIn | None = None):
         # The PC's call keeps its shape (tests fake mint with recent only).
         data = realtime.mint(recent, scope=caller.kind) if caller.remote else realtime.mint(recent)
     except realtime.MintError as exc:
+        remote.release_voice(caller)  # a failed mint never burns the quota
         raise HTTPException(exc.status, exc.detail) from None
+    except Exception:
+        remote.release_voice(caller)
+        raise
     if caller.remote:
         remote.note_mint(caller)  # counted once OpenAI said yes
     # A session that picks up the last exchanges also keeps their taint (confirm.py).

@@ -219,8 +219,49 @@ def test_serve_status_unreadable_is_unknown(ts):
 
 def test_serve_status_follows_the_remote_port(monkeypatch, ts):
     monkeypatch.setattr(config, "REMOTE_PORT", 8790)
-    assert tailscale.serve_status()["state"] == "wrong_target"  # Serve still aims at 8789
+    assert tailscale.serve_status()["state"] == "absent"  # never published: 8789 is not JARVIS any more
+    remote.note_published(True)
+    assert tailscale.serve_status()["state"] == "wrong_target"  # published: Serve still aims at 8789
     assert tailscale.manual_command() == "tailscale serve --bg --https=443 http://127.0.0.1:8790"
+
+# Another service of the user's, published with Serve: not JARVIS.
+OTHERS = {
+    "nas": {"TCP": {"443": {"HTTPS": True}}, "Web": {f"{DNS}:443": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:5000"}}}}},
+    "nas_funnel": {"TCP": {"443": {"HTTPS": True}}, "AllowFunnel": {f"{DNS}:443": True},
+                   "Web": {f"{DNS}:443": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:5000"}}}}},
+    "ssh": {"TCP": {"2222": {"TCPForward": "127.0.0.1:22"}}},
+    "nas_beside": {"TCP": {"443": {"HTTPS": True}, "8443": {"HTTPS": True}},
+                   "Web": {f"{DNS}:443": OURS, f"{DNS}:8443": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:5000"}}}}},
+}
+
+
+@pytest.mark.parametrize("name, unused, in_use", [
+    ("nas", "absent", "wrong_target"), ("nas_funnel", "absent", "funnel"), ("ssh", "absent", "tcp"),
+    ("nas_beside", "ready", "wrong_target"),
+])
+def test_other_services_count_only_once_remote_access_is_in_use(monkeypatch, ts, name, unused, in_use):
+    """Never switched on nor published: a NAS page or an SSH forward published with
+    Serve is not JARVIS (no error, no alert). Switched on or published: any of them is."""
+    ts.serve = OTHERS[name]
+    assert tailscale.serve_status()["state"] == unused
+    remote.note_published(True)
+    assert tailscale.serve_status()["state"] == in_use
+    remote.note_published(False)
+    monkeypatch.setattr(remote, "is_enabled", lambda: True)
+    assert tailscale.serve_status()["state"] == in_use
+
+
+@pytest.mark.parametrize("config_name, command", [
+    ("funnel", "tailscale funnel --https=443 off"), ("foreground_funnel", "tailscale funnel --https=443 off"),
+    ("tcp", "tailscale serve --tcp=443 off"), ("tcp_tls", "tailscale serve --tls-terminated-tcp=5432 off"),
+    ("wrong_target", "tailscale serve --https=443 off"), ("wrong_path", "tailscale serve --https=443 off"),
+    ("other_port", "tailscale serve --https=8443 off"),
+])
+def test_each_danger_names_the_command_that_removes_just_it(ts, config_name, command):
+    """Never `tailscale serve reset`: it would delete the user's other services too."""
+    ts.serve = SERVE[config_name]
+    detail = tailscale.serve_status()["detail"]
+    assert command in detail and "reset" not in detail
 
 # ---------------------------------------------------------------- publish
 
@@ -369,13 +410,21 @@ def alerts(monkeypatch):
     return seen
 
 
-@pytest.mark.parametrize("config_name", ["funnel", "tcp", "wrong_target"])
-def test_watch_raises_serve_misconfig_even_while_remote_is_off(ts, alerts, config_name):
+@pytest.mark.parametrize("config_name, words", [("funnel", "sur internet (Funnel)"), ("tcp", "relais TCP"),
+                                                ("wrong_target", "cible inattendue")])
+def test_watch_raises_serve_misconfig_even_while_remote_is_off(ts, alerts, config_name, words):
     ts.serve = SERVE[config_name]
     assert remote.is_enabled() is False
     tailscale._watch_once()
     assert [k for k, _ in alerts] == ["serve_misconfig"]
-    assert "Réglages › Accès à distance" in alerts[0][1]
+    assert "Réglages › Accès à distance" in alerts[0][1] and words in alerts[0][1]
+
+
+def test_watch_is_quiet_about_other_services_while_remote_is_unused(ts, alerts):
+    for name in OTHERS:
+        ts.serve = OTHERS[name]
+        tailscale._watch_once()
+    assert alerts == []
 
 
 def test_watch_is_quiet_when_serve_is_fine_or_tailscale_absent(monkeypatch, ts, alerts):

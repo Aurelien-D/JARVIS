@@ -308,7 +308,8 @@ def test_remote_check_reports_serve_state(monkeypatch):
         assert level(state) is None, state  # off: nothing to say
     for state in ("funnel", "tcp", "wrong_target"):
         assert level(state) == "error", state
-        assert "Publier sur Tailscale" in health.check_remote()[0]["fix_fr"]
+        fix = health.check_remote()[0]["fix_fr"]
+        assert "Publier sur Tailscale" in fix and "reset" not in fix  # never a reset of every service
     enabled["value"] = True
     assert level("ready") == "ok"
     assert level("absent") == "warning" and "Réglages › Accès à distance › Publier sur Tailscale" in \

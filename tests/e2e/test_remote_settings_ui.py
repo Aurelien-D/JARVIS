@@ -502,6 +502,27 @@ def test_phone_pause_asks_first_holds(phone, remote_page):
     assert 3500 < remote.paused_until() - time.time() <= 3600
 
 
+def test_a_24_h_pause_says_which_day_it_ends(phone, remote_page):
+    """« jusqu'à 14 h 30 » for a pause of 24 h would read as now: the day is said."""
+    remote_page.click("#topActions button:has-text('Réglages')")
+    remote_page.wait_for_selector("#rm-pause")
+    remote_page.click("#rm-pause")
+    remote_page.click("#remotePause button[value='24']")
+    remote_page.wait_for_selector("[data-key='remote-phone'] .set-status:has-text('en pause jusqu')")
+    text = section(remote_page)
+    assert "Accès à distance en pause jusqu'à demain à " in text and "Seul le PC peut le rallumer avant." in text
+    assert "En pause jusqu'à demain à " in text
+
+
+def test_the_pc_says_which_day_a_pause_ends(pc, jarvis):
+    from jarvis import remote
+    pc.real.switch_on()
+    remote.pause(24, by=remote.PC)
+    open_distance(jarvis)
+    assert "En pause jusqu'à demain à " in section(jarvis)
+    remote.pause(0, by=remote.PC)
+
+
 def test_phone_forget_asks_first(phone, remote_page):
     from jarvis import devices
     remote_page.click("#topActions button:has-text('Réglages')")
