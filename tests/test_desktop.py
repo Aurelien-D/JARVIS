@@ -428,7 +428,8 @@ def test_tray_menu_speaks_french_and_quits_like_the_api(monkeypatch, fake_pystra
     menu = shell.tray_menu(fake_pystray)
     items = {i.text: i for i in menu.items if i is not FakeMenu.SEPARATOR}
     assert list(items) == ["Ouvrir JARVIS", "Parler", "Mot d'éveil (activer ou couper)",
-                           "Ne pas déranger 1 h", "Démarrer avec Windows", "Quitter JARVIS"]
+                           "Ne pas déranger 1 h", "Accès à distance (activer ou couper)",
+                           "Démarrer avec Windows", "Quitter JARVIS"]
     assert [i.text for i in items.values() if i.default] == ["Ouvrir JARVIS"]  # a click on the icon
     icon = FakeIcon("jarvis", None, "JARVIS")
 
@@ -452,6 +453,12 @@ def test_tray_menu_speaks_french_and_quits_like_the_api(monkeypatch, fake_pystra
     assert items["Démarrer avec Windows"].checked is False
     items["Démarrer avec Windows"].click(icon)
     assert autostart == [True]
+
+    # Remote access: off, and this version refuses to switch it on (the toast says why).
+    assert items["Accès à distance (activer ou couper)"].checked is False
+    items["Accès à distance (activer ou couper)"].click(icon)
+    assert icon.notes[-1] == ("JARVIS", "Accès à distance pas encore disponible dans cette version.")
+    assert items["Accès à distance (activer ou couper)"].checked is False
 
     items["Quitter JARVIS"].click(icon)
     assert quits == [1] and icon.stopped.is_set()
