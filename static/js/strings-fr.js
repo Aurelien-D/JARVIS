@@ -203,6 +203,13 @@ export const T = typeset({
     lockCancelled: "Verrouillage annulé.",
     lockCancel: "Annuler le verrouillage",
     dismiss: "Refuser la demande et fermer la carte",
+    // Who may launch a request (spec 4.11): the other device sees [Annuler] and this note.
+    fromPc: "Demandée sur le PC : elle se lance sur le PC.",
+    fromPhone: "Demandée depuis l'iPhone : elle se lance sur l'iPhone.",
+    // open_url from the phone: a card with the link, nothing opens on the PC.
+    linkTitle: "Lien à ouvrir",
+    openLink: "Ouvrir le lien",
+    linkTainted: "Lien proposé après des données externes : vérifiez-le.",
   },
   delivery: {
     badge: (n) => (n > 1 ? `${n} messages en attente · cliquez pour les écouter`
