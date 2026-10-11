@@ -133,6 +133,7 @@ def app_server(tmp_path_factory):
     mp.setattr(health, "run_checks", lambda refresh=False: [])
     # Never ntfy, OpenAI (Siri) or a real Tailscale.
     mp.setattr(notify, "TRANSPORT", httpx.MockTransport(_no_network))
+    mp.setattr(notify, "RETRY_S", ())
     mp.setattr(raccourci, "TRANSPORT", httpx.MockTransport(_no_network))
     mp.setattr(tailscale, "RUN", _no_tailscale)
     mp.setattr(tailscale, "exe_path", lambda: None)

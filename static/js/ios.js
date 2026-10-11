@@ -13,11 +13,13 @@ import { $, bus, isIOS, state } from "./core.js";
 import { unlock } from "./audio-fx.js";
 import { clearError } from "./hud.js";
 import { connect, primeAudio, sleep } from "./voice.js";
-import { T } from "./strings-fr.js";
+import { T, explainError } from "./strings-fr.js";
 
 let lock = null;           // the WakeLockSentinel while live
 let asking = null;         // a wake lock request on its way
 let pausedAt = 0;          // when this page paused a live conversation (hidden)
+let resuming = false;      // the automatic resume is on its way
+let refusal = "";          // why it was refused (said in the banner, beside [Reprendre])
 let banner = null, bannerText = null, resumeBtn = null;
 
 const applies = () => state.remote || isIOS();
@@ -111,10 +113,21 @@ async function onVisible() {
   const limit = (Number(state.config?.idle_minutes) || 0) * 60e3;
   if (limit > 0 && away > limit) { showBanner("paused", T.ios.paused, { resume: true }); return; }
   showBanner("paused", T.ios.paused);
-  await connect({ reconnect: true });
+  resuming = true;
+  refusal = "";
+  try {
+    await connect({ reconnect: true });
+  } finally {
+    resuming = false;
+  }
   // On its way (or retrying): the banner goes once live. Refused (the
-  // microphone, most often): a tap is what iOS wants to open it again.
-  if (!state.wantLive && !awake()) showBanner("paused", T.ios.paused, { resume: true });
+  // microphone, most often): a tap is what iOS wants to open it again. One
+  // action only: the banner says why, beside [Reprendre]; the status line's
+  // own [Réessayer] for the same thing goes.
+  if (!state.wantLive && !awake()) {
+    if (refusal) clearError();
+    showBanner("paused", refusal || T.ios.paused, { resume: true });
+  }
 }
 
 /* [Reprendre]: a tap, like the orb's (the sound unlocked inside it); the
@@ -143,6 +156,7 @@ export function init() {
       if (banner && !banner.hidden && banner.dataset.kind === "paused") resumeBtn.hidden = false;
     }
   });
+  bus.on("error", (err) => { if (resuming) refusal = explainError(err); });
   bus.on("mic:interrupted", ({ interrupted } = {}) => {
     if (interrupted && awake()) showBanner("mic", T.ios.micInterrupted);
     else hideBanner("mic");

@@ -582,6 +582,7 @@ def _converse(job: _Job) -> str:
         items += output
         for call in calls:
             if not _may_act(job):
+                job.cancelled.set()  # paused or switched off counts as cancelled: no « réponse prête » either
                 return T.stopped
             result = _call_tool(job, call)
             items.append({"type": "function_call_output", "call_id": str(call.get("call_id") or ""),
@@ -606,7 +607,7 @@ def _work(job: _Job) -> None:
                 _WORKERS.discard(job)
                 job.done.set()
         if late:  # nobody waits on this answer any more: the iPhone is told it is ready
-            if not job.cancelled.is_set():
+            if _may_act(job):  # not if access was paused, switched off or its device removed meanwhile
                 _tell_late(job)
             with _lock:
                 _WORKERS.discard(job)

@@ -121,9 +121,11 @@ const CAMERA = {
 function explainError(err) {
   const E = T.error, name = (err && err.name) || "", where = (err && err.where) || "";
   if (where === "mic") {
-    if (name === "NotAllowedError" || name === "SecurityError") return E.NotAllowedError;
+    // The iPhone has no address bar to click, nor Windows settings: its own words.
+    const phone = state.remote || isIOS();
+    if (name === "NotAllowedError" || name === "SecurityError") return phone ? T.ios.micBlocked : E.NotAllowedError;
     if (name === "NotFoundError" || name === "OverconstrainedError") return E.NotFoundError;
-    if (name === "NotReadableError" || name === "AbortError") return E.NotReadableError;
+    if (name === "NotReadableError" || name === "AbortError") return phone ? T.ios.micBusy : E.NotReadableError;
   }
   if (name === "AbortError" || name === "TimeoutError") return E.timeout;
   if (where === "server") return err.status ? err.message : E.server; // our server already says it in French

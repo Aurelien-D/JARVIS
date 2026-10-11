@@ -317,6 +317,45 @@ def test_inbox_is_split_by_origin_holds(monkeypatch, windows):
     events.publish("task", {"id": "t-pc", "title": "Rapport", "status": "done"})
     assert windows == [("toast", "Tâche « Rapport »", "Terminée.")]
 
+
+
+def test_every_reminder_and_siri_result_reaches_the_phone_holds(monkeypatch, windows):
+    """ntfy is the only way a Siri reminder or result reaches monsieur (the PC
+    and the app never tell siri:* items): two reminders due in one scheduler
+    tick both go out, and two task results within the rate window are both
+    told (the failure first of all), never dropped."""
+    import httpx
+
+    from jarvis import devices, notify, scheduler
+    from remote_helpers import paired_client
+    sent = []
+
+    def ntfy(request):
+        sent.append(request.content.decode("utf-8"))
+        return httpx.Response(200, json={"id": "x"})
+    monkeypatch.setattr(notify, "TRANSPORT", httpx.MockTransport(ntfy))
+    monkeypatch.setattr(notify, "RATE_S", 0.3)
+    monkeypatch.setattr(config, "NTFY", True)
+    monkeypatch.setattr(config, "NTFY_REMINDER_TEXT", True)
+    notify.topic()
+    _phone, device, _token = paired_client(monkeypatch)
+    key_id, _secret = devices.add_siri_key(device["id"])
+    now = time.time()
+    common = {"repeat": "none", "profile": "recherche", "complexity": "normale", "created": now - 100, "due": now - 5}
+    store.save(scheduler.FILE, [
+        {**common, "id": "aaaaaa", "kind": "reminder", "title": "PC", "text": "Arroser les plantes", "via": "pc"},
+        {**common, "id": "bbbbbb", "kind": "reminder", "title": "Siri", "text": "Appeler le garage",
+         "via": f"siri:{key_id}"},
+    ])
+    scheduler.tick(now)
+    notify._drain()
+    assert sorted(sent) == ["JARVIS · rappel : Appeler le garage", "JARVIS · rappel : Arroser les plantes"]
+    sent.clear()
+    events.publish("task", {"id": "t-s1", "title": "Veille", "status": "done", "via": f"siri:{key_id}"})
+    events.publish("task", {"id": "t-s2", "title": "Trajet", "status": "error", "via": f"siri:{key_id}"})
+    notify._drain()
+    assert sent == ["JARVIS : tâche terminée.", "JARVIS : une tâche n'a pas abouti."]
+
 # ---------------------------------------------------------------- P1: ten minutes at most
 
 def test_remote_replay_is_limited_to_ten_minutes_holds(monkeypatch):

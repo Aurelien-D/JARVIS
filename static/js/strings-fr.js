@@ -788,8 +788,9 @@ export const T = typeset({
     revokeLabel: (name) => `Retirer ${name}`,
     revokeTitle: (name) => `Retirer « ${name} » ?`,
     revokeAsk: "Cet appareil ne pourra plus joindre JARVIS : pour l'utiliser à nouveau, il faudra l'associer depuis ce PC.",
-    revokeWarn: "Ses clés Siri et ses tâches en cours s'arrêtent aussi.",
+    revokeWarn: "Ses clés Siri et ses tâches en cours s'arrêtent aussi. Si les notifications ntfy servent, leur sujet change : il ne les reçoit plus, et vos autres iPhone devront s'abonner au nouveau sujet.",
     revoked: (name, count) => `« ${name} » retiré. Tâches arrêtées : ${count}.`,
+    topicRenewed: "Nouveau sujet de notifications : sur vos autres iPhone, abonnez-vous-y (Réglages › Notifications).",
     pairedOn: (date) => `Associé le ${date}`,
     lastSeen: (when) => `vu ${when}`,
     neverSeen: "pas encore vu",
@@ -926,7 +927,7 @@ export const T = typeset({
     title: "Raccourci Siri",
     create: "Créer une clé Siri",
     creating: "Création…",
-    createHelp: "Une clé laisse le raccourci « Jarvis » de cet iPhone parler à JARVIS avec Siri : rappels, recherches web, état et annulation de ses tâches.",
+    createHelp: "Une clé laisse le raccourci « Jarvis » de cet iPhone parler à JARVIS avec Siri : rappels, recherches web, état et annulation de ses tâches. Siri ne répond qu'avec un plafond de dépense par jour (Réglages › Coûts).",
     created: (time) => `Clé créée. Sur l'iPhone, avant ${time} : Réglages › Accès à distance › Assistant raccourci.`,
     maxKeys: (n) => `${n} clés au plus par iPhone : révoquez-en une pour en créer une autre.`,
     keyLabel: (id) => `Clé ${id}`,
@@ -985,6 +986,9 @@ export const T = typeset({
     resume: "Reprendre",
     dismiss: "Fermer ce message",
     micInterrupted: "Micro interrompu (appel, Siri ou autre app) : JARVIS vous entend de nouveau dès qu'iOS le rend.",
+    // The microphone refused or busy, on the iPhone (no address bar, no Windows): explainError, voice.js.
+    micBlocked: "Micro refusé : réessayez et autorisez le micro quand iOS le demande. S'il ne le demande plus : Réglages de l'iPhone › Safari › Micro.",
+    micBusy: "Micro occupé par un appel ou une autre app : réessayez une fois libéré.",
     // Réglages › Écoute on iOS: Safari cannot choose the output (settings.js).
     speakerNote: "Sur l'iPhone, iOS choisit la sortie du son : haut-parleur, écouteurs ou AirPlay (Centre de contrôle).",
   },
@@ -1061,7 +1065,19 @@ const ERROR_KINDS = {
 };
 
 let ours = null;
-const OURS = () => ours || (ours = new Set(Object.values(T.error).filter(v => typeof v === "string")));
+const OURS = () => ours || (ours = new Set([...Object.values(T.error), T.ios.micBlocked, T.ios.micBusy]
+  .filter(v => typeof v === "string")));
+
+/* The paired iPhone's page, or any page on iOS: the microphone is not
+   unblocked from an address bar or from Windows there. (This module stays
+   pure: node runs it, without a document.) */
+export function onPhone() {
+  const doc = typeof document !== "undefined" ? document : null;
+  const nav = typeof navigator !== "undefined" ? navigator : null;
+  if (doc?.querySelector?.('meta[name="jarvis-remote"]')?.getAttribute("content") === "1") return true;
+  return !!nav && (/iPhone|iPad|iPod/.test(nav.userAgent || "")
+    || (nav.platform === "MacIntel" && nav.maxTouchPoints > 1));
+}
 
 /* The French message for an error (design spec §11 errors table): a bus error
    {kind, message, detail}, an Error or DOMException, or a string. A message
@@ -1080,9 +1096,11 @@ export function explainError(err) {
   // "(OpenAI 429)" to the same words): kept as is, diagnosis included.
   const bare = msg.replace(/\s*\(OpenAI \d{3}\)\s*$/, "");
   if (bare && OURS().has(fr(bare))) return fr(msg);
-  if (/^(NotAllowedError|SecurityError|PermissionDeniedError)$/.test(name)) return T.error.NotAllowedError;
+  if (/^(NotAllowedError|SecurityError|PermissionDeniedError)$/.test(name)) {
+    return onPhone() ? T.ios.micBlocked : T.error.NotAllowedError;
+  }
   if (/^(NotFoundError|OverconstrainedError|DevicesNotFoundError)$/.test(name)) return T.error.NotFoundError;
-  if (/^(NotReadableError|TrackStartError)$/.test(name)) return T.error.NotReadableError;
+  if (/^(NotReadableError|TrackStartError)$/.test(name)) return onPhone() ? T.ios.micBusy : T.error.NotReadableError;
   if (name === "AbortError" || name === "TimeoutError") return T.error.timeout;
   if (/OPENAI_API_KEY|cl[ée] (openai )?(absente|manquante)|no api key/i.test(msg)) return T.error.noKey;
   const openai = /OpenAI (\d{3})\b/.exec(msg);

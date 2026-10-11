@@ -286,8 +286,41 @@ def test_quiet_hours_and_dnd_hold_tasks_and_pendings_but_not_reminders_and_alert
         assert sent(ntfy) == ["JARVIS : un rappel.", alert_bodies()["remote_complet"]], quiet
     inbox.set_dnd(None)
     monkeypatch.setattr(config, "QUIET_HOURS", "")
+    # The task held back (not the confirmation: it has expired by then) is told
+    # with the first one after: never lost, never told twice.
     push("task", task("done", "after"))
+    assert sent(ntfy)[-1] == "JARVIS : 2 tâches terminées."
+    push("task", task("done", "next"))
     assert sent(ntfy)[-1] == "JARVIS : tâche terminée."
+
+
+def test_task_results_held_by_quiet_hours_are_told_once_they_end_holds(ntfy, monkeypatch):
+    """A Siri research that ends at 22:40 (quiet hours from 22:30): Siri said
+    « je vous préviens », so the phone hears it once quiet hours are over."""
+    monkeypatch.setattr(notify, "RATE_S", 0)
+    monkeypatch.setattr(notify, "HELD_CHECK_S", 0.05)
+    monkeypatch.setattr(config, "QUIET_HOURS", quiet_range())
+    push("task", task("done", "nuit-1", via="siri:k_0123456789abcdef"))
+    push("task", task("error", "nuit-2", via=f"app:{DEVICE}"))
+    push("task", task("done", "nuit-1", via="siri:k_0123456789abcdef"))  # the same status again: once
+    time.sleep(0.2)  # the check runs, finds quiet hours, waits again
+    assert sent(ntfy) == []
+    monkeypatch.setattr(config, "QUIET_HOURS", "")
+    end = time.time() + 5
+    while not ntfy.requests and time.time() < end:
+        time.sleep(0.02)
+    assert sent(ntfy) == ["JARVIS : 2 tâches finies, au moins une n'a pas abouti."]
+    time.sleep(0.2)
+    assert sent(ntfy) == ["JARVIS : 2 tâches finies, au moins une n'a pas abouti."]  # told once
+    # Switched off meanwhile: what was held is forgotten, nothing goes out.
+    monkeypatch.setattr(config, "QUIET_HOURS", quiet_range())
+    push("task", task("done", "nuit-3", via="siri:k_0123456789abcdef"))
+    monkeypatch.setattr(config, "NTFY", False)
+    monkeypatch.setattr(config, "QUIET_HOURS", "")
+    time.sleep(0.3)
+    monkeypatch.setattr(config, "NTFY", True)
+    push("task", task("done", "jour", via="siri:k_0123456789abcdef"))
+    assert sent(ntfy)[-1] == "JARVIS : tâche terminée." and len(ntfy.requests) == 2
 
 
 def test_only_away_follows_the_leader_page_the_attention_and_idle_time(ntfy, monkeypatch):
@@ -343,22 +376,83 @@ def test_each_task_status_and_confirmation_is_told_once(ntfy, monkeypatch):
                           "JARVIS : une confirmation vous attend."]
 
 
+def close_windows():
+    """Ten seconds later: each window's counted message goes out now."""
+    with notify._lock:
+        due = list(notify._timers.items())
+    for kind, timer in due:
+        timer.cancel()
+        notify._tell_later(kind)
+    notify._drain()
+
+
 def test_one_message_per_kind_every_ten_seconds_but_alerts_are_never_rate_limited(ntfy, monkeypatch):
-    for i in range(3):
-        push("task", task("done", f"r{i}"))
-        push("reminder", reminder())
-        push("pending", pending(f"r{i}"))
+    for i in range(3):  # (push would wait for the window to close)
+        events.publish("task", task("done", f"r{i}"))
+        events.publish("reminder", reminder())
+        events.publish("pending", pending(f"r{i}"))
     for _ in range(5):  # never deduplicated by audit: each one reaches the phone
-        alert("remote_complet")
-    alert("new_device")
-    bodies = sent(ntfy)
-    assert bodies.count("JARVIS : tâche terminée.") == 1 and bodies.count("JARVIS : un rappel.") == 1
-    assert bodies.count("JARVIS : une confirmation vous attend.") == 1
-    assert bodies.count(alert_bodies()["remote_complet"]) == 5 and bodies.count(alert_bodies()["new_device"]) == 1
-    for kind in list(notify._last):  # ten seconds later
+        audit.alert("remote_complet", "Alerte de test.", caller=PHONE)
+    audit.alert("new_device", "Alerte de test.", caller=PHONE)
+    with notify._lock:
+        workers = list(notify._workers)
+    for worker in workers:
+        worker.join(5)
+    first = list(ntfy.bodies)
+    assert first.count("JARVIS : tâche terminée.") == 1 and first.count("JARVIS : une confirmation vous attend.") == 1
+    # Reminders are never rate-limited: monsieur set each one.
+    assert first.count("JARVIS : un rappel.") == 3
+    assert first.count(alert_bodies()["remote_complet"]) == 5 and first.count(alert_bodies()["new_device"]) == 1
+    assert set(notify._timers) == {"task", "pending"}
+    # What the window refused is counted, never dropped: one message when it closes.
+    close_windows()
+    assert sorted(ntfy.bodies[len(first):]) == ["JARVIS : 2 confirmations vous attendent.",
+                                                "JARVIS : 2 tâches terminées."]
+    # A failure counted with the rest is never hidden by a success.
+    for kind in list(notify._last):
         notify._last[kind] -= notify.RATE_S + 0.1
-    push("task", task("done", "later"))
-    assert sent(ntfy).count("JARVIS : tâche terminée.") == 2
+    for task_id, status in (("a", "done"), ("b", "error"), ("c", "done")):
+        events.publish("task", task(status, task_id))
+    close_windows()
+    assert ntfy.bodies[-2:] == ["JARVIS : tâche terminée.", "JARVIS : 2 tâches finies, au moins une n'a pas abouti."]
+
+
+def test_the_window_sends_what_it_counted_by_itself(ntfy, monkeypatch):
+    monkeypatch.setattr(notify, "RATE_S", 0.3)
+    started = time.monotonic()
+    push("task", task("done", "w1"))
+    events.publish("task", task("error", "w2"))
+    assert sent(ntfy) == ["JARVIS : tâche terminée.", "JARVIS : une tâche n'a pas abouti."]
+    assert time.monotonic() - started >= 0.25 and notify._timers == {} and notify._later == {}
+    # Notifications switched off before the window closed: nothing more goes out.
+    events.publish("task", task("done", "w3"))
+    monkeypatch.setattr(config, "NTFY", False)
+    assert sent(ntfy) == ["JARVIS : tâche terminée.", "JARVIS : une tâche n'a pas abouti."]
+
+
+def test_a_message_failing_on_the_way_is_tried_again(ntfy, monkeypatch, caplog):
+    monkeypatch.setattr(notify, "RETRY_S", (0, 0))
+    answers = [httpx.ConnectError, httpx.ReadTimeout]
+
+    def flaky(request):
+        ntfy.requests.append(request)
+        if answers:
+            raise answers.pop(0)("panne", request=request)
+        return httpx.Response(200, json={"id": "x"})
+    monkeypatch.setattr(notify, "TRANSPORT", httpx.MockTransport(flaky))
+    alert("new_device")
+    assert ntfy.bodies == [alert_bodies()["new_device"]] * 3 and notify._status["last_error"] == ""
+    # A 5xx too, but never a refusal (4xx), and at most len(RETRY_S) more tries.
+    ntfy.requests.clear()
+    monkeypatch.setattr(notify, "TRANSPORT", httpx.MockTransport(ntfy))
+    ntfy.status = 503
+    push("reminder", reminder())
+    assert len(ntfy.requests) == 3 and notify._status["last_error"] == notify.ERR_STATUS.format(code=503)
+    ntfy.requests.clear()
+    ntfy.status = 403
+    push("reminder", reminder())
+    assert len(ntfy.requests) == 1
+    assert "nouvel essai" in caplog.text and "jarvis-" not in caplog.text.replace("jarvis-…", "")
 
 
 def test_remote_warnings_phone_pendings_and_other_events_are_not_told_by_on_event(ntfy, monkeypatch):

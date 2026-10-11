@@ -232,7 +232,8 @@ def test_devices_rename_revoke_and_forget(pc, monkeypatch, remote_events):
     assert "__Host-jarvis=; Max-Age=0" in r.headers["set-cookie"]
     assert devices.is_revoked(device["id"])
     other, second, _ = paired_client(monkeypatch, name="Second")
-    assert pc.delete(f"/api/remote/devices/{second['id']}").json() == {"ok": True, "cancelled_tasks": 0}
+    assert pc.delete(f"/api/remote/devices/{second['id']}").json() == {"ok": True, "cancelled_tasks": 0,
+                                                                         "topic_renewed": False}
     assert other.get("/api/config").status_code == 401
 
 

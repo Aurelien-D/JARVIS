@@ -74,7 +74,9 @@ def _schedule(a: dict, ctx) -> dict:
                          repeat=a.get("repeat") or "none",
                          profile=a.get("profile") or "recherche",
                          complexity=a.get("complexity") or "normale",
-                         days=a.get("days"), allow_complet=allowed, via=origin)
+                         days=a.get("days"), allow_complet=allowed, via=origin,
+                         # Asked after outside content: its words never reach a later prompt.
+                         tainted=confirm.is_tainted(getattr(ctx, "session_id", None)))
     return {"ok": True, "scheduled": scheduler.describe(item)}
 
 

@@ -173,9 +173,10 @@ SCHEMA = [
             "Les suivantes attendent leur tour.", minimum=1, maximum=10, live=TASK),
     # ---------------------------------------------------------------- Coûts
     Setting("daily_budget_usd", "DAILY_BUDGET_USD", "float", "couts", "Plafond de dépense par jour",
-            "Voix et tâches comprises. Une fois atteint, le mot d'éveil n'ouvre plus de "
+            "Voix, Siri et tâches comprises. Une fois atteint, le mot d'éveil n'ouvre plus de "
             "conversation payante, aucune nouvelle tâche Claude ne démarre et le briefing du "
-            "matin est lu par la voix du navigateur. 0 = pas de plafond.",
+            "matin est lu par la voix du navigateur. 0 = pas de plafond (l'accès à distance "
+            "et Siri en demandent un).",
             minimum=0, maximum=1000, step=1, unit="$"),
     # ---------------------------------------------------------------- Notifications (ntfy, notify.py)
     Setting("ntfy", "NTFY", "bool", "notifications", "Notifications sur l'iPhone (ntfy)",

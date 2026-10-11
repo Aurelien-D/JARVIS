@@ -948,6 +948,22 @@ def revoke_device(device_id: str, *, by: Caller = PC) -> int:
     return cancelled
 
 
+def renew_notify_topic() -> bool:
+    """A removed device's ntfy app may still listen to the topic (the paired
+    app reads it to subscribe): a new one, when there is one. Removed from
+    the PC, or for a copied secret; never when a phone forgets itself (only
+    the PC renews the topic). True when it changed; never raises."""
+    from . import notify
+    try:
+        if not notify.topic(create=False):
+            return False
+        notify.renew_topic()
+    except Exception:  # noqa: BLE001 - the revocation went through regardless
+        log.warning("JARVIS: sujet des notifications non renouvelé")  # never the topic itself
+        return False
+    return True
+
+
 def origin_active(origin: str) -> bool:
     """Is the device or key behind this origin still allowed?"""
     kind = kind_of(origin)
@@ -1196,6 +1212,7 @@ def _bound_to_node(device: dict, ip: str, caller: Caller) -> bool:
                  name=device["name"])
     if node and device["node_id"]:
         revoke_device(device["id"], by=who)
+        renew_notify_topic()  # whoever copied the secret may have read the topic too
         audit.alert("secret_copied", f"Secret de « {device['name']} » utilisé depuis une autre machine : "
                                      "appareil retiré.", who)
     else:  # whois could not tell: refused, kept

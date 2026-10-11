@@ -636,7 +636,7 @@ async function revoke(v, d) {
   try {
     const r = await api(`/api/remote/devices/${encodeURIComponent(d.id)}`, { method: "DELETE" });
     v.st.devices = (v.st.devices || []).filter(x => x.id !== d.id);
-    note(v, "devices", R.revoked(name, String(r.cancelled_tasks || 0)));
+    note(v, "devices", R.revoked(name, String(r.cancelled_tasks || 0)) + (r.topic_renewed ? ` ${R.topicRenewed}` : ""));
     renderDevices(v);
     refresh(v);
   } catch (err) {

@@ -421,7 +421,8 @@ def test_wave_b_ntfy_siri_and_the_iphone_page_through_the_real_gate(remote_on_so
     ntfy, openai = FakeNtfy(), FakeResponses()
     monkeypatch.setattr(notify, "TRANSPORT", httpx.MockTransport(ntfy))
     monkeypatch.setattr(raccourci, "TRANSPORT", httpx.MockTransport(openai))
-    monkeypatch.setattr(notify, "RATE_S", 0)  # this scenario sends two of a kind within seconds
+    # Two of a kind within the window: the second is counted, then told when it closes (never dropped).
+    monkeypatch.setattr(notify, "RATE_S", 3)
     monkeypatch.setattr(config, "NTFY", True)
     monkeypatch.setattr(config, "NTFY_SERVER", NTFY_SERVER)
     # « Seulement si je ne suis pas au PC », and monsieur is at the PC: a JARVIS
@@ -537,7 +538,7 @@ def test_wave_b_ntfy_siri_and_the_iphone_page_through_the_real_gate(remote_on_so
         assert 0 < siri_task["budget_usd"] <= tasks.SIRI_TASK_BUDGET_USD
         # Its result reaches the iPhone by ntfy, monsieur at the PC or not; neither page speaks it.
         until(lambda: tasks.TASKS[siri_task["id"]]["status"] == "done", 20)
-        until(lambda: ntfy.bodies.count(notify.TASK_DONE) == 2)
+        until(lambda: ntfy.bodies.count(notify.TASK_DONE) == 2, 15)
         pc.wait_for_timeout(300)
         assert not [t for t in pc.evaluate("__spoken") + phone.evaluate("__spoken") if "Prévisions" in t]
 

@@ -66,6 +66,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "NTFY_REMINDER_TEXT", False)
     # Never ntfy, OpenAI or a real Tailscale on a developer PC (their own tests re-patch these).
     monkeypatch.setattr(notify, "TRANSPORT", httpx.MockTransport(_no_network))
+    monkeypatch.setattr(notify, "RETRY_S", ())  # no sending thread outlives its test (their own tests re-patch it)
     monkeypatch.setattr(raccourci, "TRANSPORT", httpx.MockTransport(_no_network))
     monkeypatch.setattr(tailscale, "RUN", _no_tailscale)
     monkeypatch.setattr(tailscale, "exe_path", lambda: None)

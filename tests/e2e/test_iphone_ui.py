@@ -14,6 +14,8 @@ pytestmark = pytest.mark.e2e
 
 NNBSP = "\u202f"
 PAUSED = "Conversation en pause (écran verrouillé ou autre app)."
+MIC_BLOCKED = ("Micro refusé : réessayez et autorisez le micro quand iOS le demande. "
+               "S'il ne le demande plus : Réglages de l'iPhone › Safari › Micro.")
 
 # What iOS has and Chromium has not, recorded in window.__order:
 # navigator.audioSession (Safari 17+) and the moment the microphone opens;
@@ -320,7 +322,12 @@ def test_a_microphone_refused_on_the_way_back_offers_reprendre(remote_page):
     resume = page.locator("#iosBanner button.primary")
     resume.wait_for()
     assert resume.inner_text() == "Reprendre"
-    assert plain(page.inner_text("#iosBanner .ios-banner-text")) == PAUSED
+    # The banner says why, in the iPhone's words (no address bar, no Windows),
+    # and [Reprendre] is the only action: no second [Réessayer] on the status line.
+    assert plain(page.inner_text("#iosBanner .ios-banner-text")) == MIC_BLOCKED
+    assert "Erreur" not in status(page) and not page.locator("#statusActions button").count()
+    for word in ("cadenas", "Windows", "barre d'adresse", "Réessayer"):
+        assert word not in page.inner_text("#stage"), word
     assert page.evaluate("__jarvis.state.mode") != "live"
     # A tap: iOS lets the microphone open, the conversation goes on.
     page.evaluate("window.__denyMic = false")
@@ -328,6 +335,13 @@ def test_a_microphone_refused_on_the_way_back_offers_reprendre(remote_page):
     page.wait_for_function("__jarvis.state.mode === 'live'")
     assert not page.locator("#iosBanner").is_visible()
     assert "Erreur" not in status(page)
+    # Refused on a tap of the orb: the status line says it in the iPhone's words too.
+    page.locator("#orbBtn").tap()
+    page.wait_for_function("__jarvis.state.mode !== 'live'")
+    page.evaluate("window.__denyMic = true")
+    page.locator("#orbBtn").tap()
+    page.wait_for_function("document.querySelector('#statusPill').textContent.includes('Micro refusé')")
+    assert "Windows" not in status(page) and "cadenas" not in status(page)
 
 
 def test_a_long_pause_waits_for_a_tap(remote_page):

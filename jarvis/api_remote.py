@@ -210,7 +210,8 @@ def revoke_device(device_id: str, request: Request):
         cancelled = remote.revoke_device(device_id, by=caller)
     except KeyError:
         raise HTTPException(404, "Appareil inconnu.") from None
-    return {"ok": True, "cancelled_tasks": cancelled}
+    # A lost or stolen phone keeps its ntfy subscription: the topic changes too.
+    return {"ok": True, "cancelled_tasks": cancelled, "topic_renewed": remote.renew_notify_topic()}
 
 
 @router.post("/api/remote/forget")

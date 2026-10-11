@@ -1070,7 +1070,7 @@ def test_revoked_device_is_refused_at_once_and_its_streams_and_requests_end_hold
         pc_stream = await opened("page-pc")
         phone_stream = await opened("", caller)
         r = pc.delete(f"/api/remote/devices/{device['id']}")
-        assert r.json() == {"ok": True, "cancelled_tasks": 2}
+        assert r.json() == {"ok": True, "cancelled_tasks": 2, "topic_renewed": False}  # no topic yet
         assert await asyncio.wait_for(_drain(phone_stream), 2) == []
         marker = events.publish("memory", {"n": 1})
         assert (await until(pc_stream, marker))[-1] == (marker, {"type": "memory", "n": 1})
@@ -1097,6 +1097,38 @@ def test_revoked_device_is_refused_at_once_and_its_streams_and_requests_end_hold
     assert devices.get(device["id"]) is None
     r = with_cookie(value).get("/api/config")
     assert r.status_code == 401 and r.json()["detail"] == remote.T_REVOKED
+
+def test_a_removed_device_loses_the_ntfy_topic_too_holds(monkeypatch, pc, alerts):
+    """The ntfy topic is the only key to the notifications and every paired
+    app reads it to subscribe: removing a device from the PC (lost, stolen)
+    or a copied secret renews it. A phone forgetting itself never does (only
+    the PC renews the topic: it would cut the other phones off)."""
+    from jarvis import notify
+    phone, device, _ = paired_client(monkeypatch)
+    first = phone.get("/api/notify").json()["topic"]
+    assert first and notify.topic(create=False) == first
+    r = pc.delete(f"/api/remote/devices/{device['id']}")
+    assert r.json() == {"ok": True, "cancelled_tasks": 0, "topic_renewed": True}
+    second = notify.topic(create=False)
+    assert second and second != first
+    # Its own forgetting: the topic stays (the other phones keep hearing it).
+    other, _device2, _ = paired_client(monkeypatch, name="iPad de test")
+    assert other.get("/api/notify").json()["topic"] == second
+    assert other.post("/api/remote/forget").json() == {"ok": True}
+    assert notify.topic(create=False) == second
+    # A secret used from another machine: the device goes, and the topic with it.
+    nodes = {"100.64.0.77": {"node_id": "nOTHER", "addresses": ["100.64.0.77"]}}
+    monkeypatch.setattr(tailscale, "whois", lambda ip: nodes.get(ip, {}))
+    copied, secret = devices.add("iPhone 2", ip=IP, login=LOGIN, node_id="nNODE1", ips=(IP,))
+    r = with_cookie(f"{copied['id']}.{secret}", ip="100.64.0.77").get("/api/config")
+    assert r.status_code == 403 and alerts.kinds()[-1] == "secret_copied" and devices.is_revoked(copied["id"])
+    third = notify.topic(create=False)
+    assert third and third not in (first, second)
+    # Never created by a removal: no topic, nothing renewed.
+    (config.DATA_DIR / notify.NTFY_FILE).unlink()
+    _phone4, device4, _ = paired_client(monkeypatch, name="iPhone 4")
+    assert pc.delete(f"/api/remote/devices/{device4['id']}").json()["topic_renewed"] is False
+    assert notify.topic(create=False) == ""
 
 # ---------------------------------------------------------------- P0-12: the route table
 
