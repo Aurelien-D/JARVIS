@@ -81,6 +81,9 @@ class T:
     need_days = "précisez les jours de la semaine (par exemple lun, mer, ven)"
     empty = "texte du rappel ou consigne de la tâche manquant"
     empty_title = "titre vide"
+    # A reminder set from a conversation that read outside content: its words
+    # are never put back into a model's prompt (the side panel shows them).
+    outside = "(texte venu de données externes, lisible dans la liste des rappels)"
     which = "précisez le rappel à annuler"
     ambiguous = "Plusieurs rappels correspondent : précisez lequel (son id ou d'autres mots)."
     not_found = "Rappel introuvable : il a peut-être déjà été supprimé."
@@ -94,6 +97,8 @@ class T:
     skipped = "Routine « {title} » non lancée : JARVIS était éteint à l'heure prévue ({when})."
     skipped_next = " Prochaine fois : {when}."
     failed = "Routine « {title} » non lancée : {why}"
+    remote_refused = ("Routine « {title} » non lancée : elle venait d'un appareil retiré ou demandait "
+                      "l'accès complet.")
 
 
 class Ambiguous(ValueError):
@@ -536,9 +541,12 @@ def items() -> list:
 
 def add(kind: str, title: str, text: str, at: str | None = None, delay_minutes=None,
         repeat: str = "none", profile: str = "recherche", complexity: str = "normale",
-        days=None, allow_complet: bool = False) -> dict:
+        days=None, allow_complet: bool = False, *, via: str = "pc", tainted: bool = False) -> dict:
     """A new reminder or routine. allow_complet: only past confirm.gate (the
-    voice tool, once monsieur said "oui"); every other caller is refused."""
+    voice tool, once monsieur said "oui"); every other caller is refused.
+    via: who asked, the origin string of remote.Caller ("pc", "app:d_…"); a
+    full-access routine is the PC's alone. tainted: asked from a conversation
+    that read outside content (label() keeps its words out of every prompt)."""
     text = (text or "").strip()
     if not text:
         raise ValueError(T.empty)
@@ -553,7 +561,9 @@ def add(kind: str, title: str, text: str, at: str | None = None, delay_minutes=N
     if repeat == "days" and not day_list:
         raise ValueError(T.need_days)
     profile = profile if is_task and profile in tasks.PROFILES else "recherche"
-    if profile == "complet" and not allow_complet:
+    if profile == "complet" and (not allow_complet or _kind(via) != "pc"):
+        # From a phone or Siri never, whatever allow_complet says: an approved
+        # routine would run with full access after the opt-in or the device is gone.
         raise PermissionError(T.complet_api)
     due = compute_due(at, delay_minutes).timestamp()
     item = {
@@ -561,8 +571,10 @@ def add(kind: str, title: str, text: str, at: str | None = None, delay_minutes=N
         "title": (title or text).strip()[:80], "text": text[:4000], "due": due, "repeat": repeat,
         "profile": profile,
         "complexity": complexity if complexity in config.MODELS else "normale",
-        "created": time.time(),
+        "created": time.time(), "via": str(via or "pc"),
     }
+    if tainted:
+        item["tainted"] = True
     _shape_repeat(item, day_list)
     with store.LOCK:
         all_items = _load() + [item]
@@ -635,6 +647,8 @@ def update(item_id: str, *, title=None, text=None, at=None, delay_minutes=None, 
         if changes.get("repeat", _repeat(item)) == "days" and not new_days:
             raise ValueError(T.need_days)
         item.update(changes)
+        if "title" in changes:  # monsieur's own words now (the side panel's ✎)
+            item.pop("tainted", None)
         item["repeat"] = _repeat(item)
         if "due" in changes or "repeat" in changes or day_list is not None:
             _shape_repeat(item, new_days)
@@ -711,10 +725,17 @@ def when_text(ts: float, now: datetime | None = None) -> str:
     return f"{day} à {dt:%H:%M}"
 
 
+def label(item: dict) -> str:
+    """The title a model may read: never the words of an item set from a
+    conversation that read outside content (they would reach every later
+    prompt, the PC's untainted ones included)."""
+    return T.outside if item.get("tainted") else str(item.get("title", ""))
+
+
 def describe(item: dict, now: datetime | None = None) -> str:
     what = "Tâche" if item.get("kind") == "task" else "Rappel"
     repeat = _repeat_label(item)
-    return (f"[{item.get('id', '?')}] {what} {when_text(item['due'], now)} : {item.get('title', '')}"
+    return (f"[{item.get('id', '?')}] {what} {when_text(item['due'], now)} : {label(item)}"
             + (f" ({repeat})" if repeat else ""))
 
 
@@ -738,9 +759,12 @@ def recent_fired(hours: float | None = None, now: float | None = None) -> list:
     return sorted(reversed(out), key=lambda r: r.get("fired", 0), reverse=True)
 
 
-def _remember_fired(payload: dict, now: float):
+def _remember_fired(payload: dict, now: float, tainted: bool = False):
     entry = {"id": payload["id"], "title": payload.get("title", ""), "text": payload.get("text", ""),
-             "due": now, "fired": now, "late_minutes": payload.get("late_minutes", 0)}
+             "due": now, "fired": now, "late_minutes": payload.get("late_minutes", 0),
+             "via": str(payload.get("via") or "pc")}  # a snoozed copy goes back to whoever set it
+    if tainted:  # and keeps its words out of the prompts
+        entry["tainted"] = True
     with store.LOCK:
         state = store.load(STATE_FILE, {})
         recent = [r for r in _recent(state) if r["id"] != entry["id"]] + [entry]
@@ -790,7 +814,11 @@ def snooze(ref: str = "last", minutes=10, now: float | None = None, exact: bool 
                     "title": (entry.get("title") or entry.get("text") or "Rappel")[:80],
                     "text": (entry.get("text") or entry.get("title") or "")[:4000],
                     "due": due, "repeat": "none", "profile": "recherche", "complexity": "normale",
-                    "created": now, "snoozed_from": entry["id"]}
+                    "created": now, "snoozed_from": entry["id"],
+                    # Still that device's reminder: the PC never tells a phone's, nor the phone the PC's.
+                    "via": str(entry.get("via") or "pc")}
+            if entry.get("tainted"):
+                item["tainted"] = True
             all_items.append(item)
             if stored is not None:
                 stored["snoozed_to"] = item["id"]
@@ -844,16 +872,34 @@ def tick(now: float | None = None):
     _maybe_briefing(now)
 
 
+def _kind(via) -> str:
+    from . import remote  # remote is imported late (spec: no import cycle)
+    return remote.kind_of(via)
+
+
+def _may_run(item: dict, via: str) -> bool:
+    """A routine set from a phone or Siri runs only while that device is still
+    allowed, and never with full access (old data or any path that slipped by)."""
+    from . import remote
+    if _kind(via) == "pc":
+        return True
+    return item.get("profile") != "complet" and remote.origin_active(via)
+
+
 def _fire(item: dict, late: float, now: float | None = None):
     now = time.time() if now is None else now
+    via = item.get("via") or "pc"  # who set it (older items: the PC)
     if item.get("kind") == "task":
+        if not _may_run(item, via):
+            _warn(T.remote_refused.format(title=item.get("title", "")), f"routine-refusee-{item['id']}-{int(now)}")
+            return
         tasks.create_task(item.get("title", ""), item.get("text", ""), profile=item.get("profile", "recherche"),
-                          complexity=item.get("complexity", "normale"), origin="routine")
+                          complexity=item.get("complexity", "normale"), origin="routine", via=via)
         return
     payload = {"id": item["id"], "title": item.get("title", ""), "text": item.get("text", ""),
-               "late_minutes": int(late // 60) if late > LATE_S else 0}
+               "late_minutes": int(late // 60) if late > LATE_S else 0, "via": via}
     try:
-        _remember_fired(payload, now)
+        _remember_fired(payload, now, tainted=bool(item.get("tainted")))
     except Exception:  # noqa: BLE001 - snooze is a convenience: the reminder still goes out
         logging.exception("JARVIS: rappel non noté pour le report")
     # The inbox first: with no page open, nothing is lost.
@@ -863,7 +909,7 @@ def _fire(item: dict, late: float, now: float | None = None):
         logging.exception("JARVIS: boîte de réception indisponible pour un rappel")
     events.publish("reminder", payload)
     if not events.has_subscribers():
-        inbox.notify_offline("Rappel", payload["text"] or payload["title"], kind="reminder")
+        inbox.notify_offline("Rappel", payload["text"] or payload["title"], kind="reminder", via=via)
 
 
 def _skip(item: dict):

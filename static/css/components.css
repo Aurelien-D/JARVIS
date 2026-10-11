@@ -158,6 +158,34 @@ body > dialog#report { backdrop-filter: none; }
   font-size: var(--fs-md);
 }
 
+/* ------------------------------------------------ the iPhone's banner (ios.js) */
+/* « Conversation en pause… » with [Reprendre], or the microphone taken by a
+   call: a sentence under the status, in the stage's own flow. */
+.ios-banner {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px;
+  max-width: min(62ch, 100%); padding: 6px 8px 6px 12px;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--amber); border-left-width: 3px; border-radius: var(--radius);
+  font-size: var(--fs-md); line-height: var(--lh-body);
+}
+.ios-banner[hidden] { display: none; }
+.ios-banner-text { flex: 1 1 14em; min-width: 0; }
+.ios-banner-actions { display: flex; align-items: center; gap: 6px; }
+
+/* ------------------------------------------------ touch screens (spec 7) */
+/* No double-tap zoom on the controls (and no tap delay). */
+button, a, input, select, textarea, label, summary { touch-action: manipulation; }
+/* A finger: iOS zooms into any field under 16 px, and every control gets
+   44 x 44 px (Apple's guideline, WCAG 2.5.5). !important: a minimum, whatever
+   a more specific rule elsewhere (a compact panel button) says. */
+@media (pointer: coarse) {
+  input, select, textarea, .set-input, .edit-form input { font-size: 16px !important; }
+  .ibtn, .x, .top-btn, .ctl, .chip-btn, .set-tab,
+  #chips .chip, .aide-ex, #ask button, #askInput, #badge {
+    min-width: 44px !important; min-height: 44px !important;
+  }
+}
+
 /* ------------------------------------------------ motion (design spec §7) */
 /* Keyframes only for those who did not ask for less motion: without them,
    every animation referring to these names (cards, task cards, report) is off. */

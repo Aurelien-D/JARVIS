@@ -14,6 +14,7 @@ from test_tasks import FAKE_CLAUDE, wait
 def clean_store(monkeypatch):
     confirm.PENDING.clear()
     confirm.SESSIONS.clear()
+    confirm.FORGOTTEN.clear()
     monkeypatch.setattr(config, "CONFIRM_COMPLET", True)
     monkeypatch.setattr(config, "PENDING_TTL", 90)
     monkeypatch.setattr(config, "OPEN_URL_ALLOW", "")
@@ -25,6 +26,7 @@ def clean_store(monkeypatch):
         time.sleep(0.05)
     confirm.PENDING.clear()
     confirm.SESSIONS.clear()
+    confirm.FORGOTTEN.clear()
 
 
 @pytest.fixture
@@ -294,6 +296,133 @@ def test_sessions_are_bounded():
     assert len(confirm.SESSIONS) == confirm.MAX_SESSIONS
 
 
+PHONE = "app:d_0123456789abcdef"
+
+
+def test_sessions_keep_their_origin_and_their_own_bucket(clock):
+    pc = [confirm.new_session() for _ in range(confirm.MAX_SESSIONS)]
+    assert {r["origin"] for r in confirm.SESSIONS.values()} == {"pc"}
+    for _ in range(3 * confirm.MAX_REMOTE_SESSIONS):
+        clock[0] += 1
+        confirm.new_session(origin=PHONE)
+    phone = [sid for sid, r in confirm.SESSIONS.items() if r["origin"] == PHONE]
+    assert len(phone) == confirm.MAX_REMOTE_SESSIONS
+    assert all(sid in confirm.SESSIONS for sid in pc)  # a phone never pushes a PC session out
+    assert confirm.session_origin(phone[0]) == PHONE and confirm.session_origin("inconnu") is None
+
+
+def test_eviction_takes_the_least_recently_used_and_spares_an_open_request(clock):
+    first, second = confirm.new_session(origin=PHONE), confirm.new_session(origin=PHONE)
+    confirm._park("system_control", {"action": "mute"}, first, "x", "", via=PHONE)
+    rest = []
+    for _ in range(confirm.MAX_REMOTE_SESSIONS - 2):
+        clock[0] += 1
+        rest.append(confirm.new_session(origin=PHONE))
+    clock[0] += 1
+    confirm.mark_turn(second)  # used just now
+    clock[0] += 1
+    confirm.new_session(origin=PHONE)  # one too many
+    # Neither the oldest one, which has a card, nor the one just used went: the next least recent did.
+    assert first in confirm.SESSIONS and second in confirm.SESSIONS
+    assert rest[0] not in confirm.SESSIONS and all(sid in confirm.SESSIONS for sid in rest[1:])
+    assert len([r for r in confirm.SESSIONS.values() if r["origin"] == PHONE]) == confirm.MAX_REMOTE_SESSIONS
+
+
+def test_an_evicted_tainted_session_stays_tainted(clock):
+    sid = confirm.new_session(origin=PHONE)
+    confirm.mark_tainted(sid, "Page web")
+    clean = confirm.new_session(origin=PHONE)
+    for _ in range(confirm.MAX_REMOTE_SESSIONS):
+        clock[0] += 1
+        confirm.new_session(origin=PHONE)
+    assert sid not in confirm.SESSIONS and clean not in confirm.SESSIONS
+    assert confirm.is_tainted(sid) and not confirm.is_tainted(clean)  # a clean one is simply forgotten
+    assert confirm.FORGOTTEN[sid] == ["Page web"]
+    confirm.mark_tainted(sid, "notes")  # seen again: back, tainted, with its reasons
+    assert confirm.SESSIONS[sid]["reasons"] == ["Page web", "notes"] and sid not in confirm.FORGOTTEN
+    # The record is bounded: the oldest forgotten sessions go first.
+    confirm.FORGOTTEN.clear()
+    for i in range(confirm.MAX_FORGOTTEN):
+        confirm.FORGOTTEN[f"old{i}"] = []
+    clock[0] += 1
+    third = confirm.new_session(origin=PHONE)
+    confirm.mark_tainted(third, "résultat de tâche")
+    for _ in range(confirm.MAX_REMOTE_SESSIONS):
+        clock[0] += 1
+        confirm.new_session(origin=PHONE)
+    assert third in confirm.FORGOTTEN and "old0" not in confirm.FORGOTTEN
+    assert len(confirm.FORGOTTEN) == confirm.MAX_FORGOTTEN
+
+
+def test_a_reconnection_carries_the_taint_of_its_own_origin_only(clock):
+    pc = confirm.new_session()
+    confirm.mark_tainted(pc, "actualités")
+    clock[0] += 1
+    phone = confirm.new_session(origin=PHONE)  # the newest session of all, clean
+    assert confirm.SESSIONS[confirm.new_session(continues=True)]["reasons"] == ["actualités"]
+    assert not confirm.is_tainted(confirm.new_session(continues=True, origin=PHONE))
+    assert confirm.SESSIONS[confirm.new_session(continues=True, sources=[phone])]["reasons"] == \
+        ["conversation reprise"]  # another origin's session counts as unknown
+
+
+def test_check_session_by_origin():
+    pc, phone = confirm.new_session(), confirm.new_session(origin=PHONE)
+    assert confirm.check_session(pc, "pc") is None and confirm.check_session(phone, PHONE) is None
+    assert confirm.check_session(None, "pc") is None and confirm.check_session("inconnu", "pc") is None
+    assert confirm.check_session(phone, "pc") == "Session d'un autre appareil."
+    assert confirm.check_session(pc, PHONE) == "Session d'un autre appareil."
+    assert confirm.check_session("inconnu", PHONE) == "Session inconnue : rouvrez la conversation."
+    assert confirm.check_session(None, PHONE) == "Session inconnue : rouvrez la conversation."
+    confirm.FORGOTTEN["oublie"] = []
+    assert confirm.check_session("oublie", PHONE) == "Session expirée : rouvrez la conversation."
+
+
+def test_gate_returns_a_refusal_as_is_and_needs_confirmation_only_for_a_park(monkeypatch):
+    from jarvis import remote
+    monkeypatch.setattr(remote, "complet_allowed", lambda now=None: False)
+    sid = confirm.new_session(origin=PHONE)
+    phone = tools.ToolCtx(sid, origin=PHONE)
+    assert confirm.gate("delegate_to_claude", COMPLET, phone) == {"ok": False, "error": confirm.T.complet_closed}
+    assert not confirm.needs_confirmation("delegate_to_claude", COMPLET, sid, origin=PHONE)
+    assert confirm.needs_confirmation("delegate_to_claude", COMPLET, sid, origin="pc")
+    assert confirm.needs_confirmation("system_control", {"action": "mute"}, sid, origin=PHONE)
+    assert not confirm.needs_confirmation("system_control", {"action": "mute"}, sid)
+    assert not confirm.PENDING
+
+
+def test_public_says_who_may_launch_and_never_the_session(published):
+    sid = confirm.new_session(origin=PHONE)
+    out = tools.run_tool("system_control", {"action": "mute"}, tools.ToolCtx(sid, origin=PHONE))
+    card = published[-1]["pending"]
+    assert card["id"] == out["pending_id"]
+    assert (card["via"], card["button_only"], card["launch_from"], card["remote_kind"]) == \
+        (PHONE, True, PHONE, "pc_action")
+    assert not {"sid", "args", "tainted"} & set(card)
+    stored = confirm.PENDING[out["pending_id"]]
+    assert stored["tainted"] is False and stored["via"] == PHONE
+    pc_card = confirm.public(confirm._park("x", {}, None, "s", "d"))
+    assert (pc_card["via"], pc_card["button_only"], pc_card["launch_from"], pc_card["remote_kind"]) == \
+        ("pc", False, None, None)
+
+
+def test_the_same_request_from_two_origins_gets_two_cards():
+    a = confirm._park("system_control", {"action": "mute"}, None, "x", "", via=PHONE)
+    b = confirm._park("system_control", {"action": "mute"}, None, "x", "", via="app:d_fedcba9876543210")
+    again = confirm._park("system_control", {"action": "mute"}, None, "x", "", via=PHONE)
+    assert a["id"] != b["id"] and again["id"] == a["id"]
+
+
+def test_cancel_for_origin_cancels_its_requests_without_running_them(published, monkeypatch):
+    decided = []
+    monkeypatch.setattr(confirm, "_execute", lambda p: decided.append(p) or {"ok": True})
+    mine = confirm._park("system_control", {"action": "mute"}, None, "x", "", via=PHONE)
+    other = confirm._park("system_control", {"action": "mute"}, None, "x", "")
+    assert confirm.cancel_for_origin(PHONE) == 1
+    assert mine["state"] == "cancelled" and other["state"] == "pending" and decided == []
+    assert published[-1]["pending"]["id"] == mine["id"] and published[-1]["pending"]["state"] == "cancelled"
+    assert confirm.cancel_for_origin(PHONE) == 0
+
+
 # ---------------------------------------------------------------- denied tools of a task
 
 def test_denied_tools_can_be_approved(fake_claude, client, published):
@@ -328,3 +457,18 @@ def test_tool_count_stays_small(monkeypatch):
     assert {"confirm_action", "wait_for_user"} <= set(names)
     assert len(names) <= 25  # Realtime tool choice degrades past that, and each schema is billed
     assert "wait_for_user" in tools.client_tools()
+
+
+def test_a_phone_full_access_never_starts_unless_the_pc_was_alerted(fake_claude, monkeypatch):
+    from jarvis import audit, remote
+    monkeypatch.setattr(remote, "complet_allowed", lambda now=None: True)
+
+    def broken(*a, **k):
+        raise OSError("disque plein")
+
+    monkeypatch.setattr(audit, "alert", broken)
+    sid = confirm.new_session(origin=PHONE)
+    pending = tools.run_tool("delegate_to_claude", COMPLET, tools.ToolCtx(sid, origin=PHONE))["pending_id"]
+    out = confirm.decide(pending, "oui", origin=PHONE)
+    assert out["ok"] is False and out["result"] == {"ok": False, "error": confirm.T.alert_failed}
+    assert not tasks.TASKS and confirm.PENDING[pending]["state"] == "error"

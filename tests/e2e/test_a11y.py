@@ -41,7 +41,7 @@ def ensure_composer(page):
 def add_cards(page):
     page.evaluate("""async () => {
       const hud = await import('/static/js/hud.js');
-      hud.addCard('Météo Laon', '**14 °C**, averses éparses', 'result');
+      hud.addCard('Météo Nantes', '**14 °C**, averses éparses', 'result');
       hud.addCard('PowerShell', 'Get-ChildItem -Recurse | Sort-Object LastWriteTime -Descending | Select-Object -First 10', 'code');
       hud.addCard('Rappel', 'Appeler le garage', 'warning');
     }""")
@@ -96,6 +96,53 @@ def test_axe_with_the_side_panel_open_on_a_small_window(jarvis):
     jarvis.click("#panelBtn")
     jarvis.wait_for_timeout(300)
     assert axe_violations(jarvis) == []
+
+
+# ---------------------------------------------------------------- axe-core at phone sizes (spec 7)
+
+PHONES = [(390, 844), (430, 932)]
+PHONE_IDS = [f"{w}x{h}" for w, h in PHONES]
+
+
+def busy(page):
+    """Live, JARVIS speaking, cards in the bottom sheet, a caption and an error."""
+    go_live(page)
+    add_cards(page)
+    set_phase(page, "speaking")
+    page.evaluate("""() => {
+      __jarvis.bus.emit('caption:user', {itemId: 'u1', text: 'Quel temps fait-il ?', final: true});
+      __jarvis.bus.emit('caption:jarvis', {itemId: 'a1', text: 'Il fait beau, monsieur.', final: true});
+      __jarvis.bus.emit('error', {kind: 'lost', message: 'perdu'});
+    }""")
+
+
+@pytest.mark.parametrize("size", PHONES, ids=PHONE_IDS)
+def test_axe_on_the_pc_page_at_phone_sizes(jarvis, size):
+    jarvis.set_viewport_size({"width": size[0], "height": size[1]})
+    assert axe_violations(jarvis) == []
+    busy(jarvis)
+    jarvis.wait_for_timeout(300)
+    assert axe_violations(jarvis) == []
+
+
+@pytest.mark.parametrize("remote_page", [{"size": size} for size in PHONES], ids=PHONE_IDS, indirect=True)
+def test_axe_on_the_iphone_page(remote_page):
+    """The paired iPhone's own page (touch, 44 px controls, safe areas): in
+    standby, busy, with its side panel open, and in Réglages."""
+    page = remote_page
+    assert axe_violations(page) == []
+    busy(page)
+    page.wait_for_timeout(300)
+    assert axe_violations(page) == []
+    page.locator("#statusActions .x").tap()
+    page.locator("#panelBtn").tap()
+    page.wait_for_timeout(300)
+    assert axe_violations(page) == []
+    page.locator("#side .side-close").tap()
+    page.locator("#topActions button", has_text="Réglages").tap()
+    page.wait_for_selector("#settingsDialog .set-tab")
+    page.wait_for_timeout(300)
+    assert axe_violations(page) == []
 
 
 # ---------------------------------------------------------------- semantics

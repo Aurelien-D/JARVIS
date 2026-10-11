@@ -317,3 +317,164 @@ def test_the_ledger_lives_in_the_data_folder_under_a_fixed_name():
     usage.add_claude(0.1)
     assert (config.DATA_DIR / "usage.json").is_file()
     assert usage.FILE == "usage.json"
+
+# ---------------------------------------------------------------- a paired iPhone's reports (spec 4.8)
+
+PHONE_ID = "d_0123456789abcdef"
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    now = {"t": 1_760_000_000.0}
+    monkeypatch.setattr(usage, "_now", lambda: now["t"])
+    return now
+
+
+@pytest.fixture
+def phone(monkeypatch):
+    """POST /api/usage as a paired iPhone (its caller stamped by the gate)."""
+    from remote_helpers import as_caller, remote_client
+
+    from jarvis import remote
+    as_caller(monkeypatch, remote.Caller(kind="app", device_id=PHONE_ID, ip="100.101.102.103",
+                                         login="monsieur@example.com", name="iPhone de test"))
+    return remote_client()
+
+
+def test_remote_mints_are_kept_in_the_day_entry(clock):
+    assert usage.remote_mints(PHONE_ID) == []
+    usage.note_remote_mint(PHONE_ID, clock["t"])
+    usage.note_remote_mint(PHONE_ID, clock["t"] + 60)
+    usage.note_remote_mint("../evil", clock["t"])  # not a device id: ignored
+    assert usage.remote_mints(PHONE_ID) == [clock["t"], clock["t"] + 60]
+    stored = store.load(usage.FILE, {})[TODAY.isoformat()]
+    assert stored["remote"] == {PHONE_ID: {"usd": 0.0, "mints": [clock["t"], clock["t"] + 60]}}
+    for _ in range(120):
+        usage.note_remote_mint(PHONE_ID, clock["t"])
+    assert len(usage.remote_mints(PHONE_ID)) == usage.REMOTE_MAX_MINTS
+
+
+def test_the_remote_part_of_a_day_is_sanitised():
+    many = {f"d_{n:016x}": {"usd": 1.0, "mints": [1.0]} for n in range(15)}
+    store.save(usage.FILE, {TODAY.isoformat(): {"remote": {
+        **many, "../evil": {"usd": 9}, PHONE_ID: {"usd": float("nan"), "mints": [1.0, "x", True, -5, None, 2.0]},
+        "d_ffffffffffffffff": "rien"}}})
+    entry = usage._entry(store.load(usage.FILE, {})[TODAY.isoformat()])
+    assert len(entry["remote"]) == usage.REMOTE_MAX_DEVICES
+    assert all(usage._DEVICE_ID.fullmatch(k) for k in entry["remote"])
+    store.save(usage.FILE, {TODAY.isoformat(): {"remote": {PHONE_ID: {"usd": float("inf"), "mints": [1.0, "x", 2.0]}}}})
+    entry = usage._entry(store.load(usage.FILE, {})[TODAY.isoformat()])
+    assert entry["remote"] == {PHONE_ID: {"usd": 0.0, "mints": [1.0, 2.0]}}
+    # A day with nothing remote keeps the shape the PC always had.
+    assert set(usage._entry({})) == {"realtime", "claude"}
+
+
+def test_remote_reports_are_bounded_by_the_time_since_each_session(phone, clock):
+    one_dollar = audio_out(15_000)  # 0.96 $ at gpt-realtime-2.1
+    # No voice session opened today: nothing to report, nothing recorded.
+    assert phone.post("/api/usage", json={"usage": one_dollar, "model": "gpt-realtime-2.1"}).status_code == 200
+    assert usage.realtime_spent_today() == 0
+    usage.note_remote_mint(PHONE_ID, clock["t"])
+    clock["t"] += 30  # 0.15 $ of room
+    phone.post("/api/usage", json={"usage": one_dollar, "model": "gpt-realtime-2.1"})
+    entry = usage._day(TODAY.isoformat())
+    assert entry["realtime"]["usd"] == pytest.approx(0.15)
+    # Clamped: the token classes are scaled alike, so the ledger stays whole.
+    assert entry["realtime"]["audio_out"] == pytest.approx(15_000 * 0.15 / 0.96)
+    assert entry["remote"][PHONE_ID]["usd"] == pytest.approx(0.15)
+    # Each session's allowance stops at 6 $; two sessions, twice that.
+    clock["t"] += 3600
+    for _ in range(10):
+        phone.post("/api/usage", json={"usage": one_dollar, "model": "gpt-realtime-2.1"})
+    assert usage.realtime_spent_today() == pytest.approx(6.0)
+    usage.note_remote_mint(PHONE_ID, clock["t"])
+    clock["t"] += 10
+    phone.post("/api/usage", json={"usage": one_dollar, "model": "gpt-realtime-2.1"})
+    assert usage.realtime_spent_today() == pytest.approx(6.05)
+
+
+def test_a_remote_post_above_one_dollar_is_refused(phone, clock):
+    usage.note_remote_mint(PHONE_ID, clock["t"] - 3600)
+    r = phone.post("/api/usage", json={"usage": audio_out(20_000), "model": "gpt-realtime-2.1"})
+    assert r.status_code == 400 and r.json()["detail"] == "Relevé de consommation invalide."
+    # Priced like the PC's: a cheaper model name never lowers it.
+    r = phone.post("/api/usage", json={"usage": audio_out(20_000), "model": "gpt-realtime-mini"})
+    assert r.status_code == 400
+    r = phone.post("/api/usage", json={"usage": {"type": "duration", "seconds": 60}, "model": "whisper-1"})
+    assert r.status_code == 200 and usage.realtime_spent_today() == pytest.approx(0.006)
+    assert usage._day(TODAY.isoformat())["realtime"]["transcribe_seconds"] == 60
+
+
+def test_the_pc_path_is_unchanged(client, clock):
+    r = client.post("/api/usage", json={"usage": audio_out(15_000), "model": "gpt-realtime-2.1"})
+    assert r.status_code == 200 and usage.realtime_spent_today() == pytest.approx(0.96)
+    r = client.post("/api/usage", json={"usage": audio_out(20_000), "model": "gpt-realtime-2.1"})
+    assert r.status_code == 200 and usage.realtime_spent_today() == pytest.approx(0.96 + 1.28)
+    assert "remote" not in store.load(usage.FILE, {})[TODAY.isoformat()]
+
+
+# ---------------------------------------------------------------- Siri's text model (B3)
+
+TEXT_USAGE = {"input_tokens": 10_000, "input_tokens_details": {"cached_tokens": 2_000, "cache_write_tokens": 1_000},
+              "output_tokens": 1_000, "output_tokens_details": {"reasoning_tokens": 0}, "total_tokens": 11_000}
+
+
+def test_the_text_price_table_and_its_unknown_models():
+    assert usage.TEXT_PRICES["gpt-6-luna"] == {"in": 0.10, "cached": 0.01, "cache_write": 0.125, "out": 0.50}
+    classes = usage.text_classes(TEXT_USAGE)
+    assert classes == {"in": 7_000, "cached": 2_000, "cache_write": 1_000, "out": 1_000}
+    luna = (7_000 * 0.10 + 2_000 * 0.01 + 1_000 * 0.125 + 1_000 * 0.50) / 1e6
+    assert usage.text_cost(classes, "gpt-6-luna") == pytest.approx(luna)
+    assert usage.resolve_text_model("gpt-6-luna-2026-09-01") == "gpt-6-luna"
+    # A model missing from the table costs the dearest entry.
+    dearest = max(usage.TEXT_PRICES.values(), key=lambda p: (p["out"], p["in"]))
+    assert usage.TEXT_PRICES[usage.resolve_text_model("gpt-inconnu")] == dearest
+    assert usage.text_cost(classes, "gpt-inconnu") >= max(usage.text_cost(classes, m) for m in usage.TEXT_PRICES)
+    # Details claiming more than the input never count twice.
+    assert usage.text_classes({"input_tokens": 10, "input_tokens_details": {"cached_tokens": 50,
+                                                                             "cache_write_tokens": 5}}) == \
+        {"in": 0, "cached": 10, "cache_write": 0, "out": 0}
+    for bad in ({"input_tokens": -1}, {"output_tokens": "x"}, {"input_tokens": float("inf")}, "x"):
+        with pytest.raises(ValueError):
+            usage.text_classes(bad)
+
+
+def test_the_text_ledger_counts_in_spent_today_and_the_cap(monkeypatch, pushed):
+    monkeypatch.setattr(config, "DAILY_BUDGET_USD", 0.01)
+    assert usage.add_text("gpt-6-luna", TEXT_USAGE) == pytest.approx(0.001345)
+    usage.add_text("gpt-6-luna", None)  # an answer without usage still counts as a call
+    day = store.load("usage.json", {})[TODAY.isoformat()]
+    assert day["text"] == {"in": 7_000, "cached": 2_000, "cache_write": 1_000, "out": 1_000, "calls": 2,
+                           "usd": pytest.approx(0.001345)}
+    assert usage.text_spent_today() == pytest.approx(0.001345)
+    assert usage.spent_today() == pytest.approx(0.001345)
+    assert not usage.over_daily_cap()
+    usage.add_realtime(audio_out(100), "gpt-realtime-2.1")  # 0.0064 $
+    usage.add_claude(0.0023)
+    assert usage.spent_today() == pytest.approx(0.010045) and usage.over_daily_cap()
+    body = usage.summary(1)
+    assert body["today"]["text_usd"] == pytest.approx(0.001345)
+    assert body["today"]["total_usd"] == pytest.approx(0.010045) and body["capped"] is True
+    assert pushed[-1]["today"]["text_usd"] == pytest.approx(0.001345) and pushed[-1]["capped"] is True
+
+
+def test_siri_spending_alone_reaching_the_cap_stops_tasks(client, fake_claude, monkeypatch):
+    monkeypatch.setattr(config, "DAILY_BUDGET_USD", 0.001)
+    usage.add_text("gpt-inconnu", TEXT_USAGE)
+    r = client.post("/api/tasks", json={"prompt": "x"})
+    assert r.status_code == 400 and "Plafond" in r.json()["detail"]
+    assert client.get("/api/config").json()["usage_capped"] is True
+
+
+def test_days_without_siri_keep_their_shape(frozen_day):
+    usage.add_claude(1.0)
+    assert set(usage._entry(store.load("usage.json", {})[TODAY.isoformat()])) == {"realtime", "claude"}
+    assert "text_usd" not in usage.summary(1)["today"]
+    usage.add_text("gpt-6-luna", TEXT_USAGE)
+    assert "text" in usage._entry(store.load("usage.json", {})[TODAY.isoformat()])
+    # A hand edit never breaks the counts.
+    store.save("usage.json", {TODAY.isoformat(): {"text": {"usd": "x", "calls": True, "in": float("nan")}}})
+    assert usage.text_spent_today() == 0 and usage.spent_today() == 0
+    store.save("usage.json", {TODAY.isoformat(): {"text": "rien"}})
+    assert usage.text_spent_today() == 0
+

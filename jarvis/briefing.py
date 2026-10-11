@@ -120,7 +120,7 @@ def _reminders_sentence(now: datetime) -> str:
         return T.no_reminders
     said = []
     for item in todays[:6]:
-        label = item.get("title") or item.get("text") or ""
+        label = scheduler.label(item) or item.get("text") or ""  # never words from outside content
         if item.get("kind") == "task":
             label = f"routine « {label} »"
         said.append(f"{scheduler.fr_time(datetime.fromtimestamp(item['due']))}, {label}")

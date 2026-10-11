@@ -84,15 +84,15 @@ def _noise_reduction():
     return {"type": value if value in _NOISE else "far_field"}
 
 
-def session_payload(recent: str = "", transcribe: str | None = None) -> dict:
+def session_payload(recent: str = "", transcribe: str | None = None, *, scope: str = "pc") -> dict:
     """The client_secrets body: everything about the session is fixed here, on the
     server, so the page cannot change the instructions or the tools."""
     model = config.REALTIME_MODEL
     session = {
         "type": "realtime",
         "model": model,
-        "instructions": instructions.build_instructions(recent),
-        "tools": tools.session_tools(),
+        "instructions": instructions.build_instructions(recent, scope=scope),
+        "tools": tools.session_tools(scope),
         "tool_choice": "auto",
         "max_output_tokens": 4096,
         # Every response re-bills the conversation: past this share of the
@@ -174,19 +174,20 @@ def _post(payload: dict) -> httpx.Response:
         raise MintError(502, ERRORS["network"]) from None
 
 
-def mint(recent: str = "") -> dict:
-    """Ask OpenAI for an ephemeral key; returns its JSON ({"value": "ek_...", ...})."""
+def mint(recent: str = "", *, scope: str = "pc") -> dict:
+    """Ask OpenAI for an ephemeral key; returns its JSON ({"value": "ek_...", ...}).
+    scope: the caller's kind ("pc", "app"), which sets its instructions and tools."""
     if not config.OPENAI_API_KEY:
         raise MintError(500, ERRORS["no_key"])
     model = transcribe_model()
-    r = _post(session_payload(recent, model))
+    r = _post(session_payload(recent, model, scope=scope))
     fallback = config.TRANSCRIBE_FALLBACK
     if (r.status_code == 400 and "transcription" in r.text.lower()
             and fallback and fallback != model):
         # The transcription model was refused (retired, not on this account):
         # one more try with the fallback, remembered for the next sessions.
         _REJECTED_TRANSCRIBE.add(model)
-        r = _post(session_payload(recent, fallback))
+        r = _post(session_payload(recent, fallback, scope=scope))
     if r.status_code >= 400:
         # 502, not OpenAI's own status: a 401 here is about the API key, not our page token.
         raise MintError(502, explain(r))

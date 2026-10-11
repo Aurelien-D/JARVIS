@@ -180,3 +180,55 @@ def test_new_routes_need_the_token_and_the_page_origin_holds(route, shown, fake_
     assert bare.post(route, headers={**AUTH, "Host": "evil.example:8788"},
                      json={"path": "/tmp/x"}).status_code == 403
     assert shown == [] and len(tasks.TASKS) == 1
+
+
+# ---------------------------------------------------------------- from the paired iPhone
+
+PHONE_ORIGIN = "app:d_0123456789abcdef"
+
+
+@pytest.fixture
+def phone(monkeypatch):
+    """The panel's routes called by the paired iPhone (the stamped gate of remote_helpers)."""
+    from remote_helpers import as_caller, remote_client
+
+    from jarvis import remote
+    as_caller(monkeypatch, remote.Caller(kind="app", device_id="d_0123456789abcdef"))
+    return remote_client()
+
+
+def test_a_task_typed_on_the_phone_is_the_phones(phone, client, fake_claude):
+    body = phone.post("/api/tasks", json={"prompt": "Résume mes notes", "profile": "lecture"}).json()
+    task = tasks.TASKS[body["id"]]
+    assert task["via"] == PHONE_ORIGIN and body["via"] == PHONE_ORIGIN and task["origin"] == "clavier"
+    wait(task)
+    assert phone.post("/api/tasks", json={"prompt": "x", "profile": "complet"}).status_code == 400
+    mine = tasks.TASKS[client.post("/api/tasks", json={"prompt": "Résume", "profile": "lecture"}).json()["id"]]
+    assert mine["via"] == "pc"
+    wait(mine)
+
+
+def test_a_phone_retry_is_the_phones_and_full_access_follows_the_phone_rules(phone, client, fake_claude,
+                                                                               monkeypatch):
+    from jarvis import remote
+    old = finished(profile="recherche", prompt="cherche la météo")
+    fresh = tasks.TASKS[phone.post(f"/api/task/{old['id']}/retry").json()["task"]["id"]]
+    assert fresh["via"] == PHONE_ORIGIN
+    wait(fresh)
+    complet = finished(profile="complet", prompt="Supprime les doublons", title="Doublons")
+    monkeypatch.setattr(remote, "complet_allowed", lambda now=None: False)  # no opt-in on the PC
+    r = phone.post(f"/api/task/{complet['id']}/retry")
+    assert r.status_code == 403 and r.json()["detail"] == confirm.T.complet_closed
+    assert not confirm.PENDING
+    monkeypatch.setattr(remote, "complet_allowed", lambda now=None: True)
+    monkeypatch.setattr(config, "CONFIRM_COMPLET", False)  # the PC's own setting: ignored for the phone
+    out = phone.post(f"/api/task/{complet['id']}/retry").json()
+    pending = confirm.PENDING[out["pending_id"]]
+    assert out["status"] == "needs_confirmation" and pending["via"] == PHONE_ORIGIN and pending["button_only"]
+    assert pending["sid"] is None and not complet_tasks()
+    # The PC can't launch it; the phone's button can.
+    assert client.post(f"/api/pending/{out['pending_id']}/decide", json={"decision": "oui"}).json()["ok"] is False
+    assert phone.post(f"/api/pending/{out['pending_id']}/decide", json={"decision": "oui"}).json()["state"] == "done"
+    [task] = complet_tasks()
+    assert task["via"] == PHONE_ORIGIN
+    wait(task)

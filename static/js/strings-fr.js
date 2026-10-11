@@ -203,6 +203,13 @@ export const T = typeset({
     lockCancelled: "Verrouillage annulé.",
     lockCancel: "Annuler le verrouillage",
     dismiss: "Refuser la demande et fermer la carte",
+    // Who may launch a request (spec 4.11): the other device sees [Annuler] and this note.
+    fromPc: "Demandée sur le PC : elle se lance sur le PC.",
+    fromPhone: "Demandée depuis l'iPhone : elle se lance sur l'iPhone.",
+    // open_url from the phone: a card with the link, nothing opens on the PC.
+    linkTitle: "Lien à ouvrir",
+    openLink: "Ouvrir le lien",
+    linkTainted: "Lien proposé après des données externes : vérifiez-le.",
   },
   delivery: {
     badge: (n) => (n > 1 ? `${n} messages en attente · cliquez pour les écouter`
@@ -245,6 +252,8 @@ export const T = typeset({
     snoozed: (time) => `Rappel reporté : ${time}.`,
     snoozeFailed: (why) => `Report impossible : ${why}`,
     briefing: "Briefing du matin",
+    // The paired iPhone when JARVIS stops on the PC (sse.serverClosed).
+    pcClosed: "JARVIS est fermé sur le PC",
   },
   // ---- WP10 + WP11 (panels.js, taskview.js, report.js) -------------------
   // The report window (report.js): its table, chart and ApexCharts' toolbar.
@@ -653,7 +662,7 @@ export const T = typeset({
       "Analyse le fichier ventes.xlsx et fais-moi un tableau de bord",
       "Retiens que je préfère le thé",
       "Cherche les meilleurs aspirateurs robots sous 400 €",
-      "Quel temps fera-t-il demain à Laon ?",
+      "Quel temps fera-t-il demain à Lyon ?",
       "Qu'est-ce que j'ai aujourd'hui ?",
       "Note que je dois rappeler le garage",
       "De quoi on a parlé hier ?",
@@ -671,7 +680,7 @@ export const T = typeset({
         examples: ["Cherche les meilleurs aspirateurs robots sous 400 €",
                    "Analyse le fichier ventes.xlsx et fais-moi un tableau de bord"] },
       { title: "Météo et actualités",
-        examples: ["Quel temps fera-t-il demain à Laon ?", "Quels sont les titres de l'actualité ?"] },
+        examples: ["Quel temps fera-t-il demain à Lyon ?", "Quels sont les titres de l'actualité ?"] },
       { title: "Vision",
         examples: ["Regarde mon écran : tu vois l'erreur ?", "Regarde-moi avec la caméra : je suis bien coiffé ?"] },
       { title: "Mémoire et journal", examples: ["Retiens que je préfère le thé", "De quoi on a parlé hier ?"] },
@@ -681,10 +690,310 @@ export const T = typeset({
       { title: "Agenda A.R.E.S", ares: true,
         examples: ["Qu'est-ce que j'ai aujourd'hui ?", "Note que je dois rappeler le garage"] },
     ],
+    // Examples of the PC's own tools (open_app, look_at_screen): never offered on the iPhone.
+    pcOnly: ["Jarvis, ouvre Spotify sur l'écran de gauche", "Regarde mon écran : tu vois l'erreur ?"],
     tryThis: (example) => `Essayez : « ${example} »`,
     shortcuts: "Espace : parler · Ctrl+J : écrire · Échap : interrompre · Ctrl+M : micro",
     // The global hotkey (Réglages › Système), when one works on this PC.
     globalKey: (combo) => `${combo} : depuis n'importe où`,
+  },
+  // JARVIS on iPhone: one block per package, each edited by its owner only.
+  // ---- remote: owned by A4
+  remote: {
+    // Réglages › Accès à distance (remote-settings.js), on the PC and on the paired iPhone.
+    loading: "Chargement…",
+    notYet: "L'accès à distance n'est pas encore disponible dans cette version de JARVIS.",
+    notReady: "Pas encore disponible dans cette version de JARVIS.",
+    quoted: (text) => `« ${text} »`,
+    copy: "Copier",
+    copied: "Copié.",
+    copyFailed: "Copie impossible : sélectionnez le texte, puis Ctrl+C.",
+    cancel: "Annuler",
+    save: "Enregistrer",
+    saved: "Enregistré.",
+    checking: "Vérification…",
+    recheck: "Revérifier",
+    // 1. status
+    statusTitle: "État",
+    tailscale: "Tailscale",
+    tsMissing: "non installé sur ce PC",
+    tsStopped: "installé, mais arrêté ou déconnecté",
+    tsRunning: "installé et connecté",
+    address: "Adresse",
+    account: "Compte",
+    noHost: "aucune",
+    noLogin: "aucun",
+    hostSource: { env: "(définie dans .env)", saved: "(enregistrée)", detected: "(détectée : confirmée en activant l'accès)", none: "" },
+    loginSource: { env: "(défini dans .env)", saved: "(enregistré)", detected: "(détecté : confirmé en activant l'accès)", none: "" },
+    personal: "Compte professionnel ? Préférez un compte Tailscale personnel (voir le guide).",
+    capMissing: "Aucun plafond de dépense par jour : l'accès à distance en exige un, il protège votre crédit OpenAI.",
+    setCap: "Fixer un plafond",
+    // 2. the switch
+    switchLabel: "Accès à distance",
+    switchHelp: "Il peut être refusé sans plafond de dépense par jour (Réglages › Coûts), sans Tailscale connecté sur ce PC, ou sans adresse Tailscale. Le couper retire aussi la publication Tailscale ; le rallumer la rétablit. Aussi depuis l'icône JARVIS près de l'horloge.",
+    switching: "Un instant…",
+    switchedOn: "Accès à distance activé.",
+    switchedOff: "Accès à distance coupé.",
+    pausedUntil: (time) => `En pause jusqu'à ${time}.`,
+    resume: "Reprendre maintenant",
+    resumed: "Accès à distance repris.",
+    // 3. Publier sur Tailscale
+    serveTitle: "Publication Tailscale",
+    serveHelp: "JARVIS se publie sur votre réseau Tailscale seulement, jamais sur internet, avec la commande ci-dessous.",
+    publish: "Publier sur Tailscale",
+    publishing: "Publication…",
+    published: "Publié sur Tailscale.",
+    publishFailed: "La publication a échoué.",
+    unpublish: "Retirer la publication",
+    unpublished: "Publication retirée.",
+    consent: "Tailscale demande d'autoriser HTTPS sur votre réseau : ouvrez ce lien, acceptez, puis revenez ici.",
+    consentLink: "Autoriser HTTPS sur Tailscale",
+    consentBad: "Lien d'autorisation inattendu : il n'est pas affiché. Utilisez la commande manuelle.",
+    serveLine: (word) => `Serve : ${word}`,
+    serveStates: { ready: "prêt", absent: "absent", funnel: "Funnel actif", tcp: "relais TCP", wrong_target: "cible inattendue",
+                   stopped: "Tailscale arrêté", no_tailscale: "Tailscale absent", unknown: "inconnu" },
+    manual: "Commande manuelle",
+    manualHelp: "À taper dans PowerShell (touche Windows, tapez powershell, Entrée) si le bouton ne suffit pas :",
+    fixLabel: "Pour l'arrêter, à taper d'abord dans PowerShell :",
+    manualFull: "Si PowerShell ne trouve pas tailscale :",
+    // 4. pairing
+    pairTitle: "Associer un iPhone",
+    pair: "Associer un iPhone",
+    pairHelp: "Ouvre l'association pour 10 minutes : l'iPhone demande l'accès et affiche un code à 4 chiffres, que vous vérifiez ici.",
+    pairOpenFor: (time) => `Association ouverte encore ${time}.`,
+    pairSteps: "Sur l'iPhone : ouvrez cette adresse dans Safari, ou scannez le QR code avec l'Appareil photo, puis suivez les étapes.",
+    pairClose: "Fermer l'association",
+    pairClosed: "Association fermée.",
+    qrLabel: (url) => `QR code de l'adresse ${url}`,
+    qrLoading: "QR code en préparation…",
+    qrFallback: "QR code indisponible : tapez l'adresse ci-dessus dans Safari sur l'iPhone.",
+    requestsLabel: "Demandes d'association",
+    noRequest: "Aucune demande pour l'instant : elles s'affichent ici dès que l'iPhone demande l'accès.",
+    several: "Plusieurs demandes en attente : n'autorisez que celle dont le code s'affiche sur votre iPhone.",
+    codeIs: "Code :",
+    allow: "Autoriser",
+    deny: "Refuser",
+    allowLabel: (code) => `Autoriser la demande ${code}`,
+    denyLabel: (code) => `Refuser la demande ${code}`,
+    typeCode: "Code affiché sur l'iPhone (4 chiffres)",
+    codeFormat: "Tapez les 4 chiffres affichés sur l'iPhone.",
+    approvedWait: "Autorisée : l'iPhone termine l'association…",
+    allowed: (code) => `Demande ${code} autorisée : l'iPhone termine l'association.`,
+    denied: (code) => `Demande ${code} refusée.`,
+    // 5. devices
+    devicesTitle: "Appareils associés",
+    noDevices: "Aucun appareil associé.",
+    rename: "Renommer",
+    renameLabel: (name) => `Renommer ${name}`,
+    newName: "Nouveau nom",
+    renamed: (name) => `Renommé « ${name} ».`,
+    revoke: "Retirer",
+    revokeLabel: (name) => `Retirer ${name}`,
+    revokeTitle: (name) => `Retirer « ${name} » ?`,
+    revokeAsk: "Cet appareil ne pourra plus joindre JARVIS : pour l'utiliser à nouveau, il faudra l'associer depuis ce PC.",
+    revokeWarn: "Ses clés Siri et ses tâches en cours s'arrêtent aussi. Si les notifications ntfy servent, leur sujet change : il ne les reçoit plus, et vos autres iPhone devront s'abonner au nouveau sujet.",
+    revoked: (name, count) => `« ${name} » retiré. Tâches arrêtées : ${count}.`,
+    topicRenewed: "Nouveau sujet de notifications : sur vos autres iPhone, abonnez-vous-y (Réglages › Notifications).",
+    pairedOn: (date) => `Associé le ${date}`,
+    lastSeen: (when) => `vu ${when}`,
+    neverSeen: "pas encore vu",
+    // 6. full access from the iPhone
+    completTitle: "Accès complet depuis l'iPhone",
+    complet: { never: "Jamais", day: "24 h", week: "7 jours" },
+    completUntil: (when) => `Autorisé jusqu'au ${when}.`,
+    completNever: "Jamais : les tâches avec accès complet se lancent depuis le PC seulement.",
+    completHelp: "Même autorisée, une tâche avec accès complet demandée depuis l'iPhone attend toujours le bouton Lancer sur l'iPhone, jamais un « oui » à la voix, et le PC en est averti. Elle est refusée après des données venues d'internet.",
+    completAsk: (label) => `Autoriser les tâches avec accès complet depuis l'iPhone pendant ${label} ? Chacune attendra le bouton Lancer sur l'iPhone, et le PC en sera averti.`,
+    completOk: "Autoriser",
+    // 7. recent activity (the audit, in plain French)
+    auditTitle: "Activité récente",
+    auditRefresh: "Actualiser",
+    auditEmpty: "Aucune activité à distance pour l'instant.",
+    kindWhat: (kind, what) => `${kind} : ${what}`,
+    times: (n) => `(${n} fois)`,
+    accepted: "acceptée",
+    refused: "refusée",
+    callers: { pc: "PC", app: "iPhone", siri: "Siri", unpaired: "appareil non associé" },
+    kinds: { request: "Requête", pair: "Association", device: "Appareil", state: "Accès", tool: "Outil", decide: "Décision",
+             alert: "Alerte", usage: "Consommation", key: "Clé Siri" },
+    reasons: {
+      funnel: "refusée : venue d'internet (Funnel)", proxy_on_pc_port: "refusée : proxy sur le port du PC",
+      off: "refusée : accès coupé", paused: "refusée : accès en pause", host: "refusée : adresse inattendue",
+      proto: "refusée : sans HTTPS", xff: "refusée : adresse hors Tailscale", self: "refusée : adresse du PC lui-même",
+      login: "refusée : compte non autorisé", origin: "refusée : origine inattendue", site: "refusée : autre site",
+      locked: "refusée : bloqué après des échecs", token: "refusée : jeton expiré", revoked: "refusée : appareil retiré",
+      ip: "refusée : autre machine", unpaired: "refusée : appareil non associé", scope: "refusée : réservé au PC",
+      rate: "refusée : trop de demandes", cap: "refusée : plafond atteint", clamped: "relevé plafonné",
+      throttled: "lignes regroupées", serve_unsafe: "refusée : relais TCP ou Funnel vers JARVIS",
+    },
+    // the paired iPhone's own view
+    thisPhone: "Cet iPhone",
+    phoneActive: "Accès à distance actif",
+    phoneComplet: (when) => `Accès complet autorisé par le PC jusqu'au ${when}.`,
+    pauseHelp: "Mettre en pause coupe tout l'accès à distance (vos iPhone et Siri) ; seul le PC peut le rallumer avant la fin de la pause.",
+    pause: "Mettre en pause",
+    pauseTitle: "Couper l'accès depuis l'iPhone ?",
+    pauseText: "Seul le PC pourra le rallumer avant la fin de la pause.",
+    pause1: "1 h",
+    pause24: "24 h",
+    pausedNow: (time) => `Accès à distance en pause jusqu'à ${time}. Seul le PC peut le rallumer avant.`,
+    forget: "Oublier cet iPhone",
+    forgetTitle: "Oublier cet iPhone ?",
+    forgetAsk: "JARVIS ne reconnaîtra plus cet iPhone : pour l'utiliser à nouveau, il faudra l'associer depuis le PC.",
+    forgetWarn: "Ses clés Siri et ses tâches en cours s'arrêtent aussi.",
+    forgotten: "iPhone oublié.",
+  },
+  // ---- pair: owned by A4
+  pair: {
+    // The pairing page (pair.js): before the PC has allowed this device.
+    title: "Associer cet appareil",
+    intro: "JARVIS tourne sur votre PC. Cet appareil doit y être autorisé une fois : donnez-lui un nom, puis demandez l'accès.",
+    installTitle: "D'abord, ajoutez JARVIS à l'écran d'accueil",
+    installIntro: "L'association se fait dans l'app web JARVIS, celle que vous ouvrirez ensuite.",
+    installSteps: [
+      "Dans Safari, touchez ⋯ (en bas de l'écran), puis Partager.",
+      "Touchez Sur l'écran d'accueil.",
+      "Laissez « Ouvrir comme app web » activé, puis touchez Ajouter.",
+      "Ouvrez l'icône JARVIS sur l'écran d'accueil : l'association continue là.",
+    ],
+    useSafari: "Utiliser JARVIS dans Safari",
+    safariNote: "Dans Safari, JARVIS fonctionne aussi ; l'icône de l'écran d'accueil devra alors être associée à part.",
+    nameLabel: "Nom de cet appareil",
+    nameDefault: "iPhone",
+    nameHelp: "Il s'affichera sur le PC, dans Réglages › Accès à distance.",
+    ask: "Demander l'accès",
+    asking: "Demande en cours…",
+    failed: "La demande n'a pas abouti : réessayez.",
+    codeTitle: "Code de cette demande",
+    codeLabel: (digits) => `Code de cette demande : ${digits}`,
+    check: "Sur le PC, vérifiez que le même code s'affiche, puis cliquez Autoriser.",
+    waiting: "En attente de l'accord du PC…",
+    lost: "Le PC ne répond pas : nouvel essai dans un instant…",
+    approved: "Associé !",
+    opening: "JARVIS s'ouvre…",
+    endTitle: "Association interrompue",
+    denied: "La demande a été refusée sur le PC.",
+    expired: "La demande a expiré : l'association s'est refermée sur le PC.",
+    restart: "Recommencer",
+    retry: "Réessayer",
+    titles: {
+      closed: "Association fermée",
+      off: "Accès à distance coupé",
+      paused: "Accès à distance en pause",
+      refused: "Accès refusé",
+      locked: "Accès bloqué",
+      revoked: "Appareil retiré",
+    },
+    states: {
+      closed: "L'association est fermée. Sur le PC : Réglages › Accès à distance › Associer un iPhone, puis touchez Réessayer.",
+      off: "L'accès à distance est coupé sur le PC. Il se rallume sur le PC, dans Réglages › Accès à distance ou depuis l'icône JARVIS près de l'horloge.",
+      paused: "L'accès à distance est en pause. Il reprendra seul à la fin de la pause, ou plus tôt depuis le PC.",
+      refused: "Vérifiez que cet appareil est connecté à Tailscale avec le même compte que le PC, puis ouvrez JARVIS depuis son icône sur l'écran d'accueil ou en tapant son adresse dans Safari.",
+      locked: "Trop d'échecs depuis cet appareil : réessayez dans 15 minutes.",
+      revoked: "Cet appareil a été retiré sur le PC. Pour l'associer à nouveau : Réglages › Accès à distance › Associer un iPhone, sur le PC.",
+    },
+  },
+  // ---- notify: owned by B1
+  notify: {
+    loading: "Chargement…",
+    notYet: "Pas encore disponible.",
+    intro: "JARVIS envoie un mot sur l'iPhone par l'app ntfy quand une tâche se termine, qu'un rappel sonne ou qu'une confirmation attend, et à chaque alerte de sécurité. Jamais le contenu d'une tâche, jamais un lien.",
+    topicTitle: "Sujet ntfy",
+    topicHelp: "Ce sujet est l'adresse de vos notifications : qui le connaît peut les lire. Ne le partagez pas.",
+    copyTopic: "Copier le sujet",
+    copied: "Sujet copié : collez-le dans l'app ntfy.",
+    copyFailed: "Copie impossible : touchez le sujet pour le sélectionner, puis copiez-le.",
+    server: (url) => `Serveur ntfy : ${url}`,
+    test: "Envoyer un test",
+    sending: "Envoi…",
+    sent: "Test envoyé : regardez l'iPhone.",
+    newTopic: "Nouveau sujet",
+    newTitle: "Nouveau sujet ntfy ?",
+    newAsk: "Un nouveau sujet remplace l'actuel : il faudra le coller de nouveau dans l'app ntfy de l'iPhone.",
+    newWarn: "L'ancien sujet ne recevra plus aucune notification.",
+    newDone: "Nouveau sujet créé : collez-le dans l'app ntfy de l'iPhone.",
+    on: "Notifications activées.",
+    off: "Notifications coupées. Elles s'activent sur le PC, dans Réglages › Notifications.",
+    offPc: "Notifications coupées : cochez la première case pour les activer.",
+    lastSent: (when) => `Dernier envoi réussi : ${when}.`,
+    lastError: (text) => `Dernier échec : ${text}`,
+    guideTitle: "Sur cet iPhone, en 4 étapes",
+    step1: "Installez l'app ntfy depuis l'App Store et autorisez ses notifications.",
+    step2: "Dans ntfy, touchez +.",
+    step3: "Collez le sujet copié ci-dessus.",
+    step3Server: (server) => `Collez le sujet copié ci-dessus, avec le serveur ${server}.`,
+    step4: "Touchez « S'abonner » (« Subscribe » si l'app est en anglais).",
+  },
+  // ---- siri: owned by B3
+  siri: {
+    // On the PC, under each paired iPhone (Réglages › Accès à distance)
+    title: "Raccourci Siri",
+    create: "Créer une clé Siri",
+    creating: "Création…",
+    createHelp: "Une clé laisse le raccourci « Jarvis » de cet iPhone parler à JARVIS avec Siri : rappels, recherches web, état et annulation de ses tâches. Siri ne répond qu'avec un plafond de dépense par jour (Réglages › Coûts).",
+    created: (time) => `Clé créée. Sur l'iPhone, avant ${time} : Réglages › Accès à distance › Assistant raccourci.`,
+    maxKeys: (n) => `${n} clés au plus par iPhone : révoquez-en une pour en créer une autre.`,
+    keyLabel: (id) => `Clé ${id}`,
+    keyCreated: (when) => `créée le ${when}`,
+    keyUsed: (when) => `utilisée ${when}`,
+    keyUnused: "jamais utilisée",
+    revoke: "Révoquer",
+    revokeLabel: (when) => `Révoquer la clé Siri créée le ${when}`,
+    revokeTitle: "Révoquer cette clé Siri ?",
+    revokeAsk: "Le raccourci Siri qui l'utilise ne marchera plus. Pour Siri de nouveau, créez une autre clé.",
+    revoked: "Clé Siri révoquée.",
+    // On the iPhone (the phone view of the same section)
+    phoneHelp: "Pour parler à JARVIS avec Siri : sur le PC, Réglages › Accès à distance › cet iPhone › Créer une clé Siri. Puis, dans les 10 minutes, ouvrez l'assistant ici.",
+    assistant: "Assistant raccourci",
+    loading: "Récupération de la clé…",
+    none: "Aucune clé Siri en attente : créez-en une sur le PC (Réglages › Accès à distance), puis rouvrez l'assistant dans les 10 minutes.",
+    once: "La clé ne s'affiche qu'une fois : copiez chaque valeur dans le raccourci avant de fermer. Ne partagez jamais ce raccourci.",
+    rowUrl: "Adresse (URL)",
+    rowHeader: "Nom de l'en-tête",
+    rowValue: "Valeur de l'en-tête",
+    rowField: "Champ du corps JSON",
+    copy: "Copier",
+    copyLabel: (what) => `Copier : ${what}`,
+    copied: (what) => `${what} : copié.`,
+    copyFailed: "Copie impossible : touchez et maintenez le texte pour le copier.",
+    recipeTitle: "Le raccourci, en 3 actions",
+    recipeStart: "App Raccourcis › + (sur iOS 27, ignorez « Décrire un raccourci ») › nommez-le Jarvis.",
+    recipe: [
+      "Dicter le texte (langue : Français).",
+      "Obtenir le contenu de l'URL : collez l'adresse ; « En afficher plus » › Méthode POST ; En-têtes › Ajouter un nouvel en-tête : Authorization = la valeur copiée ; Corps de la requête (ou « Demander le corps ») JSON › Ajouter un nouveau champ › Texte : text = Texte dicté.",
+      "Énoncer le texte (le contenu de l'URL).",
+    ],
+    recipeEnd: "Premier lancement : répondez « Toujours autoriser ». Puis dites « Dis Siri, Jarvis ».",
+    close: "Fermer",
+    // Réglages › Coûts and the cost chip (usage.js), once Siri spent something
+    costToday: (amount) => ` · Siri ≈ ${amount}`,
+    costTooltip: (amount) => `\nSiri ≈ ${amount}`,
+    costSeries: "Siri (OpenAI, texte)",
+    costColumn: "Siri",
+  },
+  // ---- ios: owned by B2
+  ios: {
+    // A finger, no keyboard (touchUI()): the status line, the composer and the
+    // help card without Espace, Ctrl+J, Ctrl+M or Échap (hud.js, keys.js).
+    standby: "En veille · touchez l'orbe pour parler",
+    standbyWake: "En veille · dites « Jarvis » ou touchez l'orbe",
+    wakeOff: "En veille · mot d'éveil désactivé · touchez l'orbe",
+    off: "Hors ligne · touchez l'orbe pour parler",
+    speaking: "JARVIS répond · parlez ou touchez Interrompre",
+    muted: "Micro coupé · touchez « Micro » pour le réactiver",
+    composerPlaceholder: "Écrivez à JARVIS…",
+    gestures: "Commandes tactiles",
+    help: "Orbe : parler ou mettre en veille · Champ de message : écrire · Interrompre : couper la parole · Micro : couper le micro",
+    // The conversation and iOS (ios.js, voice.js).
+    paused: "Conversation en pause (écran verrouillé ou autre app).",
+    resume: "Reprendre",
+    dismiss: "Fermer ce message",
+    micInterrupted: "Micro interrompu (appel, Siri ou autre app) : JARVIS vous entend de nouveau dès qu'iOS le rend.",
+    // The microphone refused or busy, on the iPhone (no address bar, no Windows): explainError, voice.js.
+    micBlocked: "Micro refusé : réessayez et autorisez le micro quand iOS le demande. S'il ne le demande plus : Réglages de l'iPhone › Apps › Safari › Micro.",
+    micBusy: "Micro occupé par un appel ou une autre app : réessayez une fois libéré.",
+    // Réglages › Écoute on iOS: Safari cannot choose the output (settings.js).
+    speakerNote: "Sur l'iPhone, iOS choisit la sortie du son : haut-parleur, écouteurs ou AirPlay (Centre de contrôle).",
   },
 });
 
@@ -759,7 +1068,19 @@ const ERROR_KINDS = {
 };
 
 let ours = null;
-const OURS = () => ours || (ours = new Set(Object.values(T.error).filter(v => typeof v === "string")));
+const OURS = () => ours || (ours = new Set([...Object.values(T.error), T.ios.micBlocked, T.ios.micBusy]
+  .filter(v => typeof v === "string")));
+
+/* The paired iPhone's page, or any page on iOS: the microphone is not
+   unblocked from an address bar or from Windows there. (This module stays
+   pure: node runs it, without a document.) */
+export function onPhone() {
+  const doc = typeof document !== "undefined" ? document : null;
+  const nav = typeof navigator !== "undefined" ? navigator : null;
+  if (doc?.querySelector?.('meta[name="jarvis-remote"]')?.getAttribute("content") === "1") return true;
+  return !!nav && (/iPhone|iPad|iPod/.test(nav.userAgent || "")
+    || (nav.platform === "MacIntel" && nav.maxTouchPoints > 1));
+}
 
 /* The French message for an error (design spec §11 errors table): a bus error
    {kind, message, detail}, an Error or DOMException, or a string. A message
@@ -778,9 +1099,11 @@ export function explainError(err) {
   // "(OpenAI 429)" to the same words): kept as is, diagnosis included.
   const bare = msg.replace(/\s*\(OpenAI \d{3}\)\s*$/, "");
   if (bare && OURS().has(fr(bare))) return fr(msg);
-  if (/^(NotAllowedError|SecurityError|PermissionDeniedError)$/.test(name)) return T.error.NotAllowedError;
+  if (/^(NotAllowedError|SecurityError|PermissionDeniedError)$/.test(name)) {
+    return onPhone() ? T.ios.micBlocked : T.error.NotAllowedError;
+  }
   if (/^(NotFoundError|OverconstrainedError|DevicesNotFoundError)$/.test(name)) return T.error.NotFoundError;
-  if (/^(NotReadableError|TrackStartError)$/.test(name)) return T.error.NotReadableError;
+  if (/^(NotReadableError|TrackStartError)$/.test(name)) return onPhone() ? T.ios.micBusy : T.error.NotReadableError;
   if (name === "AbortError" || name === "TimeoutError") return T.error.timeout;
   if (/OPENAI_API_KEY|cl[ée] (openai )?(absente|manquante)|no api key/i.test(msg)) return T.error.noKey;
   const openai = /OpenAI (\d{3})\b/.exec(msg);

@@ -7,7 +7,7 @@ import pytest
 
 from jarvis import config, confirm, info, instructions, store, tools
 
-GEO = {"results": [{"name": "Laon", "latitude": 49.5631, "longitude": 3.62714, "country": "France",
+GEO = {"results": [{"name": "Nantes", "latitude": 47.2184, "longitude": -1.5536, "country": "France",
                     "admin1": "Hauts-de-France"}]}
 FORECAST = {
     "current": {"time": "2026-10-09T22:30", "temperature_2m": 13.5, "precipitation": 0.1, "weather_code": 51},
@@ -58,36 +58,36 @@ def hosts(seen) -> list:
 
 # ---------------------------------------------------------------- weather
 
-def test_tomorrow_in_laon_in_french_with_one_geocode(web):
+def test_tomorrow_in_nantes_in_french_with_one_geocode(web):
     seen, _ = web
-    out = info.weather("Laon", "demain")
+    out = info.weather("Nantes", "demain")
     assert out["ok"] is True
-    assert out["text"] == "Demain à Laon : pluie faible, de 9 à 15 °C, risque de pluie 98 %."
+    assert out["text"] == "Demain à Nantes : pluie faible, de 9 à 15 °C, risque de pluie 98 %."
     assert out["source"] == "Météo : Open-Meteo.com (CC-BY 4.0)"
     assert (out["min"], out["max"], out["rain_probability"]) == (9.3, 14.9, 98)
-    again = info.weather("laon", "aujourdhui")  # another case: the same city
-    assert again["text"] == "Aujourd'hui à Laon : bruine modérée, de 6 à 14 °C, risque de pluie 78 %."
+    again = info.weather("nantes", "aujourdhui")  # another case: the same city
+    assert again["text"] == "Aujourd'hui à Nantes : bruine modérée, de 6 à 14 °C, risque de pluie 78 %."
     assert hosts(seen).count("geocoding-api.open-meteo.com") == 1
     assert hosts(seen).count("api.open-meteo.com") == 1  # the forecast is kept 15 minutes
     geo = seen[0].url.params
-    assert (geo["name"], geo["count"], geo["language"]) == ("Laon", "1", "fr")
+    assert (geo["name"], geo["count"], geo["language"]) == ("Nantes", "1", "fr")
     fc = seen[1].url.params
     assert fc["current"] == "temperature_2m,precipitation,weather_code"
     assert fc["daily"] == "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
     assert fc["timezone"] == "auto"
     # The coordinates are kept for good (state.json), even after a restart's empty caches.
     info._forecasts.clear()
-    assert store.load(info.STATE_FILE, {})["geocode"]["laon"]["lat"] == 49.5631
-    info.weather("Laon", "demain")
+    assert store.load(info.STATE_FILE, {})["geocode"]["nantes"]["lat"] == 47.2184
+    info.weather("Nantes", "demain")
     assert hosts(seen).count("geocoding-api.open-meteo.com") == 1
 
 
 def test_right_now_and_the_settings_city(web, monkeypatch):
-    monkeypatch.setattr(config, "CITY", "Laon")
+    monkeypatch.setattr(config, "CITY", "Nantes")
     out = info.weather(None, "maintenant")
-    assert out["text"] == ("À Laon, en ce moment : 14 °C, bruine légère, 0,1 mm de précipitations. "
+    assert out["text"] == ("À Nantes, en ce moment : 14 °C, bruine légère, 0,1 mm de précipitations. "
                            "Aujourd'hui : bruine modérée, de 6 à 14 °C, risque de pluie 78 %.")
-    assert info.weather_text(None, "apres-demain") == "Après-demain à Laon : couvert, de 0 à 15 °C, risque de pluie 10 %."
+    assert info.weather_text(None, "apres-demain") == "Après-demain à Nantes : couvert, de 0 à 15 °C, risque de pluie 10 %."
     monkeypatch.setattr(config, "CITY", "")
     assert "Quelle ville" in info.weather()["error"]
 
@@ -106,13 +106,13 @@ def test_a_network_timeout_is_said_never_raised(web):
         raise httpx.ReadTimeout("trop lent", request=request)
 
     routes["geocoding-api.open-meteo.com"] = slow
-    out = info.weather("Laon", "demain")
+    out = info.weather("Nantes", "demain")
     assert out["ok"] is False and out["error"].startswith("Météo indisponible")
     routes["geocoding-api.open-meteo.com"] = lambda r: httpx.Response(200, json=GEO)
     routes["api.open-meteo.com"] = lambda r: httpx.Response(429, json={"reason": "quota"})
-    assert info.weather("Laon")["error"] == info.T.busy
+    assert info.weather("Nantes")["error"] == info.T.busy
     routes["api.open-meteo.com"] = lambda r: httpx.Response(200, json={"daily": {}})
-    assert info.weather("Laon", "demain")["error"] == info.T.bad
+    assert info.weather("Nantes", "demain")["error"] == info.T.bad
     routes["geocoding-api.open-meteo.com"] = lambda r: httpx.Response(200, json={})
     assert info.weather("Atlantide")["error"] == "Ville introuvable pour la météo : « Atlantide »."
 
@@ -174,8 +174,8 @@ def test_the_info_tool_taints_the_session_for_news_only(web, monkeypatch):
     confirm.SESSIONS.clear()
     sid = confirm.new_session()
     ctx = tools.ToolCtx(session_id=sid)
-    weather = tools.run_tool("info", {"type": "meteo", "ville": "Laon", "quand": "demain"}, ctx)
-    assert weather["ok"] and "Laon" in weather["text"] and not confirm.is_tainted(sid)
+    weather = tools.run_tool("info", {"type": "meteo", "ville": "Nantes", "quand": "demain"}, ctx)
+    assert weather["ok"] and "Nantes" in weather["text"] and not confirm.is_tainted(sid)
     headlines = tools.run_tool("info", {"type": "actus"}, ctx)
     assert len(headlines["headlines"]) == 5 and confirm.is_tainted(sid)
     assert confirm.SESSIONS[sid]["last_turn"] == 0.0
@@ -184,16 +184,16 @@ def test_the_info_tool_taints_the_session_for_news_only(web, monkeypatch):
 
 
 def test_the_instructions_send_weather_and_news_to_the_tool(monkeypatch):
-    monkeypatch.setattr(config, "CITY", "Laon")
+    monkeypatch.setattr(config, "CITY", "Nantes")
     text = instructions.build_instructions()
     assert "outil info (instantané), jamais delegate_to_claude" in text.replace("Outil info", "outil info")
-    assert "Ville de monsieur par défaut : Laon." in text
+    assert "Ville de monsieur par défaut : Nantes." in text
     schema = next(t for t in tools.session_tools() if t["name"] == "info")
     assert schema["parameters"]["properties"]["type"]["enum"] == ["meteo", "actus"]
 
 
 def test_no_network_by_default_in_tests():
     """The test harness itself never lets a weather call out."""
-    out = info.weather("Laon")
+    out = info.weather("Nantes")
     assert out == {"ok": False, "error": info.T.down}
     assert json.dumps(out, ensure_ascii=False).startswith('{"ok": false')

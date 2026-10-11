@@ -7,11 +7,16 @@ import pytest
 
 pytestmark = pytest.mark.e2e
 
-SIZES = [(800, 600), (1024, 700), (1280, 720), (1440, 900), (1920, 1080)]
+# The two iPhone sizes (spec 7): the PC page at those sizes, and the paired
+# iPhone's own page (remote_page: touch, mobile, the iPhone's user agent).
+PHONES = [(390, 844), (430, 932)]
+SIZES = [*PHONES, (800, 600), (1024, 700), (1280, 720), (1440, 900), (1920, 1080)]
+PHONE_PAGES = [{"size": size} for size in PHONES]
+PHONE_IDS = [f"{w}x{h}" for w, h in PHONES]
 
 SIX_CARDS = """async () => {
   const hud = await import('/static/js/hud.js');
-  hud.addCard('Météo Laon', '**14 °C**, averses éparses, vent 25 km/h', 'result');
+  hud.addCard('Météo Nantes', '**14 °C**, averses éparses, vent 25 km/h', 'result');
   hud.addCard('Définition', "**Agroécologie** : un ensemble de pratiques agricoles qui s'appuient sur les écosystèmes.", 'info');
   hud.addCard('Commande PowerShell', 'Get-ChildItem -Recurse -Filter *.xlsx | Sort-Object LastWriteTime -Descending', 'code');
   hud.addCard('Rappel', 'Appeler le garage pour le contrôle technique de la Clio', 'warning');
@@ -125,18 +130,114 @@ def test_caption_and_cards_do_not_intersect(jarvis):
         or a["y"] >= b["y"] + b["height"] or b["y"] >= a["y"] + a["height"], (a, b)
 
 
-@pytest.mark.parametrize("width,height", [(800, 600), (360, 640)])
+def assert_no_sideways_scroll(page):
+    assert page.evaluate("document.scrollingElement.scrollWidth <= innerWidth")
+    # and nothing in the stage pokes out of the window either
+    assert page.evaluate("""[...document.querySelectorAll('#stage *, #topbar *')]
+      .filter(e => getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width)
+      .every(e => e.getBoundingClientRect().right <= innerWidth + 1)""")
+
+
+@pytest.mark.parametrize("width,height", [(800, 600), (360, 640), *PHONES])
 def test_no_horizontal_scroll(jarvis, width, height):
     jarvis.set_viewport_size({"width": width, "height": height})
     jarvis.evaluate(SIX_CARDS)
     go_live(jarvis)
     caption(jarvis)
     jarvis.evaluate("__jarvis.bus.emit('error', {kind: 'connect', message: 'OpenAI 401: invalid_api_key'})")
-    assert jarvis.evaluate("document.scrollingElement.scrollWidth <= innerWidth")
-    # and nothing in the stage pokes out of the window either
-    assert jarvis.evaluate("""[...document.querySelectorAll('#stage *, #topbar *')]
-      .filter(e => getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width)
-      .every(e => e.getBoundingClientRect().right <= innerWidth + 1)""")
+    assert_no_sideways_scroll(jarvis)
+
+
+# ---------------------------------------------------------------- the paired iPhone's own page
+
+@pytest.mark.parametrize("remote_page", PHONE_PAGES, ids=PHONE_IDS, indirect=True)
+def test_the_phone_page_never_scrolls_sideways_and_nothing_covers_its_orb(remote_page):
+    """Touch, 44 px controls, the iPhone's user agent: the orb stays free and
+    usable, in standby and live, with the bottom sheet full of cards."""
+    page = remote_page
+    assert_no_sideways_scroll(page)
+    assert_orb_free(page)
+    page.evaluate(SIX_CARDS)
+    page.wait_for_timeout(300)  # card entrance and the bottom sheet measure
+    assert_orb_free(page)
+    go_live(page)
+    caption(page)
+    set_phase(page, "speaking")
+    page.evaluate("__jarvis.bus.emit('error', {kind: 'connect', message: 'OpenAI 401: invalid_api_key'})")
+    page.wait_for_timeout(200)
+    assert_orb_free(page)
+    assert_no_sideways_scroll(page)
+    box = page.locator("#orbBtn").bounding_box()
+    assert box["width"] >= 120 and abs(box["width"] - box["height"]) < 1
+    assert box["y"] >= 0 and box["y"] + box["height"] <= page.viewport_size["height"]
+
+
+# An iPhone's notch and home bar in portrait, its rounded corners in landscape:
+# Chromium has no safe areas of its own, so the page's variables (tokens.css)
+# are given the iPhone's values.
+INSETS = """([t, r, b, l]) => { const s = document.documentElement.style;
+  s.setProperty('--safe-top', t + 'px'); s.setProperty('--safe-right', r + 'px');
+  s.setProperty('--safe-bottom', b + 'px'); s.setProperty('--safe-left', l + 'px'); }"""
+
+
+@pytest.mark.parametrize("remote_page", PHONE_PAGES[:1], ids=PHONE_IDS[:1], indirect=True)
+def test_the_safe_areas_keep_every_control_clear(remote_page):
+    page = remote_page
+    page.evaluate(SIX_CARDS)
+    go_live(page)
+    page.evaluate(INSETS, [47, 0, 34, 0])
+    page.wait_for_timeout(300)
+    height = page.viewport_size["height"]
+    first = page.evaluate("document.querySelector('#topbar .brand').getBoundingClientRect().top")
+    assert first >= 47  # under the notch
+    sheet = page.locator("#cards").bounding_box()
+    assert sheet["y"] + sheet["height"] <= height - 34 - 12 + 1  # above the home bar
+    for selector in ("#askInput", "#micBtn"):
+        b = page.locator(selector).bounding_box()
+        assert b["y"] + b["height"] <= sheet["y"] + 1, selector
+    assert_orb_free(page)
+    # Landscape: the rounded corners on both sides, the home bar below.
+    page.set_viewport_size({"width": 844, "height": 390})
+    page.evaluate(INSETS, [0, 47, 21, 47])
+    page.wait_for_timeout(300)
+    assert_no_sideways_scroll(page)
+    left = page.evaluate("""Math.min(...[...document.querySelectorAll('#topbar *, #stage *, #cards')]
+      .filter(e => e.checkVisibility() && e.getBoundingClientRect().width).map(e => e.getBoundingClientRect().left))""")
+    right = page.evaluate("""Math.max(...[...document.querySelectorAll('#topbar *, #stage *, #cards')]
+      .filter(e => e.checkVisibility() && e.getBoundingClientRect().width).map(e => e.getBoundingClientRect().right))""")
+    assert left >= 47 and right <= 844 - 47, (left, right)
+    # The Réglages drawer: its title below the top inset, its close button clear of the corner.
+    page.evaluate(INSETS, [47, 0, 34, 0])
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.locator("#topActions button", has_text="Réglages").tap()
+    page.wait_for_selector("#settingsDialog .set-tab")
+    assert page.locator("#settingsTitle").bounding_box()["y"] >= 47
+
+
+@pytest.mark.parametrize("remote_page", PHONE_PAGES, ids=PHONE_IDS, indirect=True)
+def test_the_phone_reaches_the_sheet_and_the_composer(remote_page):
+    page = remote_page
+    page.evaluate(SIX_CARDS)
+    go_live(page)
+    page.wait_for_timeout(300)
+    height = page.viewport_size["height"]
+    sheet = page.locator("#cards").bounding_box()
+    assert sheet["height"] > 0 and sheet["y"] + sheet["height"] <= height
+    # The composer and the live controls sit above the sheet, in the window, uncovered.
+    for selector in ("#askInput", "#ask button", "#micBtn", "#sleepBtn"):
+        b = page.locator(selector).bounding_box()
+        assert 0 <= b["y"] and b["y"] + b["height"] <= sheet["y"] + 1, selector
+        hit = page.evaluate("([x, y]) => document.elementFromPoint(x, y)?.closest('#ask, #controls')?.id",
+                            [b["x"] + b["width"] / 2, b["y"] + b["height"] / 2])
+        assert hit in ("ask", "controls"), selector
+    # The sheet's own controls are reachable: '+5' opens every card, '−' folds them.
+    more = page.locator("#cards .more")
+    assert more.inner_text() == "+5"
+    more.tap()
+    assert page.evaluate("[...document.querySelectorAll('#cards .card')].every(c => c.checkVisibility())")
+    more.tap()
+    page.locator("#askInput").tap()
+    assert page.evaluate("document.activeElement.id") == "askInput"
 
 
 def test_grid_columns_follow_the_breakpoints(jarvis):
@@ -384,22 +485,48 @@ def test_cards_eviction_time_and_announcement(jarvis):
     for i in range(9):
         hud(jarvis, f"addCard('Info {i}', 'x', 'info')")
     titles = jarvis.evaluate("[...document.querySelectorAll('#cards .card h3')].map(h => h.textContent)")
-    # eight at most: the oldest info cards went, never the warning or the confirmation
-    assert len(titles) == 8 and titles[-2:] == ["Confirmation requise", "Attention"]
-    assert titles[:6] == [f"Info {i}" for i in range(8, 2, -1)]
+    # eight at most: the oldest info cards went, never the warning or the confirmation;
+    # the pending confirmation stays first (spec 7), the others newest first
+    assert len(titles) == 8 and titles[0] == "Confirmation requise" and titles[-1] == "Attention"
+    assert titles[1:7] == [f"Info {i}" for i in range(8, 2, -1)]
     # the time is a <time> with a relative French label
-    stamp = jarvis.locator("#cards .card").first.locator("time.meta")
+    newest = jarvis.locator("#cards .card").nth(1)
+    stamp = newest.locator("time.meta")
     assert stamp.inner_text() == "à l'instant" and stamp.get_attribute("datetime")
     assert jarvis.evaluate("getComputedStyle(document.querySelector('#cards .meta')).color") == "rgb(122, 167, 194)"
     assert jarvis.text_content("#sr") == "Nouvelle carte\u202f: Info 8"
     # close buttons: real buttons, labelled with the card's title
-    x = jarvis.locator("#cards .card").first.locator(".x")
+    x = newest.locator(".x")
     assert x.evaluate("e => e.tagName") == "BUTTON"
     assert x.get_attribute("aria-label") == "Fermer la carte «\u202fInfo 8\u202f»"
     x.focus()
     jarvis.keyboard.press("Enter")
     assert jarvis.locator("#cards .card").count() == 7
     assert jarvis.evaluate("document.activeElement.getAttribute('aria-label')") == "Fermer la carte «\u202fInfo 7\u202f»"
+
+
+def test_pending_confirmations_stay_first_and_answered_ones_move_down(jarvis):
+    """The bottom sheet shows the first card only: a pending confirmation is
+    never pushed behind '+n' by a newer card (spec 7)."""
+    def titles():
+        return jarvis.evaluate("[...document.querySelectorAll('#cards .card h3')].map(h => h.textContent)")
+    hud(jarvis, "addCard('Ancienne', 'x', 'info')")
+    hud(jarvis, "addCard('Question 1', 'Lancer ?', 'confirm', {id: 'q1'})")
+    hud(jarvis, "addCard('Nouvelle', 'x', 'result')")
+    assert titles() == ["Question 1", "Nouvelle", "Ancienne"]
+    hud(jarvis, "addCard('Question 2', 'Lancer ?', 'confirm', {id: 'q2'})")
+    hud(jarvis, "addCard('Récente', 'x', 'info')")
+    assert titles() == ["Question 2", "Question 1", "Récente", "Nouvelle", "Ancienne"]
+    # Question 2 answered (confirm.js turns its card into a result in place): below the one still waiting.
+    hud(jarvis, "addCard('Question 2', 'Fait', 'result', {id: 'q2'})")
+    assert titles() == ["Question 1", "Question 2", "Récente", "Nouvelle", "Ancienne"]
+    # The same card asked again: the newest confirmation, first again.
+    hud(jarvis, "addCard('Récente 2', 'x', 'info')")
+    hud(jarvis, "addCard('Question 2', 'Lancer ?', 'confirm', {id: 'q2'})")
+    assert titles()[:3] == ["Question 2", "Question 1", "Récente 2"]
+    hud(jarvis, "removeCard('q1')")
+    hud(jarvis, "addCard('Question 1', 'Fait', 'result', {id: 'q1'})")
+    assert titles()[:2] == ["Question 2", "Question 1"]
 
 
 def test_tout_effacer_keeps_confirmations(jarvis):

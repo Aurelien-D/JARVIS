@@ -1,6 +1,6 @@
 """Reliable delivery on the server: the replayable event stream, the leader
-page, the inbox of messages nobody has heard yet, quiet hours and « Ne pas
-déranger »."""
+page, the inbox of messages nobody has heard yet (each with its origin),
+quiet hours and « Ne pas déranger »."""
 import asyncio
 import json
 import time
@@ -8,19 +8,23 @@ from datetime import datetime
 
 import pytest
 from fastapi.testclient import TestClient
+from remote_helpers import IP, LOGIN, allow_stamped_streams, as_caller, remote_client
 from starlette.requests import Request
 
 import server
-from jarvis import config, desktop, events, inbox, security, store
+from jarvis import config, desktop, events, inbox, remote, security, store
 
 BASE = "http://127.0.0.1:8788"
 AUTH = {"X-Jarvis-Token": security.TOKEN}
+PHONE = remote.Caller(kind="app", device_id="d_0123456789abcdef", ip=IP, login=LOGIN, name="iPhone de test")
+PING = 'data: {"type":"ping"}\n\n'
 
 
 @pytest.fixture(autouse=True)
 def fresh_events():
     """No page and no event left over from another test."""
     events._replay.clear()
+    events._replay_at.clear()
     events._clients.clear()
     events._leader = None
     events._leader_live = False
@@ -137,6 +141,31 @@ def test_a_repeating_reminder_is_a_new_message_each_time(monkeypatch):
     second = inbox.add("reminder", {"id": "quotidien", "text": "Médicaments"})
     assert second["id"] != first["id"]
 
+
+def test_inbox_items_belong_to_an_origin(windows):
+    mine = inbox.add("reminder", {"id": "r1", "text": "Sortir le pain"})
+    assert mine["via"] == "pc"  # no via: the PC's
+    events.publish("task", {"id": "t1", "title": "Météo", "status": "done", "via": PHONE.origin})
+    (phone,) = inbox.pending(via=PHONE.origin)
+    assert phone["via"] == phone["payload"]["via"] == PHONE.origin
+    assert [i["id"] for i in inbox.pending()] == [mine["id"]]  # the PC's by default
+    assert [i["id"] for i in inbox.pending(via=None)] == [mine["id"], phone["id"]]
+    assert windows == []  # no page open, yet no toast on the PC: the phone tells its own result
+    assert inbox.notify_offline("Rappel", "Arroser", via=PHONE.origin) is False and windows == []
+
+
+def test_a_phone_reads_and_acks_its_own_messages_only(client, monkeypatch):
+    pc_item = inbox.add("reminder", {"id": "r-pc", "text": "Arroser"})
+    phone_item = inbox.add("reminder", {"id": "r-tel", "text": "Pain", "via": PHONE.origin})
+    as_caller(monkeypatch, PHONE)
+    phone = remote_client()
+    assert [i["id"] for i in phone.get("/api/inbox").json()] == [phone_item["id"]]
+    assert [i["id"] for i in client.get("/api/inbox", headers=AUTH).json()] == [pc_item["id"]]
+    r = phone.post(f"/api/inbox/{pc_item['id']}/ack")
+    assert r.status_code == 404 and r.json() == {"detail": "Message introuvable."}
+    assert phone.post(f"/api/inbox/{phone_item['id']}/ack").json() == {"ok": True}
+    assert inbox.pending(via=None) == [i for i in inbox.pending(via=None) if i["id"] == pc_item["id"]]
+
 # ---------------------------------------------------------------- the replayable stream
 
 def test_stream_lines_carry_ids_and_a_reconnection_replays_only_what_was_missed():
@@ -176,7 +205,7 @@ def test_the_http_route_passes_the_page_id_and_last_event_id():
     async def scenario():
         ids = [events.publish("memory", {"n": n}) for n in range(3)]
         scope = {"type": "http", "method": "GET", "path": "/api/events", "query_string": b"",
-                 "headers": [(b"last-event-id", str(ids[0]).encode())]}
+                 "headers": [(b"last-event-id", str(ids[0]).encode())], "state": {"caller": remote.PC}}
         response = await server.stream_events(Request(scope), client="page-http")
         stream = response.body_iterator
         assert (await anext(stream)).startswith("retry:")
@@ -196,6 +225,53 @@ def test_a_slow_page_keeps_at_most_500_events_and_loses_the_oldest():
         got = await frames(page, 2)
         assert got[0][1]["type"] == "leader"
         assert got[1] == (ids[100], {"type": "memory", "n": 100})
+        await page.aclose()
+    asyncio.run(scenario())
+
+
+def test_every_stream_gets_a_ping_data_frame_even_when_busy_and_a_phone_stays_alive(monkeypatch):
+    """Every PING_SECONDS: a data frame without id (never replayed), on a quiet
+    stream and on a busy one; a phone's stream also extends its page token."""
+    monkeypatch.setattr(events, "PING_SECONDS", 0.3)
+    kept = []
+    monkeypatch.setattr(remote, "keepalive", lambda caller: kept.append(caller))
+    allow_stamped_streams(monkeypatch)
+
+    async def until_ping(stream) -> list:
+        seen, deadline = [], time.monotonic() + 3
+        while not seen or seen[-1] != PING:
+            assert time.monotonic() < deadline, "pas de ping"
+            seen.append(await asyncio.wait_for(anext(stream), 2))
+        return seen
+
+    async def scenario():
+        page = await opened("page-a")
+        phone = events.stream("", None, PHONE)
+        assert (await anext(phone)).startswith("retry:")
+        quiet = await until_ping(page)
+        assert parse(quiet[-1]) == (None, {"type": "ping"})
+        assert not any(c.startswith(":") for c in quiet)  # no comment pings any more
+        assert kept == []  # a PC page extends no phone's token
+        await until_ping(phone)
+        assert kept == [PHONE]
+        # An event every 50 ms: the ping still goes out on time.
+        busy = True
+
+        async def chatter():
+            while busy:
+                events.publish("memory", {"n": 0})
+                await asyncio.sleep(0.05)
+
+        talking = asyncio.create_task(chatter())
+        await until_ping(page)  # the one already due
+        start = time.monotonic()
+        seen = await until_ping(page)
+        busy = False
+        await talking
+        assert time.monotonic() - start < 1.0
+        assert sum(1 for c in seen if '"memory"' in c) >= 2
+        assert PING not in [m for _, m in events._replay]
+        await phone.aclose()
         await page.aclose()
     asyncio.run(scenario())
 
@@ -249,6 +325,24 @@ def test_presence_route_answers_with_the_leader(client):
         page = await opened("page-r")
         r = client.post("/api/presence", headers=AUTH, json={"client": "page-r", "focused": True, "live": False})
         assert r.json() == {"leader": "page-r", "live": False}
+        await page.aclose()
+    asyncio.run(scenario())
+
+
+def test_a_phone_is_told_it_leads_nothing(monkeypatch):
+    """The phone's presence is answered without the election, and its delivery
+    state ignores the PC's busy screen."""
+    monkeypatch.setattr(desktop, "attention_state", lambda: "presentation")
+
+    async def scenario():
+        page = await opened("page-r")
+        as_caller(monkeypatch, PHONE)
+        phone = remote_client()
+        r = phone.post("/api/presence", json={"client": "page-r", "claim": True, "live": True})
+        assert r.json() == {"leader": None, "live": False, "remote": True}
+        assert events.leader_info() == {"client": "page-r", "live": False}
+        state = phone.get("/api/delivery").json()
+        assert state["leader"] is None and state["attention"] == "ok"
         await page.aclose()
     asyncio.run(scenario())
 

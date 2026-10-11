@@ -2,7 +2,7 @@
    In-page shortcuts are ignored while the focus is in a text field, except
    Échap and Ctrl+M. The global hotkey (any app) arrives from the server as a
    'hotkey' event. */
-import { $, bus, settings, state } from "./core.js";
+import { $, bus, settings, state, touchUI } from "./core.js";
 import { connect, interrupt, pttDown, pttUp, sleep } from "./voice.js";
 import { setSideOpen, toast, toggleMute, uiPhase } from "./hud.js";
 import { focusInput } from "./composer.js";
@@ -205,7 +205,21 @@ export function onShellAction(ev = {}) {
   if (closing) closing.then(focus); else focus();
 }
 
+/* ---------------------------------------------------------- a touch screen */
+/* No keyboard under a finger (touchUI): the composer's placeholder and the
+   Aide card's list say the touch controls (T.ios) instead of Ctrl+J, Espace,
+   Échap or Ctrl+M. Set before composer.js draws them (main.js starts keys.js
+   first); strings-fr.js itself, the README and its checks keep the keyboard
+   map. hud.js does the same for the status line. */
+function touchWords() {
+  if (!touchUI()) return;
+  T.controls.composerPlaceholder = T.ios.composerPlaceholder;
+  T.help.shortcuts = T.ios.help;
+  T.composer.shortcuts = T.ios.gestures;
+}
+
 export function init() {
+  touchWords();
   bus.on("server:hotkey", onShellAction);
   // capture phase: seen before any field handler, and early enough for Ctrl+J
   window.addEventListener("keydown", onKeyDown, true);

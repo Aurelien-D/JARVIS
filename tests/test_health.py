@@ -281,6 +281,46 @@ def test_deadlines(monkeypatch):
     monkeypatch.setattr(config, "TRANSCRIBE_FALLBACK", "")
     assert health.check_deadlines() == []
 
+# ---------------------------------------------------------------- remote access (Tailscale Serve)
+
+
+def test_remote_check_reports_serve_state(monkeypatch):
+    """Nothing without Tailscale; Funnel, TCP and a wrong target are errors even
+    while remote access is off; with it on, ready is ok, absent and stopped warn."""
+    from jarvis import remote, tailscale
+    states = {"value": "ready"}
+    monkeypatch.setattr(tailscale, "serve_status", lambda: {"state": states["value"], "detail": f"Serve {states['value']}.",
+                                                            "url": ""})
+    monkeypatch.setattr(tailscale, "exe_path", lambda: None)
+    assert health.check_remote() == []
+    monkeypatch.setattr(tailscale, "exe_path", lambda: r"C:\Program Files\Tailscale\tailscale.exe")
+    enabled = {"value": False}
+    monkeypatch.setattr(remote, "is_enabled", lambda: enabled["value"])
+
+    def level(state):
+        states["value"] = state
+        out = health.check_remote()
+        assert all(set(i) == {"id", "ok", "level", "title_fr", "message_fr", "fix_fr"} for i in out)
+        assert all(i["id"] == "remote" and i["title_fr"] == "Accès à distance" for i in out)
+        return out[0]["level"] if out else None
+
+    for state in ("ready", "absent", "stopped", "no_tailscale", "unknown"):
+        assert level(state) is None, state  # off: nothing to say
+    for state in ("funnel", "tcp", "wrong_target"):
+        assert level(state) == "error", state
+        fix = health.check_remote()[0]["fix_fr"]
+        assert "Publier sur Tailscale" in fix and "reset" not in fix  # never a reset of every service
+    enabled["value"] = True
+    assert level("ready") == "ok"
+    assert level("absent") == "warning" and "Réglages › Accès à distance › Publier sur Tailscale" in \
+        health.check_remote()[0]["fix_fr"]
+    assert level("stopped") == "warning"
+    for state in ("funnel", "tcp", "wrong_target"):
+        assert level(state) == "error", state
+    assert level("unknown") is None
+    assert health.check_remote in health.CHECKS
+
+
 # ---------------------------------------------------------------- all together
 
 

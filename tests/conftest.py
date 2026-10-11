@@ -7,11 +7,34 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from jarvis import config, desktop, events, info, tasks  # noqa: E402
+from jarvis import (  # noqa: E402
+    audit,
+    config,
+    desktop,
+    events,
+    info,
+    listener,
+    notify,
+    raccourci,
+    remote,
+    tailscale,
+    tasks,
+)
 
 
 def _no_network(request):
     raise httpx.ConnectError("pas de réseau dans les tests", request=request)
+
+
+def _no_tailscale(args, timeout):
+    raise FileNotFoundError("tailscale")
+
+
+def _reset_remote_memories():
+    """Remote access keeps windows in memory (tokens, lockouts, dedupe): none
+    may leak from one test to the next."""
+    for mod in (remote, audit, notify, raccourci, tailscale):
+        getattr(mod, "reset_memory", lambda: None)()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -32,6 +55,22 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "ARES", "off")
     monkeypatch.setattr(info, "TRANSPORT", httpx.MockTransport(_no_network))
     monkeypatch.setitem(desktop._launched, "at", None)  # no window "still coming up" from another test
+    # Remote access: config.py read the developer's real .env at import.
+    monkeypatch.setattr(config, "REMOTE_HOST", "")
+    monkeypatch.setattr(config, "REMOTE_LOGINS", "")
+    monkeypatch.setattr(config, "REMOTE_PORT", 8789)
+    monkeypatch.setattr(config, "SIRI_MODEL", "")
+    monkeypatch.setattr(config, "NTFY", False)
+    monkeypatch.setattr(config, "NTFY_SERVER", "https://ntfy.sh")
+    monkeypatch.setattr(config, "NTFY_ONLY_AWAY", False)
+    monkeypatch.setattr(config, "NTFY_REMINDER_TEXT", False)
+    # Never ntfy, OpenAI or a real Tailscale on a developer PC (their own tests re-patch these).
+    monkeypatch.setattr(notify, "TRANSPORT", httpx.MockTransport(_no_network))
+    monkeypatch.setattr(notify, "RETRY_S", ())  # no sending thread outlives its test (their own tests re-patch it)
+    monkeypatch.setattr(raccourci, "TRANSPORT", httpx.MockTransport(_no_network))
+    monkeypatch.setattr(tailscale, "RUN", _no_tailscale)
+    monkeypatch.setattr(tailscale, "exe_path", lambda: None)
+    _reset_remote_memories()
     tasks.TASKS.clear()
     yield
     # A task still running would finish during a later test and publish there
@@ -42,6 +81,8 @@ def isolated(tmp_path, monkeypatch):
     while (tasks._active or tasks._waiting) and time.time() < end:
         time.sleep(0.02)
     tasks.TASKS.clear()
+    listener.stop()  # a test that started the Serve listener never leaves it running
+    _reset_remote_memories()
 
 
 @pytest.fixture

@@ -1,0 +1,67 @@
+/* The pairing page (pair.html), owned by package A4: a phone-first column on
+   JARVIS's dark background, with big touch targets (44 px) and the safe areas
+   of an iPhone's notch and home bar. Colours come from tokens.css. */
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; padding: 0; }
+/* html and body both say the page's colour: iOS shows it under the safe areas. */
+html { background-color: #05080d; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  min-height: 100vh; min-height: 100dvh;
+  background: #05080d; color: var(--text);
+  font: 400 var(--fs-in) / var(--lh-body) -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  padding: max(24px, var(--safe-top)) max(16px, var(--safe-right))
+           max(24px, var(--safe-bottom)) max(16px, var(--safe-left));
+}
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.pair { width: min(100%, 440px); margin: 0 auto; display: grid; gap: 18px; }
+.pair-brand {
+  font: 600 22px / 1.2 var(--font-mono); letter-spacing: .3em; color: var(--cyan);
+  text-align: center; padding-top: 12px;
+}
+.pair-body { display: grid; gap: 14px; }
+.pair-title { font-size: 21px; line-height: 1.25; font-weight: 600; color: var(--text); }
+.pair-title:focus { outline: none; }
+.pair-title.pair-ok { color: var(--ok); }
+.pair-text { color: var(--text); }
+.pair-note { color: var(--muted); font-size: 14px; }
+.pair-steps { display: grid; gap: 10px; padding-left: 1.4em; }
+.pair-steps li::marker { color: var(--cyan); font-weight: 600; }
+
+.pair-form { display: grid; gap: 10px; }
+.pair-label { font-weight: 600; }
+/* 16 px at least: iOS zooms into smaller fields. */
+.pair-input {
+  width: 100%; min-height: 44px; padding: 8px 12px;
+  font: inherit; font-size: 16px; color: var(--text);
+  background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--radius);
+}
+.pair-input:focus-visible { border-color: var(--cyan); }
+
+.pair-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.pair-btn {
+  min-height: 44px; min-width: 44px; padding: 8px 18px;
+  font-family: inherit; font-size: 16px; font-weight: 600; line-height: 1.2; color: var(--text);
+  background: transparent; border: 1px solid var(--line-strong); border-radius: var(--radius); cursor: pointer;
+}
+.pair-btn.primary { background: var(--cyan); border-color: var(--cyan); color: #010409; }
+.pair-btn.secondary { color: var(--cyan); }
+.pair-btn:disabled { opacity: .6; cursor: default; }
+
+.pair-code {
+  font: 600 64px / 1 var(--font-mono); letter-spacing: .25em; color: var(--cyan);
+  text-align: center; padding: 18px 0 18px .25em;
+  border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--panel);
+  font-variant-numeric: tabular-nums;
+}
+.pair-status { color: var(--muted); font-size: 14px; min-height: 1.4em; }
+.pair-status:empty { display: none; }
+.pair-status.err { color: var(--err); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .pair-code { animation: pair-glow 2.4s ease-in-out infinite alternate; }
+  @keyframes pair-glow { from { box-shadow: 0 0 0 rgba(64, 220, 255, 0); } to { box-shadow: 0 0 24px rgba(64, 220, 255, .25); } }
+}
+@media (forced-colors: active) {
+  .pair-btn, .pair-input, .pair-code { border: 1px solid ButtonText; }
+}

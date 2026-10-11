@@ -723,7 +723,7 @@ def test_no_secret_reaches_the_logs_in_wave3_paths_holds(client, monkeypatch, ca
     def failing_weather(city=None, quand="maintenant"):
         raise RuntimeError("Open-Meteo injoignable")
     monkeypatch.setattr(info, "weather", failing_weather)
-    monkeypatch.setattr(config, "CITY", "Laon")
+    monkeypatch.setattr(config, "CITY", "Nantes")
     briefing.run(FAR)
     remarques.items()
     tools_agenda.instructions_block()

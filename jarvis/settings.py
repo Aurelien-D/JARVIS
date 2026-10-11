@@ -13,6 +13,7 @@ in the request. None of this is a voice tool: only the page, with its session
 token, can change a setting, never the voice model.
 """
 import codecs
+import ipaddress
 import logging
 import math
 import os
@@ -25,8 +26,9 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from . import config, desktop, events, shell, store
@@ -41,6 +43,7 @@ NOW, SESSION, TASK, RESTART = "now", "session", "task", "restart"
 
 SECTIONS = [("connexion", "Connexion"), ("voix", "Voix"), ("ecoute", "Écoute"),
             ("proactivite", "Proactivité"), ("claude", "Claude Code"), ("couts", "Coûts"),
+            ("distance", "Accès à distance"), ("notifications", "Notifications"),
             ("systeme", "Système"), ("donnees", "Données"), ("apropos", "À propos")]
 
 # Built-in Realtime voices; the voice is fixed once JARVIS has spoken in a session.
@@ -53,13 +56,21 @@ _MODIFIERS = {"ctrl": "ctrl", "control": "ctrl", "ctl": "ctrl", "alt": "alt", "s
 _KEY_NAME = re.compile(r"^(?:[a-z0-9]|f(?:[1-9]|1\d|2[0-4])|space|espace)$")
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 KEY_SHAPE = re.compile(r"^sk-[A-Za-z0-9_\-]{16,250}$")
+# The 'url' kind (the ntfy server): plain http only where nobody on the internet listens.
+URL_REFUSED = ("Adresse de serveur refusée : https://, ou http:// vers une adresse du réseau local "
+               "ou Tailscale.")
+# 10/8 as a tuple: the loopback proof bans the any-address literal from every source.
+_LOCAL_NETS = (ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network("fd7a:115c:a1e0::/48"),  # tailnet
+               ipaddress.IPv4Network((10 << 24, 8)), ipaddress.ip_network("172.16.0.0/12"),          # private LAN
+               ipaddress.ip_network("192.168.0.0/16"), ipaddress.ip_network("fc00::/7"))
+_TS_NAME = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+ts\.net")
 
 
 @dataclass(frozen=True)
 class Setting:
     key: str             # the API name
     attr: str            # config attribute ('MODELS.simple': an entry of config.MODELS)
-    kind: str            # bool | int | float | choice | time | hours | days | text | path | file | hotkey
+    kind: str            # bool | int | float | choice | time | hours | days | text | path | file | hotkey | url
     section: str
     label: str
     help: str = ""
@@ -162,10 +173,24 @@ SCHEMA = [
             "Les suivantes attendent leur tour.", minimum=1, maximum=10, live=TASK),
     # ---------------------------------------------------------------- Coûts
     Setting("daily_budget_usd", "DAILY_BUDGET_USD", "float", "couts", "Plafond de dépense par jour",
-            "Voix et tâches comprises. Une fois atteint, le mot d'éveil n'ouvre plus de "
+            "Voix, Siri et tâches comprises. Une fois atteint, le mot d'éveil n'ouvre plus de "
             "conversation payante, aucune nouvelle tâche Claude ne démarre et le briefing du "
-            "matin est lu par la voix du navigateur. 0 = pas de plafond.",
+            "matin est lu par la voix du navigateur. 0 = pas de plafond (l'accès à distance "
+            "et Siri en demandent un).",
             minimum=0, maximum=1000, step=1, unit="$"),
+    # ---------------------------------------------------------------- Notifications (ntfy, notify.py)
+    Setting("ntfy", "NTFY", "bool", "notifications", "Notifications sur l'iPhone (ntfy)",
+            "Il faut aussi l'app ntfy sur l'iPhone, abonnée au sujet ci-dessous."),
+    Setting("ntfy_server", "NTFY_SERVER", "url", "notifications", "Serveur ntfy",
+            "https://ntfy.sh par défaut. Un serveur personnel en https://, ou en http:// "
+            "sur le réseau local ou Tailscale.", maximum=200),
+    Setting("ntfy_only_away", "NTFY_ONLY_AWAY", "bool", "notifications",
+            "Seulement si je ne suis pas au PC",
+            "Rien pour les tâches et les confirmations du PC tant que vous l'utilisez. Ce qui vient de "
+            "l'iPhone ou de Siri, les rappels et les alertes de sécurité partent toujours."),
+    Setting("ntfy_reminder_text", "NTFY_REMINDER_TEXT", "bool", "notifications",
+            "Texte des rappels dans la notification",
+            "Sinon la notification dit seulement « un rappel »."),
     # ---------------------------------------------------------------- Système
     Setting("hotkey", "HOTKEY", "hotkey", "systeme", "Raccourci global",
             "Pour parler à JARVIS depuis n'importe quelle application, par exemple Ctrl+Alt+Maj+J.",
@@ -400,6 +425,36 @@ def _file(s: Setting, value) -> str:
     return os.path.abspath(value)
 
 
+def _local_host(host: str) -> bool:
+    """A tailnet or private LAN address, or a *.ts.net name."""
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return bool(_TS_NAME.fullmatch(host))
+    return any(ip in net for net in _LOCAL_NETS)
+
+
+def check_url(s: Setting, value) -> str:
+    """https:// to any server, http:// only to a tailnet or LAN address; never a
+    login, a query or a fragment (nothing hidden in it, nothing that redirects
+    the topic elsewhere)."""
+    value = _text(s, value, empty_ok=False)
+    if any(c.isspace() or c in "?#\\" for c in value):
+        raise SettingError(URL_REFUSED)
+    try:
+        parts = urlsplit(value)
+        host = (parts.hostname or "").rstrip(".")
+        _ = parts.port  # raises ValueError on a malformed port
+    except ValueError:
+        raise SettingError(URL_REFUSED) from None
+    scheme = parts.scheme.lower()
+    if scheme not in ("https", "http") or not host or "@" in parts.netloc or parts.query or parts.fragment:
+        raise SettingError(URL_REFUSED)
+    if scheme == "http" and not _local_host(host):
+        raise SettingError(URL_REFUSED)
+    return value
+
+
 def normalize_hotkey(text: str) -> str:
     """'Ctrl + Alt + Maj + J' -> 'ctrl+alt+shift+j'; SettingError (French) otherwise."""
     parts = [p.strip().lower() for p in str(text or "").replace(" ", "").split("+")]
@@ -460,6 +515,8 @@ def validate(s: Setting, value):
         return _file(s, value)
     if s.kind == "hotkey":
         return normalize_hotkey(_text(s, value, empty_ok=False))
+    if s.kind == "url":
+        return check_url(s, value)
     raise SettingError(f"{s.label} : type inconnu.")
 
 
@@ -739,21 +796,44 @@ def _schema_entry(s: Setting) -> dict:
 
 
 @router.get("/api/settings")
-def get_settings():
+def get_settings(request: Request):
+    from . import remote  # late: remote reads settings through usage
     key = config.OPENAI_API_KEY or ""
-    return {"sections": [{"id": i, "title": t} for i, t in SECTIONS],
+    body = {"sections": [{"id": i, "title": t} for i, t in SECTIONS],
             "schema": [_schema_entry(s) for s in SCHEMA], "values": shown_values(),
             "overridden": overridden(), "restart": restart_pending(),
             "key": {"present": bool(key.strip()), "masked": mask(key)},
             "autostart": autostart_state(), "versions": versions(), "deadlines": deadlines(),
             "data_dir": str(config.DATA_DIR), "platform": _platform()}
+    if remote.caller_of(request).remote:
+        body = _for_the_phone(body)
+    return body
+
+
+def _for_the_phone(body: dict) -> dict:
+    """What a paired iPhone sees of Réglages: its few sections and harmless
+    settings, nothing about the key, the data folder or autostart (4.10)."""
+    from . import remote
+    allowed = remote.REMOTE_SETTINGS
+    sections = [s for s in body["sections"] if s["id"] in remote.REMOTE_SECTIONS]
+    return {**body, "sections": sections,
+            "schema": [e for e in body["schema"] if e["key"] in allowed],
+            "values": {k: v for k, v in body["values"].items() if k in allowed},
+            "overridden": [k for k in body["overridden"] if k in allowed],
+            "restart": [k for k in body["restart"] if k in allowed],
+            "key": {"present": True, "masked": ""}, "data_dir": "", "autostart": None, "remote": True}
 
 
 @router.put("/api/settings")
-def put_settings(body: dict):
+def put_settings(body: dict, request: Request):
     """A partial dict {key: value}; 'confirm': true for the sensitive ones."""
+    from . import remote  # late: remote reads settings through usage
     changes = dict(body)
     confirm = changes.pop("confirm", False)
+    phone = remote.caller_of(request).remote
+    if phone and (confirm or any(k not in remote.REMOTE_SETTINGS for k in changes)):
+        # The phone may be away from home: what runs tasks or spends stays on the PC.
+        raise HTTPException(403, "Réglage modifiable sur le PC seulement.")
     if not changes:
         raise HTTPException(400, "Aucun réglage à modifier.")
     try:
@@ -764,8 +844,14 @@ def put_settings(body: dict):
         raise HTTPException(500, "Réglages non enregistrés : le dossier des données n'est pas "
                                  "modifiable (disque plein ou protégé).") from None
     # The models may have changed: À propos shows their versions and deadlines.
-    return {"ok": True, "applied": applied, "values": shown_values(), "restart": restart_pending(),
-            "overridden": overridden(), "versions": versions(), "deadlines": deadlines()}
+    out = {"ok": True, "applied": applied, "values": shown_values(), "restart": restart_pending(),
+           "overridden": overridden(), "versions": versions(), "deadlines": deadlines()}
+    if phone:
+        allowed = remote.REMOTE_SETTINGS
+        out.update(values={k: v for k, v in out["values"].items() if k in allowed},
+                   restart=[k for k in out["restart"] if k in allowed],
+                   overridden=[k for k in out["overridden"] if k in allowed])
+    return out
 
 
 class KeyIn(BaseModel):
