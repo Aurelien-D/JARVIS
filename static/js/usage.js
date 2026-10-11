@@ -7,6 +7,8 @@
      prices them itself with the server's table, so it moves at once.
    - Claude: what the tasks report, Claude Code's own estimate at API prices
      (the chip's tooltip says so).
+   - Siri (B3): its text model, priced on the server; a day where Siri spoke
+     carries text_usd, shown apart in the tooltip and in Réglages › Coûts.
    - Past the cap (/api/config usage_capped): the wake word opens nothing
      (wake.js), and any other way of opening a conversation (orb, Espace, the
      composer, the hotkey) asks here first.
@@ -18,10 +20,11 @@ import { addCard, removeCard } from "./hud.js";
 import { label as neutral, loadApexCharts } from "./report.js";
 
 const U = T.usage;
+const S = T.siri;
 const FLUSH_MS = 30e3;          // the voice's usage goes to the server at most this late
 const REFRESH_MS = 10 * 60e3;   // the day turns at midnight: the server's figures follow
 const NBSP = "\u00a0";
-const COLORS = ["#1e93c4", "#c47b1e"];  // report.js's series palette, validated on dark surfaces
+const COLORS = ["#1e93c4", "#c47b1e", "#9b7be0"];  // report.js's series palette, plus Siri's (dark surfaces)
 const KEEPALIVE_BYTES = 60000;  // keepalive bodies are capped at 64 KiB per page
 
 let server = null;              // GET /api/usage, or a POST's answer: today, budget, prices...
@@ -98,9 +101,12 @@ function pendingCost() {
 
 function totals() {
   const t = obj(server && server.today);
-  const voice = num(t.realtime_usd) + pendingCost(), claude = num(t.claude_usd);
-  return { voice, claude, total: voice + claude };
+  const voice = num(t.realtime_usd) + pendingCost(), claude = num(t.claude_usd), text = num(t.text_usd);
+  return { voice, claude, text, total: voice + claude + text };
 }
+
+/* Did Siri spend anything over these days? (Its column and series only then.) */
+const siriSpent = (days) => days.some(d => num(d.text_usd) > 0);
 
 /* 'ok', 'warn' (80 % of the cap) or 'cap'. */
 function level(tot = totals()) {
@@ -131,7 +137,8 @@ function renderChip(tot, lv) {
   }
   b.textContent = text;
   // Read by screen readers as the button's description; a mouse shows it as a tooltip.
-  b.title = U.tooltip(money(tot.voice), money(tot.claude)) + (cap ? U.tooltipCap(money(cap)) : "");
+  b.title = U.tooltip(money(tot.voice), money(tot.claude)) + (tot.text ? S.costTooltip(money(tot.text)) : "")
+    + (cap ? U.tooltipCap(money(cap)) : "");
   chip.className = `chip cost-chip${lv === "ok" ? "" : ` ${lv}`}`;
   chip.hidden = false;
 }
@@ -352,7 +359,8 @@ export function chartOptions(days) {
     tooltip: { theme: "dark", shared: true, intersect: false, x: { formatter: (v) => String(v ?? "") },
                y: { formatter: fmt } },
     series: [{ name: neutral(U.voice), data: days.map(d => num(d.realtime_usd)) },
-             { name: neutral(U.claude), data: days.map(d => num(d.claude_usd)) }],
+             { name: neutral(U.claude), data: days.map(d => num(d.claude_usd)) },
+             ...(siriSpent(days) ? [{ name: neutral(S.costSeries), data: days.map(d => num(d.text_usd)) }] : [])],
     xaxis: { categories, labels: { rotate: 0, formatter: (v) => (written.has(v) ? v : "") },
              axisTicks: { show: false } },
     yaxis: { labels: { formatter: fmt } },
@@ -369,7 +377,8 @@ function costTable(days) {
   }
   const table = el("table", "usage-table");
   const head = el("tr");
-  for (const c of [U.colDate, U.colVoice, U.colClaude, U.colTotal]) {
+  const siri = siriSpent(spent);
+  for (const c of [U.colDate, U.colVoice, U.colClaude, ...(siri ? [S.costColumn] : []), U.colTotal]) {
     const th = el("th", "", c);
     th.scope = "col";
     head.append(th);
@@ -380,8 +389,9 @@ function costTable(days) {
     const tr = el("tr");
     const th = el("th", "", dayLabel(d.date));
     th.scope = "row";
-    tr.append(th, el("td", "num", money(d.realtime_usd)), el("td", "num", money(d.claude_usd)),
-              el("td", "num", money(d.total_usd)));
+    tr.append(th, el("td", "num", money(d.realtime_usd)), el("td", "num", money(d.claude_usd)));
+    if (siri) tr.append(el("td", "num", money(d.text_usd)));
+    tr.append(el("td", "num", money(d.total_usd)));
     table.tBodies[0].append(tr);
   }
   details.append(table);
@@ -399,7 +409,8 @@ async function drawCosts(host) {
   box.id = "usageChart";
   host.replaceChildren(
     el("h4", "usage-title", U.title),
-    el("p", "usage-today", U.today(money(tot.total), money(tot.voice), money(tot.claude))),
+    el("p", "usage-today", U.today(money(tot.total), money(tot.voice), money(tot.claude))
+      + (tot.text ? S.costToday(money(tot.text)) : "")),
     el("p", "usage-period", U.period(money(sum), money(days.length ? sum / days.length : 0))),
     el("p", "usage-cap", cap ? U.capSet(money(cap)) : U.capNone),
     box, costTable(days), el("p", "set-note usage-note", U.note));

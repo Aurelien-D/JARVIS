@@ -1,0 +1,109 @@
+/* Remote access (the paired iPhone): one section per owning package, so each
+   adds its styles without touching another's lines. Linked after usage.css. */
+
+/* ---- remote: A4 */
+/* Réglages › Accès à distance (remote-settings.js): long addresses and
+   commands wrap anywhere, so the drawer never scrolls sideways at 360 px. */
+.rm-root { display: grid; min-width: 0; }
+.rm-block { min-width: 0; }
+.rm-block .set-sub:first-child { margin-top: 0; }
+.rm-status dd { overflow-wrap: anywhere; }
+.rm-source { color: var(--muted); font-size: var(--fs-sm); }
+.rm-personal { color: var(--amber); }
+.rm-serve-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 6px; }
+.rm-serve { font: 600 var(--fs-user) / var(--lh-label) var(--font-hud); color: var(--text); }
+.rm-serve-ready { color: var(--ok); }
+.rm-serve-funnel, .rm-serve-tcp, .rm-serve-wrong_target { color: var(--err); }
+.rm-serve-absent, .rm-serve-stopped { color: var(--amber); }
+.rm-command { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 100%; }
+.rm-command code {
+  flex: 1 1 220px; min-width: 0; padding: 6px 10px; overflow-wrap: anywhere; word-break: break-all;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); color: var(--text);
+}
+.rm-command code.rm-url { font-size: 20px; letter-spacing: .02em; color: var(--cyan); }
+.rm-url-small { overflow-wrap: anywhere; word-break: break-all; color: var(--muted); }
+.rm-link { color: var(--cyan); text-decoration: underline; text-underline-offset: 3px; }
+.rm-countdown { font: 600 var(--fs-user) / var(--lh-label) var(--font-mono); color: var(--cyan); }
+.rm-qr { width: min(100%, 220px); }
+.rm-qr-svg { display: block; width: 100%; height: auto; border-radius: var(--radius); }
+.rm-requests, .rm-devices, .rm-audit { list-style: none; display: grid; gap: 8px; width: 100%; }
+.rm-request, .rm-device {
+  display: grid; gap: 6px; padding: 10px 12px; min-width: 0;
+  border: 1px solid var(--line-strong); border-left: 3px solid var(--cyan); border-radius: var(--radius);
+  background: var(--panel);
+}
+.rm-cells, .rm-device-meta { overflow-wrap: anywhere; color: var(--muted); font-size: var(--fs-sm); }
+.rm-cell { color: var(--text); }
+.rm-code { font-size: 22px; letter-spacing: .15em; color: var(--cyan); }
+.rm-name { overflow-wrap: anywhere; }
+.rm-code-form, .rm-rename { display: grid; gap: 6px; justify-items: start; }
+.rm-code-input { width: 6em; font-size: 20px; letter-spacing: .2em; }
+.rm-device-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.rm-device-name { overflow-wrap: anywhere; font: 600 var(--fs-user) / var(--lh-label) var(--font-hud); }
+.rm-device-extra:empty { display: none; }
+.rm-radios { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.rm-audit-line {
+  display: grid; grid-template-columns: minmax(7em, max-content) minmax(0, 1fr); gap: 2px 12px;
+  padding: 6px 0; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); overflow-wrap: anywhere;
+}
+.rm-audit-time { color: var(--muted); }
+.rm-audit-who { color: var(--text); }
+.rm-audit-what { grid-column: 2; }
+.rm-audit-result { grid-column: 2; color: var(--muted); }
+.rm-phone-name { font-size: var(--fs-say); overflow-wrap: anywhere; }
+.rm-phone-state { color: var(--ok); }
+.rm-shortcut-slot:empty, .rm-block:has(> .rm-shortcut-slot:empty:only-child) { display: none; }
+@media (max-width: 520px) {
+  .rm-audit-line { grid-template-columns: minmax(0, 1fr); }
+  .rm-audit-what, .rm-audit-result { grid-column: 1; }
+}
+
+/* ---- notify: B1 */
+/* Réglages › Notifications (notify-settings.js): the topic wraps anywhere, so
+   the drawer never scrolls sideways at 360 px; one tap selects it whole, for a
+   manual copy where the clipboard is refused. */
+.nt-root { display: grid; min-width: 0; }
+.nt-block { min-width: 0; }
+.nt-block .set-sub:first-child { margin-top: 0; }
+.nt-topic-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 100%; }
+.nt-topic-value {
+  flex: 1 1 220px; min-width: 0; padding: 6px 10px; overflow-wrap: anywhere; word-break: break-all;
+  -webkit-user-select: all; user-select: all;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); color: var(--text);
+}
+.nt-server { overflow-wrap: anywhere; }
+.nt-state { font: 600 var(--fs-user) / var(--lh-label) var(--font-hud); color: var(--ok); }
+.nt-state.nt-off { color: var(--amber); }
+.nt-last { overflow-wrap: anywhere; }
+.nt-last:empty { display: none; }
+.nt-guide { display: grid; gap: 6px; padding-left: 1.4em; max-width: 62ch; }
+
+/* ---- siri: B3 */
+/* Siri keys under each device on the PC, and the iPhone's « Assistant
+   raccourci » screen (siri-ui.js): long keys and URLs wrap anywhere, so the
+   screen never scrolls sideways at 360 px. */
+.siri-title { margin-top: 4px; }
+.siri-keys { list-style: none; display: grid; gap: 6px; width: 100%; }
+.siri-key {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px;
+  padding: 6px 0; border-top: 1px solid var(--line); font-size: var(--fs-sm); min-width: 0;
+}
+.siri-key-text { min-width: 0; overflow-wrap: anywhere; color: var(--muted); }
+.siri-key-text .mono { color: var(--text); }
+.siri-screen {
+  width: min(560px, calc(100vw - 24px)); max-height: 88vh; overflow-y: auto; overflow-x: hidden;
+  /* the iPhone: clear of the notch, the rounded corners and the home bar (tokens.css) */
+  width: min(560px, calc(100vw - 24px - var(--safe-left) - var(--safe-right)));
+  max-height: calc(100dvh - 24px - var(--safe-top) - var(--safe-bottom));
+}
+.siri-body { display: grid; gap: 10px; min-width: 0; }
+.siri-row { display: grid; gap: 4px; min-width: 0; }
+.siri-label { margin: 0; }
+.siri-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 100%; }
+.siri-value {
+  flex: 1 1 220px; min-width: 0; padding: 6px 10px; overflow-wrap: anywhere; word-break: break-all;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); color: var(--cyan);
+  user-select: all; -webkit-user-select: all;
+}
+.siri-steps { margin: 0; padding-left: 1.4em; display: grid; gap: 6px; overflow-wrap: anywhere; }
+.siri-recipe .set-sub { margin-top: 6px; }

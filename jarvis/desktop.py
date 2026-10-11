@@ -62,6 +62,11 @@ class GUID(ctypes.Structure):
                 ("Data3", ctypes.c_uint16), ("Data4", ctypes.c_ubyte * 8)]
 
 
+class LASTINPUTINFO(ctypes.Structure):
+    """GetLastInputInfo's argument: dwTime is the tick count of the last input."""
+    _fields_ = [("cbSize", ctypes.c_uint32), ("dwTime", ctypes.c_uint32)]
+
+
 _WIN = None  # SimpleNamespace of functions, False once loading failed
 
 
@@ -94,6 +99,8 @@ def _load_win32():
                                 ctypes.c_uint32, ctypes.c_void_p, ctypes.POINTER(ctypes.c_wchar_p)),
         CoTaskMemFree=fn(ole32, "CoTaskMemFree", None, ctypes.c_void_p),
         SetThreadExecutionState=fn(kernel32, "SetThreadExecutionState", ctypes.c_uint32, ctypes.c_uint32),
+        GetLastInputInfo=fn(user32, "GetLastInputInfo", ctypes.c_int, ctypes.POINTER(LASTINPUTINFO)),
+        GetTickCount=fn(kernel32, "GetTickCount", ctypes.c_uint32),
     )
 
 
@@ -839,6 +846,25 @@ def attention_state() -> str:
     if state in ("busy", "fullscreen") and _jarvis_in_front():
         return "ok"  # JARVIS's own window in full screen (F11) must not silence JARVIS
     return state
+
+
+def idle_seconds() -> float | None:
+    """Seconds since the last keyboard or mouse input in this Windows session;
+    None where it can't be known (not Windows, or Windows doesn't say)."""
+    w = _win()
+    get_input = getattr(w, "GetLastInputInfo", None) if w else None
+    get_tick = getattr(w, "GetTickCount", None) if w else None
+    if not get_input or not get_tick:
+        return None
+    info = LASTINPUTINFO(cbSize=ctypes.sizeof(LASTINPUTINFO), dwTime=0)
+    try:
+        if not get_input(ctypes.byref(info)):
+            return None
+        now = get_tick()
+    except OSError:
+        return None
+    # Both are 32-bit millisecond counters that wrap every 49.7 days.
+    return ((int(now) - int(info.dwTime)) & 0xFFFFFFFF) / 1000.0
 
 
 def _jarvis_in_front() -> bool:

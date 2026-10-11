@@ -4,8 +4,12 @@
    'pending', and [Lancer] / [Annuler] post /api/pending/{id}/decide; closing
    the card (✕) answers « non ». Locking the PC goes through a 3-second
    countdown card first, cancelled by Échap (keys.js calls cancelLock), its
-   button, its ✕, « Interrompre », or monsieur starting to speak. */
-import { api, bus, state } from "./core.js";
+   button, its ✕, « Interrompre », or monsieur starting to speak.
+   A request raised on another device (a phone's PC action or full access, or
+   the PC's own request seen on the phone) shows only [Annuler] and a note:
+   canLaunch() mirrors the server's rule (confirm.decide). open_url from the
+   phone comes back as a link card with [Ouvrir le lien]: nothing opens on the PC. */
+import { api, bus, myOrigin, state } from "./core.js";
 import * as fx from "./audio-fx.js";
 import * as hud from "./hud.js";
 import * as strings from "./strings-fr.js";
@@ -27,6 +31,12 @@ let lock = null;            // the lock-screen countdown, while it runs
 
 const cardId = (id) => `confirm-${id}`;
 
+/* May this page launch it? A button-only request only from the device that
+   raised it; on a phone, only its own requests; the PC, any other one. */
+export function canLaunch(p) {
+  return p.launch_from ? p.launch_from === myOrigin() : (state.remote ? p.via === myOrigin() : true);
+}
+
 /* ---------------------------------------------------------- pending actions */
 export function showPending(p) {
   if (!p || !p.id) return;
@@ -34,13 +44,15 @@ export function showPending(p) {
   const known = open.get(p.id);
   if (known) { setDetail(known, p.detail); return; }
   if (settled.has(p.id)) return;
+  const launch = canLaunch(p);
+  const cancel = { label: C.cancel, onClick: () => decide(p.id, "non") };
   const el = hud.addCard(C.title, p.summary || "", "confirm", {
     id: cardId(p.id), sticky: true,
-    actions: [{ label: C.run, primary: true, onClick: () => decide(p.id, "oui") },
-              { label: C.cancel, onClick: () => decide(p.id, "non") }],
+    actions: launch ? [{ label: C.run, primary: true, onClick: () => decide(p.id, "oui") }, cancel] : [cancel],
   });
   el.dataset.pending = p.id;
   el.dataset.state = "pending";
+  el.dataset.launch = launch ? "yes" : "no";
   // Closing the card answers "non": a request never stays pending without its
   // card (hud.js removes it first, decide() then shows the outcome).
   const x = el.querySelector(".x");
@@ -53,7 +65,14 @@ export function showPending(p) {
   detail.className = "confirm-detail";
   const countdown = document.createElement("p");
   countdown.className = "confirm-countdown";
-  extra.append(detail, countdown);
+  extra.append(detail);
+  if (!launch) {  // where it can be launched instead
+    const note = document.createElement("p");
+    note.className = "confirm-note";
+    note.textContent = (p.launch_from || p.via || "pc") === "pc" ? C.fromPc : C.fromPhone;
+    extra.append(note);
+  }
+  extra.append(countdown);
   placeExtra(el, extra);
   const entry = { el, extra, detail, countdown, summary: p.summary || "",
                   deadline: Date.now() + 1000 * (Number.isFinite(p.expires_in) ? p.expires_in : 90) };
@@ -200,10 +219,36 @@ export function cancelLock() {
   return true;
 }
 
+/* ---------------------------------------------------------- link card */
+/* open_url from the phone: the server sent the link back. Built as text (no
+   markdown, so it works even without the CDN), the scheme checked again here. */
+export function showLink(result) {
+  const link = String(result?.link || "");
+  if (!(link.startsWith("https:") || link.startsWith("http:"))) return null;
+  const el = hud.addCard(C.linkTitle, "", "result", { actions: [{ label: C.openLink, primary: true,
+    onClick: () => window.open(link, "_blank", "noopener,noreferrer") }] });
+  const body = el.querySelector(".body");
+  body.textContent = String(result.domain || "");
+  if (result.tainted) {  // after outside content: the whole address, and a warning
+    const url = document.createElement("p");
+    url.className = "confirm-detail";
+    url.textContent = link.slice(0, 300);
+    const warn = document.createElement("p");
+    warn.textContent = C.linkTainted;
+    body.append(url, warn);
+  }
+  el.dataset.link = "yes";
+  return el;
+}
+
 export function init() {
-  bus.on("tool:result", ({ result } = {}) => {
+  bus.on("tool:result", ({ name, result } = {}) => {
     if (result?.status === "needs_confirmation" && result.pending_id) {
-      showPending({ id: result.pending_id, summary: result.summary, expires_in: result.expires_in });
+      // This page's own voice session asked: it is this device's request.
+      showPending({ id: result.pending_id, summary: result.summary, expires_in: result.expires_in,
+                    via: myOrigin() });
+    } else if (name === "open_url" && result?.ok && result.opened === false) {
+      showLink(result);
     }
   });
   bus.on("server:pending", (ev) => showPending(ev?.pending));
@@ -213,8 +258,9 @@ export function init() {
   bus.on("interrupt", cancelLock);
   bus.on("phase", (p) => { if (p && p.phase === "user") cancelLock(); });
   // voice.runTool asks before running a tool: locking waits for the countdown.
+  // From the phone the server parks it instead: its card's [Lancer] is the go-ahead.
   bus.on("tool:intercept", ({ name, args, hold } = {}) => {
-    if (name === "system_control" && args?.action === "lock_screen") hold?.(lockCountdown());
+    if (name === "system_control" && args?.action === "lock_screen" && !state.remote) hold?.(lockCountdown());
   });
   // Requests still open (page reloaded, or asked while this page was closed).
   api("/api/pending").then((items) => items.forEach(showPending)).catch((err) => console.warn(err));

@@ -181,7 +181,7 @@ def test_complet_has_every_tool_but_guard_rails(fake_claude, monkeypatch):
 
 
 def test_windows_paths_become_posix_rules():
-    assert tasks.posix(r"C:\Users\Aurelien\jarvis") == "/c/Users/Aurelien/jarvis"
+    assert tasks.posix(r"C:\Users\Helene\jarvis") == "/c/Users/Helene/jarvis"
     assert tasks.posix("D:/JARVIS/data/") == "/d/JARVIS/data"
     assert tasks.posix("/home/user/jarvis/") == "/home/user/jarvis"
     assert tasks._rule_path(r"C:\Users\X") == "//c/Users/X"
@@ -229,6 +229,46 @@ def test_budget_flag_is_there_by_default(fake_claude, monkeypatch):
     assert option(tasks.build_command("lecture"), "--max-budget-usd") == "2.0"
     monkeypatch.setattr(config, "TASK_BUDGET_USD", 0)
     assert "--max-budget-usd" not in tasks.build_command("lecture")
+
+
+SIRI_VIA = "siri:k_9b8a7c6d5e4f3a21"
+
+
+def test_a_siri_task_passes_its_own_budget_to_claude(fake_claude, monkeypatch):
+    # JARVIS_TASK_BUDGET_USD = 2 $: a Siri task still stops at 0,50 $.
+    task = wait(tasks.create_task("Veille", "Cherche les nouvelles", profile="recherche", via=SIRI_VIA))
+    assert task["budget_usd"] == tasks.SIRI_TASK_BUDGET_USD == 0.5
+    assert option(echo(task)["argv"], "--max-budget-usd") == "0.5"
+    assert tasks.public(task)["budget_usd"] == 0.5
+    # A lower general budget wins; none at all still leaves Siri's.
+    monkeypatch.setattr(config, "TASK_BUDGET_USD", 0.2)
+    task = wait(tasks.create_task("Veille", "Cherche", profile="recherche", via=SIRI_VIA))
+    assert task["budget_usd"] == 0.2 and option(echo(task)["argv"], "--max-budget-usd") == "0.2"
+    monkeypatch.setattr(config, "TASK_BUDGET_USD", 0)
+    task = wait(tasks.create_task("Veille", "Cherche", profile="recherche", via=SIRI_VIA))
+    assert task["budget_usd"] == 0.5 and option(echo(task)["argv"], "--max-budget-usd") == "0.5"
+    # Its budget error names its own amount.
+    error = tasks._result_error({"subtype": "error_max_budget_usd", "errors": []}, "", task["budget_usd"])
+    assert error.startswith("Budget de la tâche atteint (0,50 $)")
+
+
+def test_other_tasks_keep_the_general_budget(fake_claude, monkeypatch):
+    for via in ("pc", "app:d_0123456789abcdef", "unpaired", ""):
+        task = wait(tasks.create_task("Note", "Résume", profile="lecture", via=via))
+        assert "budget_usd" not in task, via
+        assert option(echo(task)["argv"], "--max-budget-usd") == "2.0", via
+    monkeypatch.setattr(config, "TASK_BUDGET_USD", 0)
+    task = wait(tasks.create_task("Note", "Résume", profile="lecture"))
+    assert "--max-budget-usd" not in echo(task)["argv"] and "budget_usd" not in task
+    # No new create_task parameter: the budget comes from via alone.
+    assert "budget" not in " ".join(inspect.signature(tasks.create_task).parameters)
+
+
+def test_an_approval_of_a_siri_task_keeps_its_budget(fake_claude):
+    task = wait(tasks.create_task("Veille", "REFUS", profile="recherche", via=SIRI_VIA))
+    again = wait(tasks.approve(task["id"]))
+    assert again["via"] == SIRI_VIA and again["budget_usd"] == 0.5
+    assert option(echo(again)["argv"], "--max-budget-usd") == "0.5"
 
 
 def test_version_is_read_once(tmp_path, monkeypatch):

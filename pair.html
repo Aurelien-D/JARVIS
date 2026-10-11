@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>JARVIS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="jarvis-pair-state" content="__PAIR_STATE__">
+<!-- The pairing page a remote device sees before it is paired: never the page
+     token, never the app itself. Under the remote CSP: no inline script, no
+     on* attribute, no CDN; pair.js imports only strings-fr.js. -->
+<!-- The iPhone's Home Screen web app (index.html has the same links). -->
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="theme-color" content="#05080d">
+<meta name="apple-mobile-web-app-title" content="JARVIS">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="/static/css/tokens.css">
+<link rel="stylesheet" href="/static/css/pair.css">
+</head>
+<body>
+  <main id="pair" class="pair" aria-labelledby="pairBrand">
+    <h1 id="pairBrand" class="pair-brand">J.A.R.V.I.S.</h1>
+    <div id="pairBody" class="pair-body">
+      <noscript><p class="pair-text">Activez JavaScript dans Safari pour associer cet appareil.</p></noscript>
+    </div>
+    <p id="pairLive" class="visually-hidden" role="status" aria-live="polite"></p>
+  </main>
+  <script type="module" src="/static/js/pair.js"></script>
+</body>
+</html>

@@ -173,6 +173,15 @@ KNOWN_API = {
     "/api/health", "/api/onboarding",  # WP12
     "/api/schedules/{item_id}/snooze", "/api/remarques", "/api/remarques/{key}/dismiss",  # WP17
     "/api/usage",  # WP18
+    # JARVIS on iPhone (spec 3.14): remote access, Serve, ntfy, Siri.
+    "/api/remote/state", "/api/remote/pause", "/api/remote/pairing", "/api/remote/pair-request",
+    "/api/remote/pair-status", "/api/remote/pair-requests", "/api/remote/pair-requests/{request_id}/allow",
+    "/api/remote/pair-requests/{request_id}/deny", "/api/remote/devices", "/api/remote/devices/{device_id}",
+    "/api/remote/forget", "/api/remote/complet", "/api/remote/audit",
+    "/api/remote/serve", "/api/remote/serve/publish", "/api/remote/serve/unpublish",
+    "/api/notify", "/api/notify/test", "/api/notify/topic",
+    "/api/raccourci", "/api/remote/devices/{device_id}/siri-key", "/api/remote/siri-keys/{key_id}",
+    "/api/remote/siri-key",
 }
 FOREIGN_ORIGINS = ("https://evil.example", "http://127.0.0.1:9999", "null", "http://localhost.evil.example:8788")
 

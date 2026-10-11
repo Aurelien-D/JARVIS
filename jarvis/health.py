@@ -9,6 +9,8 @@ monsieur asks to check again. Nothing here spends model quota: the key is
 tested by reading the model's description, which is free. A.R.E.S is asked
 for real (ares.reachable), and on Windows the shell's state is read: the
 global hotkey, the tray icon, the start with Windows (shell.py, desktop.py).
+Tailscale Serve is checked too (remote access from the iPhone): a dangerous
+publication is an error even while remote access is off.
 """
 import hashlib
 import importlib.util
@@ -524,11 +526,12 @@ def check_costs(refresh: bool = False) -> list:
     Nothing to say on a day with no spending and no cap; the cap reached is
     something to know, not a fault: the Mise en route never opens for it."""
     from . import usage
-    voice, claude = usage.realtime_spent_today(), usage.claude_spent_today()
-    total, cap = voice + claude, usage.daily_cap()
+    voice, claude, siri = usage.realtime_spent_today(), usage.claude_spent_today(), usage.text_spent_today()
+    total, cap = voice + claude + siri, usage.daily_cap()
     if not cap and not total:
         return []
-    spent = (f"Aujourd'hui ≈ {_money(total)} (voix ≈ {_money(voice)}, Claude ≈ {_money(claude)}, "
+    siri_part = f", Siri ≈ {_money(siri)}" if siri else ""  # only on the days Siri spoke
+    spent = (f"Aujourd'hui ≈ {_money(total)} (voix ≈ {_money(voice)}, Claude ≈ {_money(claude)}{siri_part}, "
              "estimation).")
     if not cap:
         return [item("costs", "info", "Dépenses du jour", f"{spent} Aucun plafond du jour.",
@@ -546,10 +549,41 @@ def check_costs(refresh: bool = False) -> list:
     return [item("costs", "ok", "Dépenses du jour", f"{spent} Plafond du jour : {_money(cap)}.")]
 
 
+REMOTE_FIX = "Réglages › Accès à distance › Publier sur Tailscale."
+
+
+def check_remote(refresh: bool = False) -> list:
+    """Tailscale Serve (remote access from the iPhone). Funnel, a TCP forward or
+    another target are errors even while remote access is off (serve_status
+    counts only what reaches JARVIS until remote access is in use): something
+    else may answer on the published name. Nothing to say without Tailscale."""
+    # remote and tailscale are imported inside functions everywhere (section 0)
+    from . import remote, tailscale
+    if tailscale.exe_path() is None:
+        return []
+    status = tailscale.serve_status()
+    state, detail = status.get("state"), str(status.get("detail") or "")
+    title = "Accès à distance"
+    if state in tailscale.DANGEROUS:
+        return [item("remote", "error", title, detail,
+                     f"Tapez la commande indiquée ci-dessus dans PowerShell, puis {REMOTE_FIX}")]
+    if not remote.is_enabled():
+        return []
+    if state == "ready":
+        return [item("remote", "ok", title, detail)]
+    if state == "absent":
+        return [item("remote", "warning", title, "Accès à distance activé, mais JARVIS n'est pas publié sur "
+                     "Tailscale : l'iPhone ne peut pas le joindre.", REMOTE_FIX)]
+    if state == "stopped":
+        return [item("remote", "warning", title, "Accès à distance activé, mais Tailscale est arrêté ou "
+                     "déconnecté sur ce PC.", f"Connectez Tailscale (icône près de l'horloge), puis {REMOTE_FIX}")]
+    return []
+
+
 # In the order the dialog lists them.
 CHECKS = [check_openai, check_claude, check_hardening, check_permission, check_microphone,
           check_workdir, check_data, check_browser, check_pillow, check_mcp, check_git_bash,
-          check_windows, check_ares, check_deadlines, check_costs]
+          check_windows, check_ares, check_remote, check_deadlines, check_costs]
 
 
 def _run_one(fn, refresh: bool) -> list:

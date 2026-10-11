@@ -33,7 +33,7 @@ pytestmark = pytest.mark.e2e
 SHOTS = os.environ.get("JARVIS_E2E_SHOTS", "")
 NBSP, NNBSP = " ", " "
 REAL_RUN_CHECKS = health.run_checks  # the harness swaps it for an empty list when it starts
-BRIEF = ("Bonjour monsieur. Nous sommes samedi 10 octobre. Aujourd'hui à Laon : éclaircies, de 9 à 16 °C. "
+BRIEF = ("Bonjour monsieur. Nous sommes samedi 10 octobre. Aujourd'hui à Nantes : éclaircies, de 9 à 16 °C. "
          "Dans A.R.E.S : 2 éléments aujourd'hui. Vos rappels du jour : 18 h, Appeler maman. Bonne journée.")
 
 

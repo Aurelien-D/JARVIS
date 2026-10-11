@@ -53,7 +53,8 @@ def test_tasks_are_ordered_running_failed_done_with_french_labels(jarvis):
     assert jarvis.inner_text(f"{run} .prog") == "Recherche web : prix"
     assert jarvis.inner_text(f"{run} .chrono").startswith("1:0")
     # Actions by status: a running task can be read or cancelled; a failed one retried.
-    acts = lambda sel: jarvis.evaluate(f"[...document.querySelectorAll('{sel} .actions button')].map(b => b.textContent)")
+    def acts(sel):
+        return jarvis.evaluate(f"[...document.querySelectorAll('{sel} .actions button')].map(b => b.textContent)")
     assert acts(run) == ["Lire", "Annuler la tâche"]
     assert acts("#task-e1") == ["Lire", "Copier", "Réessayer"]
     assert acts("#task-d1") == ["Lire", "Copier", "Continuer"]
@@ -290,7 +291,8 @@ def test_reminders_by_day_in_two_line_rows(jarvis):
     assert "chaque jour" in rows.nth(1).locator(".when").inner_text()
     assert jarvis.text_content("#schedules summary h2") == "Rappels & routines (3)"
     # Two lines: the time under the text, the ✕ beside both.
-    box = lambda sel: rows.nth(0).locator(sel).bounding_box()
+    def box(sel):
+        return rows.nth(0).locator(sel).bounding_box()
     assert box(".when")["y"] > box(".txt")["y"]
     assert box(".x")["x"] > box(".txt")["x"] + box(".txt")["width"] - 1
 
@@ -338,9 +340,9 @@ def test_memory_shows_text_with_its_date_on_hover_and_undo(jarvis):
     created = time.time() - 86400 * 3
     jarvis.evaluate("f => __jarvis.bus.emit('server:memory', {facts: f})",
                     [{"id": "m1", "text": "Préfère le thé", "created": created},
-                     {"id": "m2", "text": "Habite à Laon", "created": created + 60}])
+                     {"id": "m2", "text": "Habite à Nantes", "created": created + 60}])
     rows = jarvis.locator("#memoryList .item")
-    assert rows.nth(0).locator(".txt").inner_text() == "Habite à Laon"  # newest first
+    assert rows.nth(0).locator(".txt").inner_text() == "Habite à Nantes"  # newest first
     assert rows.nth(1).locator(".txt").get_attribute("title").startswith("Retenu le ")
     assert jarvis.text_content("#memory summary h2") == "Mémoire (2)"
     rows.nth(1).locator("button.x").click()

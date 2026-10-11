@@ -94,3 +94,32 @@ def test_journal_ares_and_info_rules_reach_the_voice_model(monkeypatch):
     monkeypatch.setattr(config, "ARES", "off")  # Réglages › Système › A.R.E.S : Jamais
     assert "# A.R.E.S\n" not in instructions.build_instructions()
     assert "ares_lire" not in {t["name"] for t in tools.session_tools()}
+
+
+DEVICE = ("Monsieur te parle depuis son iPhone ; il n'est peut-être pas devant le PC. Volume, musique et "
+          "verrouillage agissent sur le PC à la maison et attendent son bouton Lancer sur l'iPhone : ne les "
+          "propose que s'il le demande pour le PC. open_url envoie le lien sur l'iPhone. Capture d'écran, "
+          "presse-papiers et ouverture d'applications restent réservés au PC. L'accès complet n'existe que "
+          "s'il l'a autorisé sur le PC, et se lance toujours par le bouton. Les routines avec accès complet "
+          "se programment sur le PC.")
+
+
+class _Frozen:
+    """datetime with a fixed now(): two builds compare byte for byte."""
+    @staticmethod
+    def now():
+        from datetime import datetime
+        return datetime.fromisoformat("2026-10-12T09:30")
+
+
+def test_the_phone_is_told_where_it_stands_before_outside_data(monkeypatch):
+    monkeypatch.setattr(instructions, "datetime", _Frozen)
+    text = instructions.build_instructions("monsieur : bonjour", scope="app")
+    assert section(text, "# Appareil") == "# Appareil " + DEVICE
+    positions = [text.index(title + "\n") for title in [*SECTIONS[:-2], "# Appareil", *SECTIONS[-2:]]]
+    assert positions == sorted(positions)  # just before « Données externes »
+    # The PC's instructions are the same, byte for byte, as before the iPhone.
+    pc = instructions.build_instructions("monsieur : bonjour")
+    assert "# Appareil" not in pc
+    assert pc == instructions.build_instructions("monsieur : bonjour", scope="pc")
+    assert text.replace(f"# Appareil\n{DEVICE}\n\n", "") == pc

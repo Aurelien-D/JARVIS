@@ -137,3 +137,15 @@ JOURNAL_DAYS = _int("JARVIS_JOURNAL_DAYS", 30)
 HOTKEY = os.environ.get("JARVIS_HOTKEY", "ctrl+alt+shift+j")
 BROWSER = os.environ.get("JARVIS_BROWSER", "auto")  # auto | chrome | edge
 TRAY = _bool("JARVIS_TRAY", True)
+
+# ---------------------------------------------------------------- remote access (iPhone)
+# Never a switch here: remote access is turned on only from the PC's Réglages,
+# into data/remote.json (jarvis/remote.py), so a stale .env can never open it.
+REMOTE_HOST = os.environ.get("JARVIS_REMOTE_HOST", "")  # exact Serve name; empty = confirmed in Réglages
+REMOTE_LOGINS = os.environ.get("JARVIS_REMOTE_LOGINS", "")  # comma-separated Tailscale logins
+REMOTE_PORT = _int("JARVIS_REMOTE_PORT", 8789)  # loopback port used only by Tailscale Serve
+SIRI_MODEL = os.environ.get("JARVIS_SIRI_MODEL", "")  # empty = automatic (raccourci.py)
+NTFY = _bool("JARVIS_NTFY", False)
+NTFY_SERVER = os.environ.get("JARVIS_NTFY_SERVER", "https://ntfy.sh")
+NTFY_ONLY_AWAY = _bool("JARVIS_NTFY_ONLY_AWAY", False)
+NTFY_REMINDER_TEXT = _bool("JARVIS_NTFY_REMINDER_TEXT", False)

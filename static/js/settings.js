@@ -1,6 +1,11 @@
 /* Réglages (WP12): a modal <dialog> styled as a right drawer, one section at
    a time: Connexion · Voix · Écoute · Proactivité · Claude Code · Coûts ·
-   Système · Données · À propos.
+   Accès à distance · Système · Données · À propos.
+   - Other modules add a section of their own with registerSection() (the
+     remote access and notification sections); those are built again each
+     time they are shown, as their state lives on the server.
+   - On the paired iPhone (a remote page), the dialog opens on « Accès à
+     distance ».
    - Server settings come from /api/settings (schema and values) and are
      saved one field at a time; each says when it takes effect: at once, at
      the next conversation, at the next task, or after a restart.
@@ -12,7 +17,7 @@
    - Everything from the server is set as text, never as HTML. Inside a
      modal dialog the page's toasts and live regions are out of reach, so
      each field has its own status line. */
-import { $, api, bus, settings as prefs, state } from "./core.js";
+import { $, api, bus, isIOS, settings as prefs, state } from "./core.js";
 import { audio, earcon } from "./audio-fx.js";
 import { T, explainError, fr } from "./strings-fr.js";
 import { SR, toggleWake, wakeEngine, wakeWanted } from "./wake.js";
@@ -21,7 +26,8 @@ import { button, checkHealth, checkRow, h, keyForm, openOnboarding, renderChecks
 
 const TS = T.settings;
 const S = TS;  // strings-fr.js, T.settings: one dictionary for the whole page
-const SECTION_ORDER = ["connexion", "voix", "ecoute", "proactivite", "claude", "couts", "systeme", "donnees", "apropos"];
+const SECTION_ORDER = ["connexion", "voix", "ecoute", "proactivite", "claude", "couts", "distance", "notifications",
+                       "systeme", "donnees", "apropos"];
 const DAY_KEYS = ["lun", "mar", "mer", "jeu", "ven", "sam", "dim"];
 const SELECT_SETTLE_MS = 800;  // a list looked through with the arrow keys is saved once it settles
 
@@ -168,7 +174,7 @@ function control(entry, id) {
   return { node: input, input, read: () => input.value.trim(), write: (v) => { input.value = v ?? ""; } };
 }
 
-function field(entry) {
+export function field(entry) {
   const id = `set-${entry.key}`;
   const wrap = h("div", { class: `set-field set-kind-${entry.type}`, "data-key": entry.key });
   const ctl = control(entry, id);
@@ -283,7 +289,7 @@ function confirmChange(entry, value) {
                       danger, ok: S.confirmOk });
 }
 
-function askConfirm({ title, text, value = "", danger = "", ok }) {
+export function askConfirm({ title, text, value = "", danger = "", ok }) {
   const d = ui.confirm;
   d.querySelector("h3").textContent = title;
   d.querySelector(".set-confirm-text").textContent = text;
@@ -377,7 +383,8 @@ function deviceSelect(kind, labelText, prefKey, nth) {
 function sectionDevices() {
   const box = h("div", { class: "set-devices" });
   const mic = deviceSelect("audioinput", S.devices.mic, "micId", S.devices.micN);
-  const sinkOk = typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype;
+  // iOS: the output is iOS's own choice (speaker, earphones, AirPlay), never the page's.
+  const sinkOk = !isIOS() && typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype;
   const speaker = sinkOk ? deviceSelect("audiooutput", S.devices.speaker, "speakerId", S.devices.speakerN) : null;
   const names = button(S.devices.names, async () => {
     try {
@@ -401,7 +408,8 @@ function sectionDevices() {
     navigator.mediaDevices.addEventListener?.("devicechange", refill);
   }
   mic.append(h("p", { class: "set-help", text: S.devices.wakeNote }));
-  box.append(mic, speaker || h("p", { class: "set-help", text: S.devices.noSink }), h("div", { class: "set-actions" }, names));
+  const noSpeaker = h("p", { class: "set-help", text: isIOS() ? T.ios.speakerNote : S.devices.noSink });
+  box.append(mic, speaker || noSpeaker, h("div", { class: "set-actions" }, names));
   return box;
 }
 
@@ -426,8 +434,12 @@ function sectionEcoute() {
 }
 
 function sectionSysteme() {
-  const out = [];
-  // Autostart: the shortcut in the Windows Startup folder (desktop.set_autostart).
+  return [...(state.remote ? [] : [autostartField()]), ...entriesOf("systeme").map(field), ...browserPrefs()];
+}
+
+/* Autostart: the shortcut in the Windows Startup folder (desktop.set_autostart).
+   This PC's business only: never on the paired iPhone's page. */
+function autostartField() {
   const id = "set-autostart";
   const input = h("input", { type: "checkbox", id, class: "set-checkbox", checked: model.autostart === true,
                              disabled: model.autostart === null || model.autostart === undefined });
@@ -446,9 +458,11 @@ function sectionSysteme() {
       say(auto, explainError(err), true);
     }
   });
-  out.push(auto, ...entriesOf("systeme").map(field));
+  return auto;
+}
 
-  // Animations and sounds: this browser only.
+/* Animations and sounds: this browser only. */
+function browserPrefs() {
   const motion = h("select", { id: "set-motion", class: "set-input" },
     h("option", { value: "auto", text: S.motionAuto }), h("option", { value: "reduced", text: S.motionReduced }));
   motion.value = prefs.get("motion", "auto") === "reduced" ? "reduced" : "auto";
@@ -476,8 +490,7 @@ function sectionSysteme() {
     prefs.set("earconVolume", Number(range.value) / 100);
     earcon("unmute", { userInitiated: true });  // a sample at the new level
   });
-  out.push(motionWrap, volWrap);
-  return out;
+  return [motionWrap, volWrap];
 }
 
 function sectionCouts() {
@@ -486,6 +499,8 @@ function sectionCouts() {
 }
 
 function sectionDonnees() {
+  // The data folder lives on the PC (open it, purge the journal): not from the iPhone.
+  if (state.remote) return [h("p", { class: "set-where", text: TS.data }), ...entriesOf("donnees").map(field)];
   const status = h("p", { class: "set-status", role: "status" });
   const actions = h("div", { class: "set-field", "data-key": "data-actions" });
   const open = button(TS.openData, async () => {
@@ -549,6 +564,15 @@ function sectionApropos() {
   return [dl];
 }
 
+/* Sections built by other modules: id -> build(ctx), which returns the nodes
+   under the heading (ctx below). The built-in BUILDERS win over them. */
+const registered = new Map();
+export function registerSection(id, build) { registered.set(id, build); }
+
+function sectionCtx() {
+  return { model, field, entriesOf, askConfirm, say, h, button, api, remote: state.remote };
+}
+
 const BUILDERS = {
   connexion: sectionConnexion,
   voix: () => [h("p", { class: "set-note", text: S.voiceNote }), ...entriesOf("voix").map(field)],
@@ -564,7 +588,8 @@ const BUILDERS = {
 function renderSection(id) {
   const panel = ui.panels.get(id);
   if (!panel || !model) return;
-  const kids = (BUILDERS[id] || (() => entriesOf(id).map(field)))();
+  const custom = registered.get(id);
+  const kids = BUILDERS[id] ? BUILDERS[id]() : custom ? custom(sectionCtx()) : entriesOf(id).map(field);
   panel.replaceChildren(heading(id), ...kids);
   if (id === "couts") bus.emit("settings:section", { id, el: panel.querySelector("#settingsUsage") });
   if (id === "connexion") loadHealth(false);
@@ -578,8 +603,10 @@ export function showSection(id) {
   for (const b of ui.nav.querySelectorAll("button")) {
     if (b.dataset.section === id) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
   }
-  // À propos follows what changed in the other sections (models, their deadlines).
-  if (model && (id === "apropos" || !ui.panels.get(id).childElementCount)) renderSection(id);
+  // À propos follows what changed in the other sections (models, their deadlines);
+  // a registered section (remote access, notifications) shows the server's state now.
+  const fresh = id === "apropos" || (registered.has(id) && !BUILDERS[id]);
+  if (model && (fresh || !ui.panels.get(id).childElementCount)) renderSection(id);
 }
 
 function renderRestart() {
@@ -678,7 +705,8 @@ export async function openSettings(section) {
   ui.loading.hidden = true;
   renderNav();
   renderRestart();
-  const wanted = section || (model.key?.present ? current : "connexion");
+  // The iPhone comes here for its own remote access (pause, forget) first.
+  const wanted = section || (state.remote ? "distance" : model.key?.present ? current : "connexion");
   showSection(wanted);
   ui.nav.querySelector('[aria-current="true"]')?.focus();
 }

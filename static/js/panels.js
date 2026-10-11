@@ -9,13 +9,16 @@
    - A full-access 'Réessayer' never starts anything: the server parks it in
      the confirmation store and its card asks first (POST /api/tasks refuses
      complet). 'Continuer' goes through the composer, so through JARVIS.
+   - Lancer and Autoriser follow confirm.canLaunch (the server's own rule): a
+     request raised on another device shows only its refusal button and a note.
    - Reminders by day, memory facts; deleting hides the row at once and the
      DELETE leaves only when the 'Annuler' toast goes (6 s). Editing appears
      only when the server has the PATCH routes (WP14, WP17). */
-import { $, TOKEN, api, bus, md, settings, state } from "./core.js";
+import { $, TOKEN, api, bus, md, myOrigin, settings, state } from "./core.js";
 import { T, fmtElapsed, fmtRelative, fmtTime } from "./strings-fr.js";
 import { setSideOpen, toast } from "./hud.js";
 import { openTask } from "./taskview.js";
+import { canLaunch } from "./confirm.js";
 
 const S = T.task, P = T.panels;
 const ACTIVE = new Set(["running", "en_file"]);
@@ -35,6 +38,7 @@ let tasksEl, schedulesEl, memoryEl;
 const heads = {};                // section id -> its <h2>
 const tasksById = new Map();     // task id -> latest snapshot
 const waiting = new Map();       // pending id -> a full-access task waiting for monsieur's "oui"
+const approvals = new Map();     // pending id -> an open task approval (who may launch it)
 let historyEl = null;
 let schedules = [], facts = [];
 const hidden = new Set();        // "s:id" / "m:id": deleted, waiting out its undo (or the server)
@@ -81,7 +85,13 @@ function waitingItem(p) {
   const quoted = [...summary.matchAll(/«\s*([^»]+?)\s*»/g)].pop();
   return { waiting: true, pendingId: String(p.id), title: quoted ? quoted[1] : summary,
            status: "attente", profile: "complet", output: String(p.detail || ""),
-           started: Number(p.created) || Date.now() / 1000 };
+           started: Number(p.created) || Date.now() / 1000,
+           launch: canLaunch(p), note: elsewhere(p) };
+}
+
+/* Where a request this page may not launch is launched instead. */
+function elsewhere(p) {
+  return (p.launch_from || p.via || "pc") === "pc" ? T.confirm.fromPc : T.confirm.fromPhone;
 }
 
 function renderTasks() {
@@ -178,7 +188,8 @@ function fillTask(el, tk) {
   else meta.title = P.model(tk.model || S.defaultModel);
 
   const prog = el.querySelector(".prog");
-  setText(prog, ACTIVE.has(tk.status) ? String(tk.progress || (tk.status === "en_file" ? P.queued : "")) : "");
+  setText(prog, ACTIVE.has(tk.status) ? String(tk.progress || (tk.status === "en_file" ? P.queued : ""))
+    : (tk.waiting && !tk.launch ? tk.note : ""));
 
   fillApproval(el, tk);
   fillOutput(el, tk);
@@ -198,21 +209,38 @@ function fillApproval(el, tk) {
     if (!box.hidden) { box.hidden = true; box.replaceChildren(); delete box.dataset.pid; }
     return;
   }
-  if (box.dataset.pid === String(pid)) return;
-  box.dataset.pid = String(pid);
+  const p = approvalOf(tk, String(pid));
+  const launch = canLaunch(p);
+  const key = `${pid}:${launch ? "yes" : "no"}`;
+  if (box.dataset.pid === key) return;
+  box.dataset.pid = key;
   const tools = [...new Set((Array.isArray(tk.permission_denials) ? tk.permission_denials : [])
     .map(d => String(d?.tool || "")).filter(Boolean))].join(", ");
   const ask = document.createElement("p");
   ask.textContent = P.approvalAsk(tools || "d'autres outils");
   const bar = document.createElement("div");
   bar.className = "ap-actions";
-  const yes = button(P.approve, "ctl primary approve", P.approveLabel(titleOf(tk)));
   const no = button(P.refuse, "ctl refuse", P.refuseLabel(titleOf(tk)));
-  yes.addEventListener("click", () => decide(String(pid), "oui", [yes, no]));
-  no.addEventListener("click", () => decide(String(pid), "non", [yes, no]));
-  bar.append(yes, no);
-  box.replaceChildren(ask, bar);
+  const buttons = [no];
+  if (launch) {
+    const yes = button(P.approve, "ctl primary approve", P.approveLabel(titleOf(tk)));
+    yes.addEventListener("click", () => decide(String(pid), "oui", buttons));
+    buttons.unshift(yes);
+  }
+  no.addEventListener("click", () => decide(String(pid), "non", buttons));
+  bar.append(...buttons);
+  if (launch) box.replaceChildren(ask, bar);
+  else box.replaceChildren(ask, Object.assign(document.createElement("p"), { textContent: elsewhere(p) }), bar);
   box.hidden = false;
+}
+
+/* The approval request as the server sent it, or as the server builds it from
+   its task (a phone's full-access task is approved on that phone only). */
+function approvalOf(tk, pid) {
+  const known = approvals.get(pid);
+  if (known) return known;
+  const via = String(tk.via || "pc");
+  return { via, launch_from: via !== "pc" && tk.profile === "complet" ? via : null };
 }
 
 async function decide(pendingId, decision, buttons) {
@@ -274,7 +302,7 @@ function button(text, className, label = "") {
 
 /* Which actions a card offers, by status (design spec §3). */
 function actionsFor(tk) {
-  if (tk.waiting) return ["launch", "dismiss"];
+  if (tk.waiting) return tk.launch ? ["launch", "dismiss"] : ["dismiss"];
   const list = ["read"];
   if (ACTIVE.has(tk.status)) return [...list, "cancel"];
   if (String(tk.output || "").trim()) list.push("copy");
@@ -359,9 +387,11 @@ async function retry(tk, b) {
       const out = await api(`/api/task/${encodeURIComponent(tk.id)}/retry`, { method: "POST" });
       if (out && out.status === "needs_confirmation" && out.pending_id) {
         // The card at once; the server's own event fills in the details.
+        // Raised by this page: launched here (on a phone, its button only, like the server says).
         bus.emit("server:pending", { type: "pending", pending: {
           id: out.pending_id, name: "delegate_to_claude", kind: "tool", summary: out.summary || "",
-          state: "pending", expires_in: out.expires_in } });
+          state: "pending", expires_in: out.expires_in, via: myOrigin(),
+          launch_from: state.remote ? myOrigin() : null } });
         toast(P.retryConfirm);
       }
     } else {
@@ -379,6 +409,12 @@ async function retry(tk, b) {
 }
 
 function onPending(p) {
+  if (p && p.id && p.kind === "task_approval") {
+    // Kept for its task card's buttons (the task's own event redraws it).
+    if (p.state && p.state !== "pending") approvals.delete(String(p.id));
+    else approvals.set(String(p.id), p);
+    return;
+  }
   if (!p || !p.id || p.name !== "delegate_to_claude") return;
   const id = String(p.id);
   if (p.state && p.state !== "pending") {
@@ -786,6 +822,7 @@ export function init() {
   bus.on("sse:open", () => {
     api("/api/pending").then((items) => {
       waiting.clear();
+      approvals.clear();
       (Array.isArray(items) ? items : []).forEach(onPending);
       renderTasks();
     }).catch((err) => console.warn(err));

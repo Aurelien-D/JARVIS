@@ -40,7 +40,8 @@ def _forget(a: dict, ctx) -> dict:
 
 
 HANDLERS = {
-    "remember": lambda a, ctx: {"ok": True, "remembered": memory.remember(a.get("fact", ""))["text"]},
+    "remember": lambda a, ctx: {"ok": True, "remembered": memory.remember(
+        a.get("fact", ""), via=getattr(ctx, "origin", None) or "pc")["text"]},
     "forget": _forget,
 }
 

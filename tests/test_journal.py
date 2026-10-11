@@ -190,7 +190,7 @@ def test_tasks_and_reminders_leave_a_line():
 
 def test_the_morning_briefing_leaves_its_text_for_recall():
     # « redis-moi le briefing » after a reload: its text lives nowhere else once told.
-    brief = ("Bonjour monsieur. Nous sommes samedi 10 octobre. Aujourd'hui à Laon : éclaircies, de 9 à 16 °C. "
+    brief = ("Bonjour monsieur. Nous sommes samedi 10 octobre. Aujourd'hui à Nantes : éclaircies, de 9 à 16 °C. "
              "Dans A.R.E.S : 2 éléments aujourd'hui. Vos rappels du jour : 18 h, Appeler maman. Bonne journée.")
     events.publish("briefing", {"id": "briefing-2026-10-10", "title": "Briefing du matin", "text": brief,
                                 "queued": False, "capped": False})

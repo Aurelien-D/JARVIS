@@ -191,7 +191,8 @@ function build() {
 
   footEl = el("footer", "jr-foot");
   keepEl = el("span", "meta jr-keep");
-  footEl.append(keepEl, button(J.clear, askClear, "ctl jr-clear"));
+  // Emptying the journal is the PC's (DELETE /api/journal is PC-only): never offered on the phone.
+  footEl.append(keepEl, ...(state.remote ? [] : [button(J.clear, askClear, "ctl jr-clear")]));
   drawer.replaceChildren(head, tools, statusEl, logEl, footEl);
   drawer.addEventListener("close", onClosed);  // keys.js: Échap
 }
@@ -357,7 +358,7 @@ function askClear() {
 }
 
 function resetClear(focus = false) {
-  if (!footEl || footEl.querySelector(".jr-clear")) return;
+  if (!footEl || state.remote || footEl.querySelector(".jr-clear")) return;
   const again = button(J.clear, askClear, "ctl jr-clear");
   footEl.replaceChildren(keepEl, again);
   if (focus) again.focus();

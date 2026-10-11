@@ -49,10 +49,10 @@ avec son flegme de majordome britannique, et il sait vraiment faire des choses :
 > la mémoire, la vision et les rapports marchent aussi.
 
 **Dans ce guide** : les coûts · l'installation pas à pas (étapes 0 à 4) ·
-Réglages · se servir de JARVIS · raccourcis · rappels et briefing ·
-coexistence avec A.R.E.S · sécurité · ce qui part où · échéances OpenAI ·
-mettre à jour · connecteurs · réglages avancés · problèmes fréquents · pour
-les développeurs.
+Réglages · se servir de JARVIS · raccourcis · rappels et briefing · JARVIS
+sur l'iPhone · coexistence avec A.R.E.S · sécurité · ce qui part où ·
+échéances OpenAI · mettre à jour · connecteurs · réglages avancés · problèmes
+fréquents · pour les développeurs.
 
 ---
 
@@ -258,12 +258,14 @@ Ensuite, dites **« Jarvis »**… et parlez !
   (`off` pour arrêter).
 - **L'icône JARVIS** dans la zone de notification (près de l'horloge) offre :
   Ouvrir JARVIS, Parler, Mot d'éveil (activer ou couper), Ne pas déranger 1 h,
-  Démarrer avec Windows et **Quitter JARVIS**.
+  Accès à distance (activer ou couper), Démarrer avec Windows et
+  **Quitter JARVIS**.
 - Pour quitter : icône JARVIS → **Quitter JARVIS**. Les tâches Claude en cours
   sont alors arrêtées (elles apparaissent « Interrompue »), la conversation en
   cours se termine et la fenêtre JARVIS se ferme.
 - Pendant qu'une tâche Claude tourne, JARVIS empêche le PC de se mettre en
   veille.
+- **Depuis l'iPhone** : voir « JARVIS sur l'iPhone », plus bas.
 
 ---
 
@@ -282,6 +284,8 @@ ou au prochain démarrage de JARVIS.
 | **Proactivité** | Briefing du matin (heure, jours, actualités), heures calmes, votre ville, rouvrir la fenêtre quand un rappel arrive |
 | **Claude Code** | Mode de permission, dossier de travail, connecteurs MCP en plus, modèle Claude par complexité (haiku, sonnet, opus), durée maximale (10 min), plafond par tâche (2 $), tâches en même temps (3) |
 | **Coûts** | Plafond de dépense par jour et les 30 derniers jours |
+| **Accès à distance** | Activer ou couper l'accès depuis l'iPhone, Publier sur Tailscale, associer un iPhone, les appareils associés (Retirer, clés Siri), accès complet depuis l'iPhone, activité récente |
+| **Notifications** | Notifications sur l'iPhone (ntfy), serveur ntfy, seulement si je ne suis pas au PC, texte des rappels, le sujet à copier, envoyer un test, nouveau sujet |
 | **Système** | Lancer JARVIS au démarrage de Windows, raccourci global, navigateur, icône de notification, A.R.E.S (Automatique, Toujours, Jamais), animations, volume des sons |
 | **Données** | Dossier des données (Ouvrir le dossier data, Purger le journal), conservation du journal (30 jours) |
 | **À propos** | Versions de JARVIS et de Claude Code, modèles utilisés, mot d'éveil, échéances OpenAI |
@@ -293,6 +297,8 @@ ou au prochain démarrage de JARVIS.
   parler », les animations et le volume des sons sont propres à ce navigateur.
 - Ce que vous réglez ici est enregistré dans `data\settings.json` et
   l'emporte sur le fichier `.env` (voir « Réglages avancés »).
+- Accès à distance et Notifications servent à l'iPhone : voir « JARVIS sur
+  l'iPhone ». Sur l'iPhone, Réglages ne montre que quelques sections.
 
 ---
 
@@ -335,7 +341,7 @@ ou au prochain démarrage de JARVIS.
 - **Recherche et fichiers** (tâches Claude) : « Cherche les meilleurs
   aspirateurs robots sous 400 €. » → « Et maintenant, fais-en un document
   Word. » · « Analyse le fichier ventes.xlsx et fais-moi un tableau de bord. »
-- **Météo et actualités** : « Quel temps fera-t-il demain à Laon ? » · « Quels
+- **Météo et actualités** : « Quel temps fera-t-il demain à Lyon ? » · « Quels
   sont les titres de l'actualité ? »
 - **Vision** : « Regarde mon écran : tu vois l'erreur ? » · « Regarde-moi avec
   la caméra : je suis bien coiffé ? »
@@ -377,6 +383,10 @@ Le raccourci global ne peut pas reprendre ceux d'A.R.E.S (Ctrl+Alt+V, M, J, K
 et Espace). S'il est déjà utilisé par un autre programme, JARVIS vous le dit
 et vous en choisissez un autre dans Réglages › Système.
 
+**Sur l'iPhone**, pas de clavier : touchez l'orbe pour parler ou le remettre
+en veille, le champ de message pour écrire, **Interrompre** et **Micro** sous
+l'orbe. Le bouton **Aide** y montre les « Commandes tactiles ».
+
 ---
 
 ## ⏰ Rappels, routines et briefing du matin
@@ -416,6 +426,616 @@ et vous en choisissez un autre dans Réglages › Système.
   haute. Un rappel que vous avez programmé donne quand même une notification
   et un petit son discret ; le reste, briefing compris, attend derrière la
   pastille de l'orbe.
+
+---
+
+## 📱 JARVIS sur l'iPhone
+
+Parlez à JARVIS depuis votre iPhone, à la maison ou au bout du monde : la
+conversation à la voix, le champ texte, les tâches Claude, les rappels. Le PC
+reste le cerveau, il fait tout le travail ; l'iPhone n'est qu'une fenêtre sur
+lui. En plus : des notifications sur l'iPhone (ntfy) et un raccourci « Dis
+Siri, Jarvis ».
+
+**Comment ça marche** : **Tailscale** relie l'iPhone et le PC par un réseau
+privé et chiffré, à vous seul. JARVIS ne se montre que sur ce réseau, jamais
+sur internet.
+
+> **Tailscale**, c'est un réseau privé (un « VPN ») gratuit pour un usage
+> personnel : vos appareils se voient entre eux, où qu'ils soient, et personne
+> d'autre ne les voit.
+
+**Les limites de l'iPhone** (elles viennent d'iOS, pas de JARVIS) :
+
+- **Pas de mot d'éveil** : on touche l'orbe pour parler. iOS ne laisse pas une
+  page écouter en permanence.
+- **L'écoute s'arrête** quand l'écran se verrouille ou que vous passez à une
+  autre app : la conversation se met en pause et reprend à votre retour.
+- **iOS redemande le micro** à chaque lancement « à froid » de l'app (après
+  l'avoir fermée, ou après un redémarrage de l'iPhone).
+- **Le PC doit rester allumé et éveillé**, votre session ouverte (verrouillée,
+  c'est très bien). PC éteint, en veille ou session fermée : l'iPhone ne joint
+  plus JARVIS.
+
+**Règle zéro** : ne tapez aucune commande `tailscale serve` avant d'avoir mis
+JARVIS à jour (voir « Mettre à jour »). Et **jamais** `tailscale funnel`
+(sauf la commande terminée par `off` que JARVIS vous donne pour l'arrêter),
+`--tcp`, `--tls-terminated-tcp`, une redirection de port sur votre box, ni
+ngrok ou Cloudflare : ils mettraient JARVIS sur internet.
+
+**Ce qu'il faut** : un iPhone sous iOS 26 ou 27 à jour, le PC Windows où
+JARVIS tourne déjà, un plafond de dépense par jour (étape 4), et 30 à
+45 minutes, une seule fois.
+
+### 1. Tailscale sur le PC, avec un compte personnel
+
+Sur le PC :
+
+1. Allez sur https://tailscale.com/download, téléchargez Tailscale pour
+   Windows et installez-le.
+2. Cliquez avec le bouton droit sur l'icône Tailscale près de l'horloge (si
+   elle n'y est pas, cherchez-la sous la flèche « ^ ») › **Log in…** : le
+   navigateur s'ouvre.
+3. Connectez-vous avec un compte **personnel** : Google (votre Gmail perso),
+   Apple ou Microsoft (outlook.com). **Jamais votre adresse du travail** :
+   Tailscale range toutes les adresses d'une même entreprise dans un seul
+   réseau partagé, celui de l'employeur.
+4. Ce compte devient la clé de votre réseau : activez sa **double
+   authentification** (la validation en deux étapes de Google, d'Apple ou de
+   Microsoft). Tailscale n'a pas de mot de passe à lui, il fait confiance à ce
+   compte.
+
+Puis dans la **console Tailscale**, https://login.tailscale.com/admin (en
+anglais) :
+
+5. Page **Machines** : vérifiez qu'il n'y a que vos appareils (pour
+   l'instant, le PC seul).
+6. Menu **⋯** du PC › **Edit machine name…** : décochez *Auto-generate from OS
+   hostname* et donnez un nom neutre, par exemple `jarvis-pc`. Ce nom devient
+   public (il est inscrit dans les journaux publics des certificats HTTPS) :
+   ni votre nom, ni celui d'une entreprise.
+7. Menu **⋯** du PC › **Disable key expiry** : sinon le PC se déconnecte de
+   Tailscale au bout de quelques mois. **Sur le PC seulement** : l'iPhone
+   garde l'expiration normale.
+8. Page **DNS** :
+   - **MagicDNS** doit être activé (il l'est d'habitude) : il donne un nom au
+     PC au lieu d'un numéro ;
+   - notez le **nom de votre réseau**, affiché sur cette page, par exemple
+     `tail0000.ts.net` : l'adresse de JARVIS sera
+     `https://jarvis-pc.tail0000.ts.net/` ;
+   - sous **HTTPS Certificates**, cliquez **Enable HTTPS** (si vous l'oubliez,
+     JARVIS vous le redemandera à l'étape 4).
+9. Page **Settings** › **Device management** : activez **Device approval**.
+   Tout nouvel appareil devra alors être approuvé par vous avant d'entrer dans
+   votre réseau.
+
+### 2. Tailscale sur l'iPhone
+
+1. App Store › **Tailscale** › Obtenir, puis ouvrez l'app.
+2. Acceptez d'ajouter la configuration VPN (iOS demande votre code).
+3. Connectez-vous avec **le même compte** que sur le PC.
+4. Sur le PC, console Tailscale › **Machines** : l'iPhone y est marqué *Needs
+   approval*. Menu **⋯** › **Approve**.
+5. Dans l'app Tailscale, laissez Tailscale **activé**. Il règle lui-même le
+   « VPN à la demande » (*VPN On Demand*) qui le rallume après un redémarrage :
+   ne créez pas de règles à vous. Laissez **Exit Node** sur *None* (aucun nœud
+   de sortie) : votre navigation habituelle ne passe pas par le PC.
+
+À savoir :
+
+- Un iPhone géré par l'employeur (profil de gestion, autre VPN) est
+  déconseillé : iOS ne garde qu'un seul VPN à la demande à la fois.
+- Réinstaller Tailscale sur l'iPhone en fait une nouvelle machine : il faudra
+  l'associer de nouveau à JARVIS (étape 5).
+
+### 3. Le PC reste allumé et éveillé
+
+Tailscale et JARVIS marchent très bien session verrouillée. Il faut seulement
+que le PC ne dorme pas et que votre session reste ouverte.
+
+1. **PC fixe** : Paramètres Windows › Système › Alimentation (« Alimentation
+   et batterie » sur un portable) › Écran et veille : « Sur secteur, mettre
+   mon appareil en veille après » : **Jamais**. L'écran, lui, peut s'éteindre.
+2. **PC portable** : laissez-le branché et réglez aussi la mise en veille sur
+   secteur à **Jamais** (point 1). Puis touche Windows › tapez « capot » ›
+   **Choisir l'action qui suit la fermeture du capot** › colonne « Sur
+   secteur » : **Ne rien faire** › Enregistrer les modifications.
+3. **Après une mise à jour de Windows** : Paramètres › Comptes › Options de
+   connexion › « Utiliser mes informations de connexion pour terminer
+   automatiquement la configuration après une mise à jour » : **Activé**.
+   Windows rouvre alors votre session (verrouillée) après son redémarrage.
+4. **JARVIS au démarrage** : Réglages › Système › « Lancer JARVIS au démarrage
+   de Windows ».
+
+### 4. JARVIS : plafond, interrupteur et publication
+
+D'abord **mettez JARVIS à jour** (section « Mettre à jour ») et relancez-le.
+
+**Le plafond du jour, obligatoire**
+
+1. Réglages › Coûts › **Plafond de dépense par jour**, par exemple 5 $. Sans
+   plafond, l'accès à distance refuse de s'allumer et Siri ne répond pas :
+   c'est ce qui protège votre crédit OpenAI si l'iPhone sert à votre insu.
+2. **Conseillé : une limite chez OpenAI aussi**, dans un projet réservé à
+   JARVIS :
+   - sur https://platform.openai.com, menu des projets (en haut à gauche) ›
+     **Create project**, nommé par exemple « jarvis » ;
+   - dans ce projet : **Project settings** › **Limits** › **Spend** › **Edit
+     spend limit** : un montant par mois, et activez **Enforce a hard limit** ;
+   - dans ce projet toujours, *API keys* › *Create new secret key*, puis
+     collez la clé dans Réglages › Connexion (Remplacer la clé).
+
+   Avec « Enforce a hard limit », OpenAI refuse les demandes une fois le
+   montant du mois atteint (la coupure n'est pas instantanée : la dépense
+   peut dépasser un peu). Sans cette case, la limite ne coupe rien.
+
+**L'interrupteur**
+
+3. Réglages › **Accès à distance**. Vérifiez la partie « État » :
+   - Tailscale : « installé et connecté » ;
+   - Adresse : `jarvis-pc.tail0000.ts.net` ;
+   - Compte : votre compte Tailscale (par exemple `monsieur@example.com`).
+     La première fois, « (détectée : confirmée en activant l'accès) » et
+     « (détecté : confirmé en activant l'accès) » s'affichent à côté : c'est
+     normal, cocher Accès à distance les enregistre (« (enregistrée) »,
+     « (enregistré) »). « (défini dans .env) » veut dire qu'il vient du
+     fichier `.env`.
+   - La ligne « Compte professionnel ? Préférez un compte Tailscale personnel
+     (voir le guide). » vous renvoie à l'étape 1.
+4. Cochez **Accès à distance**. Il refuse de s'allumer sans plafond, sans
+   Tailscale connecté sur le PC ou sans adresse. L'icône JARVIS près de
+   l'horloge l'allume ou le coupe aussi : « Accès à distance (activer ou
+   couper) ». Couper l'accès retire aussi la publication Tailscale ; le
+   rallumer la rétablit.
+
+**Publier sur Tailscale**
+
+5. Cliquez **Publier sur Tailscale** : JARVIS lance lui-même la commande
+   ci-dessous, et rien d'autre.
+6. Si le lien **Autoriser HTTPS sur Tailscale** apparaît (il mène à
+   login.tailscale.com), ouvrez-le, acceptez, puis revenez.
+7. Attendez « **Serve : prêt** » (le bouton Revérifier relit l'état).
+
+**Si le bouton ne suffit pas**, tapez la commande vous-même : ouvrez
+PowerShell (touche Windows → tapez `powershell` → Entrée), collez la commande
+affichée sous « Commande manuelle » (bouton **Copier**) et appuyez sur Entrée.
+
+```
+tailscale serve --bg --https=443 http://127.0.0.1:8789
+```
+
+Si PowerShell ne connaît pas `tailscale`, prenez la seconde forme :
+
+```
+& "C:\Program Files\Tailscale\tailscale.exe" serve --bg --https=443 http://127.0.0.1:8789
+```
+
+Cette commande publie JARVIS **sur votre réseau Tailscale seulement**, en
+HTTPS, vers une porte du PC réservée à Tailscale : le port 8789
+(`JARVIS_REMOTE_PORT`). Rien ne s'ouvre sur internet.
+
+JARVIS surveille cette publication (toutes les 10 minutes, et à chaque
+Revérifier) :
+
+| « Serve : … » | Ce que ça veut dire |
+|---|---|
+| « prêt » | Tout va bien |
+| « absent » | Pas encore publié, ou publication perdue (une réinstallation de Tailscale, par exemple) : cliquez **Publier sur Tailscale** |
+| « Funnel actif » | Tailscale publie ce PC **sur internet**. JARVIS refuse ces requêtes, mais il faut l'arrêter : tapez dans PowerShell la commande affichée sous « Pour l'arrêter » (bouton **Copier**), puis **Publier sur Tailscale** |
+| « relais TCP » | Tailscale transmet au PC des connexions brutes, sans contrôle : même remède. S'il vise JARVIS, tout accès à distance est refusé tant qu'il dure |
+| « cible inattendue » | Tailscale publie autre chose que JARVIS sous ce nom (ou `JARVIS_REMOTE_PORT` vaut `JARVIS_PORT` : changez-le dans `.env`) : même remède |
+
+Dans ces trois derniers cas, le bilan de santé (Réglages › Connexion) le
+signale aussi, même accès coupé, et une alerte part sur l'iPhone (étape 7).
+
+### 5. Associer l'iPhone
+
+Sur le PC :
+
+1. Réglages › Accès à distance › **Associer un iPhone**. L'association reste
+   ouverte 10 minutes ; l'adresse de JARVIS s'affiche en grand, avec un QR
+   code.
+
+Sur l'iPhone :
+
+2. Visez le QR code avec l'**Appareil photo** et touchez le lien, ou tapez
+   l'adresse dans **Safari** (`https://jarvis-pc.tail0000.ts.net/`). Si le
+   lien s'ouvre dans un autre navigateur (Chrome…), copiez l'adresse et
+   collez-la dans Safari : la suite se fait dans Safari.
+3. La page « D'abord, ajoutez JARVIS à l'écran d'accueil » s'ouvre. Dans
+   Safari (iOS 26 et 27) :
+   - touchez **⋯** (en bas de l'écran), puis **Partager** ;
+   - touchez **Sur l'écran d'accueil** (faites défiler la liste si besoin) ;
+   - laissez **« Ouvrir comme app web »** activé, puis touchez **Ajouter**.
+4. Ouvrez l'icône **JARVIS** de l'écran d'accueil : l'association continue
+   là.
+5. Gardez le nom proposé ou tapez-en un (par exemple « iPhone de test »), puis
+   touchez **Demander l'accès**. Un **code à 4 chiffres** s'affiche en grand.
+
+Sur le PC :
+
+6. La demande apparaît dans Réglages › Accès à distance : le système
+   (« iOS »), le nom de l'iPhone sur Tailscale, son adresse Tailscale (comme
+   `100.101.102.103`) et le compte, puis le code et le nom choisi. Si c'est
+   **le même code** que sur l'iPhone, cliquez **Autoriser** ; sinon
+   **Refuser**.
+7. Si plusieurs demandes attendent, JARVIS vous fait **taper le code** affiché
+   sur votre iPhone avant d'autoriser : n'autorisez que celle-là.
+
+L'iPhone dit « Associé ! » et JARVIS s'ouvre. L'icône ouvrira désormais
+JARVIS directement.
+
+- Rien ne vient ? L'association s'est peut-être refermée au bout de
+  10 minutes : sur le PC, **Associer un iPhone** de nouveau, puis sur l'iPhone
+  **Réessayer** (ou **Recommencer**).
+- 5 appareils au plus ; **Retirer** en libère un.
+
+**Autre façon : rester dans un onglet Safari.** Sur la page « D'abord,
+ajoutez JARVIS… », touchez « Utiliser JARVIS dans Safari » et associez
+l'onglet directement. Cela marche aussi, mais pour JARVIS l'onglet et l'icône
+de l'écran d'accueil sont deux appareils : chacun s'associe à part. L'icône
+reste conseillée (plein écran, pas de barre d'adresse, pas d'onglet fermé par
+mégarde) ; l'onglet redemande peut-être moins souvent le micro (à vérifier,
+point 12).
+
+### 6. Se servir de JARVIS sur l'iPhone
+
+- **Parler** : touchez l'orbe. Après chaque lancement de l'app, iOS demande le
+  micro : **Autoriser**.
+- **Des écouteurs**, c'est mieux : au haut-parleur, JARVIS peut s'entendre
+  lui-même (écho) et se couper la parole. iOS choisit la sortie du son
+  (haut-parleur, écouteurs, AirPlay) : changez-la dans le Centre de contrôle.
+- **L'écran reste allumé** pendant une conversation (en mode Économie
+  d'énergie, ce n'est pas garanti).
+- **Écran verrouillé ou autre app** : « Conversation en pause (écran verrouillé
+  ou autre app). » À votre retour elle reprend seule ; sinon, touchez
+  **Reprendre**. Un appel ou Siri coupe aussi le micro un moment.
+- **Écrire** : le champ « Écrivez à JARVIS… » sous l'orbe, pratique en public.
+  `/tâche …` y confie un travail à Claude (Lecture seule), comme sur le PC.
+- **Chacun ses réponses** : une tâche demandée depuis l'iPhone est annoncée
+  sur l'iPhone, jamais à voix haute sur le PC ; l'iPhone ne vous lit pas ce
+  que vous avez demandé au PC. Le panneau des sessions Claude Code montre
+  tout, des deux côtés.
+- **Réglages sur l'iPhone** : seulement Voix, Proactivité, Accès à distance,
+  Notifications et À propos. Depuis l'iPhone, vous changez la voix, sa
+  vitesse, le briefing du matin, les heures calmes et votre ville ; tout le
+  reste se règle sur le PC.
+- **Agir sur le PC** : monter ou baisser le son, le couper, lecture ou pause,
+  piste suivante ou précédente, verrouiller la session. JARVIS affiche d'abord
+  la carte « Agir sur le PC à distance : … ? » et attend le bouton **Lancer**
+  sur l'iPhone (un « oui » à la voix ne suffit pas). Presse-papiers, captures
+  d'écran, regard sur l'écran et ouverture d'applications restent réservés au
+  PC.
+- **Les liens s'ouvrent sur l'iPhone** : la carte « Lien à ouvrir » et son
+  bouton **Ouvrir le lien** ; rien ne s'ouvre sur le PC.
+- **Mettre en pause** (sur l'iPhone, Réglages › Accès à distance) : coupe
+  tout l'accès à distance (vos iPhone et Siri) **1 h** ou **24 h**, après
+  confirmation. Il reprend seul à la fin ; seul le PC peut le rallumer avant
+  (« Reprendre maintenant »). Pratique avant de prêter votre iPhone.
+- **Oublier cet iPhone** : l'iPhone se retire lui-même ; pour revenir, il
+  faudra l'associer de nouveau.
+
+**Accès complet depuis l'iPhone** (facultatif, fermé par défaut)
+
+Les tâches Claude avec accès complet (fichiers et commandes du PC) ne se
+lancent pas depuis l'iPhone, sauf si vous l'autorisez sur le PC :
+
+1. Sur le PC, Réglages › Accès à distance › **Accès complet depuis
+   l'iPhone** : **Jamais** (par défaut), **24 h** ou **7 jours**.
+   L'autorisation expire toute seule.
+2. Même autorisée, une telle tâche demandée depuis l'iPhone attend toujours
+   la carte « Confirmation requise » et le bouton **Lancer**, **sur l'iPhone
+   qui l'a demandée**. Un « oui » à la voix ne la lance pas ; le PC peut
+   l'annuler, pas la lancer.
+3. Elle est refusée si la conversation contient des données venues
+   d'ailleurs (page web, résultat de tâche, notes…) : recommencez dans une
+   nouvelle conversation.
+4. Les **routines** avec accès complet se programment sur le PC seulement.
+5. À chaque lancement : une notification et une carte sur le PC, une ligne
+   dans « Activité récente » et une alerte sur l'iPhone (ntfy).
+
+### 7. Les notifications sur l'iPhone (ntfy)
+
+JARVIS envoie un mot sur l'iPhone par l'app gratuite **ntfy** : une tâche
+finie, un rappel, une confirmation qui attend, une alerte de sécurité. Jamais
+le contenu d'une tâche, jamais un nom, une adresse ou un lien.
+
+1. Sur l'iPhone : App Store › **ntfy** › Obtenir. Ouvrez-la et autorisez ses
+   notifications.
+2. Sur le PC : Réglages › Notifications › cochez « Notifications sur l'iPhone
+   (ntfy) ».
+3. Sur l'iPhone, dans JARVIS : Réglages › Notifications › **Copier le sujet**.
+4. Dans ntfy : touchez **+**, collez le sujet (serveur ntfy.sh, celui par
+   défaut), puis **S'abonner** (*Subscribe* si l'app est en anglais).
+5. Dans JARVIS, sur l'iPhone ou le PC : **Envoyer un test**. « JARVIS :
+   notification de test. » doit arriver.
+
+Le **sujet** est l'adresse secrète de vos notifications : qui le connaît peut
+les lire. Ne le partagez pas. Sur le PC, **Nouveau sujet** en crée un autre ;
+il faut alors s'abonner de nouveau.
+
+**Ce qui arrive**, toujours un texte fixe :
+
+| Notification | Quand |
+|---|---|
+| « JARVIS : tâche terminée. » ou « JARVIS : une tâche n'a pas abouti. » | Une tâche Claude se termine. Plusieurs à la suite arrivent en un seul message (« JARVIS : 2 tâches terminées. ») |
+| « JARVIS : 2 tâches finies, au moins une n'a pas abouti. » | Plusieurs tâches se terminent à la suite et l'une au moins a échoué |
+| « JARVIS : un rappel. » | Un rappel arrive, toujours, même en heure calme |
+| « JARVIS : une confirmation vous attend. » | Une carte de confirmation attend sur le PC |
+| « JARVIS : 2 confirmations vous attendent. » | Plusieurs cartes de confirmation attendent sur le PC |
+| « JARVIS : la réponse de Siri est prête, redemandez-la à Siri dans les 5 minutes. » | Siri a terminé après son délai (étape 8) |
+| « JARVIS : Siri n'a pas pu terminer, réessayez. » | Siri a échoué après son délai (étape 8) |
+| « JARVIS · sécurité : … » | Une alerte de sécurité (ci-dessous) |
+
+**Les alertes de sécurité** :
+
+| « JARVIS · sécurité : … » | Que faire |
+|---|---|
+| « nouvel appareil associé. » | Normal juste après une association ; sinon, retirez-le (Réglages › Accès à distance) |
+| « requête venue d'internet refusée (Funnel) : vérifiez Tailscale. » | Funnel est actif : voir « Serve : … » à l'étape 4 |
+| « échecs répétés d'authentification : accès bloqué 15 minutes. » | Quelque chose insiste : regardez « Activité récente » |
+| « tâche avec accès complet lancée depuis l'iPhone. » | Normal si c'est vous |
+| « compte Tailscale inattendu pour un appareil associé : refusé. » | Un appareil associé s'est présenté avec un autre compte Tailscale |
+| « appareil associé utilisé depuis une autre machine : refusé. » | Son secret sert ailleurs que sur sa machine Tailscale |
+| « secret d'appareil utilisé depuis une autre machine : appareil retiré. » | Son secret a été copié : JARVIS l'a retiré et le sujet ntfy a changé. Associez-le de nouveau et abonnez-vous au nouveau sujet |
+| « accès à distance activé sur le PC. » ou « accès à distance coupé sur le PC. » | Normal si c'est vous |
+| « accès complet depuis l'iPhone autorisé sur le PC. » | Normal si c'est vous |
+| « Tailscale publie JARVIS d'une façon dangereuse : vérifiez Réglages › Accès à distance. » | Voir « Serve : … » à l'étape 4 |
+| « le compte Tailscale du PC a changé. » | Le PC est connecté à un autre compte Tailscale : vérifiez-le |
+
+**Les réglages** (Réglages › Notifications, sur le PC) :
+
+- « Seulement si je ne suis pas au PC » : rien pour les tâches et les
+  confirmations du PC tant que vous l'utilisez. Ce qui vient de l'iPhone ou de
+  Siri, les rappels et les alertes partent toujours.
+- « Texte des rappels dans la notification » : sinon, elle dit seulement
+  « JARVIS : un rappel. ».
+- Heures calmes et « Ne pas déranger » : les fins de tâche sont gardées et
+  arrivent en un seul message à la fin ; les confirmations ne partent pas
+  (elles expirent avant). Rappels et alertes partent toujours.
+- « Serveur ntfy » : ntfy.sh par défaut, ou votre propre serveur (en
+  https://, ou en http:// sur le réseau local ou Tailscale). Pour l'iPhone,
+  ce serveur doit avoir `upstream-base-url: "https://ntfy.sh"` dans sa
+  configuration, sinon les notifications peuvent arriver avec des heures de
+  retard.
+
+**JARVIS n'envoie jamais de lien** : une notification avec un lien ne vient
+pas de JARVIS, ne la touchez pas. Toucher une notification de JARVIS n'ouvre
+pas JARVIS : ouvrez son icône vous-même.
+
+### 8. « Dis Siri, Jarvis »
+
+Un raccourci Siri pose une question courte à JARVIS sans ouvrir l'app.
+
+**Ce que Siri sait faire** : créer un rappel, lancer une recherche web confiée
+à Claude (Web uniquement), dire où en sont les tâches lancées depuis Siri
+(« Quoi de neuf ? ») et en annuler une. Pour tout le reste (fichiers, PC,
+mémoire, agenda, réglages, accès complet) et pour tout ce qui demanderait une
+confirmation, Siri répond « Pour cela, ouvrez JARVIS sur l'iPhone. ».
+
+**Il lui faut** l'accès à distance allumé, le plafond du jour (étape 4) et
+les notifications ntfy (étape 7) : les résultats de Siri n'arrivent que par
+ntfy. Sans ntfy, Siri ne crée pas de rappel (« Rappel non créé… ») et le
+résultat d'une recherche se lit dans le panneau des sessions Claude Code.
+
+**Créer une clé, sur le PC** : Réglages › Accès à distance › sous votre
+iPhone › **Créer une clé Siri**. La clé attend l'iPhone 10 minutes (deux clés
+au plus par iPhone).
+
+**La récupérer, sur l'iPhone** : dans JARVIS, Réglages › Accès à distance ›
+**Assistant raccourci**. Quatre lignes s'affichent, chacune avec son bouton
+**Copier** :
+
+- Adresse (URL) : `https://jarvis-pc.tail0000.ts.net/api/raccourci`
+- Nom de l'en-tête : `Authorization`
+- Valeur de l'en-tête : `Bearer jv_siri_…` (la clé, secrète)
+- Champ du corps JSON : `text`
+
+La clé ne s'affiche qu'une fois. Seules l'adresse et la valeur de l'en-tête
+méritent d'être copiées : `Authorization` et `text` se tapent à la main.
+Copiez une valeur, collez-la dans Raccourcis, revenez dans JARVIS pour la
+suivante. Si l'assistant s'est vidé entre-temps, révoquez sur le PC la clé
+perdue (deux clés au plus par iPhone), puis créez-en une autre.
+
+**Créer le raccourci**, dans l'app **Raccourcis** :
+
+1. Touchez **+** (sur iOS 27, ignorez « Décrire un raccourci ») et nommez le
+   raccourci **Jarvis**.
+2. Ajoutez l'action **Dicter le texte** (langue : Français).
+3. Ajoutez **Obtenir le contenu de l'URL** :
+   - touchez « URL » et collez l'adresse ;
+   - touchez « En afficher plus » › Méthode : **POST** ;
+   - En-têtes : touchez « Ajouter un nouvel en-tête », tapez `Authorization`
+     à gauche et collez la valeur copiée à droite ;
+   - Corps de la requête (parfois écrit « Demander le corps ») : **JSON**,
+     puis « Ajouter un nouveau champ » › **Texte** : tapez `text` à gauche ; à
+     droite, touchez la variable **Texte dicté** proposée au-dessus du
+     clavier.
+4. Ajoutez **Énoncer le texte** (le contenu de l'URL) : JARVIS répond en texte
+   simple, que Siri lit.
+5. Lancez-le une première fois et répondez **Toujours autoriser** quand
+   Raccourcis demande à joindre l'adresse.
+
+Ensuite : « **Dis Siri, Jarvis** », puis votre demande. JARVIS répond en une
+à trois phrases.
+
+**Ne partagez jamais ce raccourci** : il contient la clé. Sur le PC,
+**Révoquer** à côté de la clé la désactive.
+
+**Vos autres appareils Apple** : Raccourcis synchronise ce raccourci, clé
+comprise, par iCloud sur vos autres iPhone, iPad ou Mac (même identifiant
+Apple). Là-bas, JARVIS refuse la clé sans rien retirer : « Cette clé Siri
+appartient à « iPhone de test » : créez une clé pour cet appareil sur le
+PC. » Pour Siri sur un deuxième appareil, associez-le (étape 5), créez-lui
+sa propre clé et un raccourci à un autre nom (par exemple « Jarvis iPad »),
+ou coupez la synchronisation iCloud de Raccourcis sur l'un des deux.
+
+**Encore plus vite** :
+
+- **Bouton Action** (iPhone 15 Pro et plus récents) : Réglages de l'iPhone ›
+  Bouton Action › faites défiler jusqu'à **Raccourci** › **Jarvis**.
+- **Toucher le dos** : Réglages de l'iPhone › Accessibilité › Toucher ›
+  Toucher le dos › Toucher deux fois › **Jarvis**.
+- Le raccourci peut aussi aller dans le Centre de contrôle ou sur l'écran
+  verrouillé.
+
+**À savoir** :
+
+- Si la réponse tarde (plus de 7,5 secondes), Siri dit « Je m'en occupe, je
+  vous préviens sur l'iPhone. » ; ntfy vous dit quand elle est prête :
+  redemandez-la à Siri dans les 5 minutes.
+- Siri garde le fil de la conversation 5 minutes ; « Merci » ou « C'est
+  tout, merci » la termine.
+- Par clé : 6 questions par minute et 60 par jour, 2 recherches à la fois et
+  10 par jour. Une recherche lancée par Siri s'arrête à 0,50 $ au plus.
+- Après avoir lu le résultat d'une tâche, Siri ne lance plus de recherche
+  dans la même conversation.
+
+### 9. Vérifier que tout va bien
+
+Une fois, pour être tranquille :
+
+1. **En 4G, Wi-Fi coupé** : ouvrez JARVIS sur l'iPhone. Il s'ouvre et répond.
+2. **Tailscale coupé** (dans l'app Tailscale) : JARVIS ne s'ouvre plus du
+   tout. C'est normal, et c'est la preuve qu'il n'est pas sur internet.
+   Rallumez Tailscale.
+3. **PC en veille** : rien ne répond. Normal aussi : revoyez l'étape 3.
+4. **JARVIS fermé sur le PC** : l'app affiche « JARVIS est fermé sur le PC »,
+   ou une erreur 502 de Tailscale si vous la rouvrez. Relancez JARVIS sur le
+   PC.
+
+### 10. iPhone perdu ou volé
+
+Tout de suite, depuis le PC :
+
+1. Réglages › Accès à distance › votre iPhone › **Retirer**, puis confirmez.
+   Ses clés Siri tombent avec lui et ses tâches en cours s'arrêtent. Si vous
+   utilisez ntfy, le sujet change : l'iPhone perdu ne reçoit plus rien (un
+   autre iPhone devra s'abonner au nouveau sujet). Au plus pressé, l'icône
+   JARVIS près de l'horloge › « Accès à distance (activer ou couper) » coupe
+   l'accès à distance, Siri compris, mais pas les notifications ntfy : seul
+   **Retirer** (qui change le sujet) ou « Notifications sur l'iPhone (ntfy) »
+   décoché (Réglages › Notifications) les arrête.
+2. Console Tailscale › **Machines** › menu **⋯** de l'iPhone › **Remove** :
+   il sort de votre réseau.
+3. Réglages › Accès à distance › **Activité récente** montre ce qui a été
+   fait à distance.
+
+### 11. Si ça ne marche pas
+
+**« Requête refusée : un proxy ou un antivirus modifie les requêtes locales
+de JARVIS. »**
+→ Un antivirus ou un proxy inspecte les connexions internes du PC. Dans
+l'antivirus, désactivez l'inspection web (HTTPS) pour `127.0.0.1`, ou mettez
+JARVIS en exception. Si vous aviez tapé vous-même une commande
+`tailscale serve` vers le port de la page (8788), Réglages › Accès à distance
+affiche « cible inattendue » : suivez ce qu'il dit.
+
+**« Requête refusée : sur le PC, JARVIS_REMOTE_PORT doit différer de
+JARVIS_PORT (fichier .env), puis Publier sur Tailscale. »**
+→ `JARVIS_PORT` et `JARVIS_REMOTE_PORT` ont la même valeur dans `.env` :
+Tailscale remet alors les requêtes de l'iPhone à la page du PC, qui les
+refuse. Remettez `JARVIS_PORT` à 8788 (ou choisissez un autre
+`JARVIS_REMOTE_PORT`), relancez JARVIS, puis **Publier sur Tailscale**.
+
+**« Appareil retiré » sur l'iPhone**
+→ Il a été retiré sur le PC, ou son secret a servi sur une autre machine.
+Pour le reprendre : sur le PC, **Associer un iPhone** ; sur l'iPhone,
+**Réessayer**, puis l'étape 5.
+
+**« Accès refusé » ou « Compte Tailscale non autorisé : connectez l'iPhone
+avec le même compte que le PC. »**
+→ L'iPhone est connecté à Tailscale avec un autre compte que le PC.
+
+**« Appareil associé depuis une autre adresse ou un autre compte :
+associez-le à nouveau. »**
+→ Tailscale a été réinstallé sur l'iPhone, qui est devenu une nouvelle
+machine. Sur le PC, retirez l'ancien, puis associez-le de nouveau (étape 5).
+
+**« Trop d'échecs : réessayez dans 15 minutes. »**
+→ Cinq échecs en dix minutes bloquent cet appareil ou cette adresse
+15 minutes. Si ce n'est pas vous, regardez « Activité récente ».
+
+**« Fixez d'abord un plafond de dépense par jour… » ou « Plafond du jour
+atteint : la voix reprendra demain (modifiable sur le PC, Réglages › Coûts). »**
+→ Réglages › Coûts, sur le PC.
+
+**« Trop de connexions vocales d'affilée : patientez quelques minutes. »**
+→ La voix depuis l'iPhone ouvre au plus 12 conversations par 10 minutes et
+40 par jour.
+
+**« Serve : absent » après un redémarrage ou une mise à jour de Tailscale**
+→ Réglages › Accès à distance › **Publier sur Tailscale**.
+
+**Le bilan de santé signale « Accès à distance » (Funnel actif, relais TCP,
+cible inattendue)**
+→ Sa ligne donne la commande qui retire exactement ce qui gêne : tapez-la
+dans PowerShell, puis Réglages › Accès à distance › Publier sur Tailscale.
+
+**« Micro refusé » sur l'iPhone**
+→ Touchez **Reprendre** ou l'orbe, et répondez **Autoriser**. Si iOS ne
+demande plus rien : Réglages de l'iPhone › Apps › Safari › Micro, choisissez
+« Demander » ou « Autoriser » (les apps web de l'écran d'accueil suivent ce
+réglage de Safari).
+
+**« Port 8789 déjà utilisé : choisissez un autre JARVIS_REMOTE_PORT. »**
+→ Un autre programme occupe ce port. Ajoutez `JARVIS_REMOTE_PORT=8790` au
+fichier `.env`, relancez JARVIS, puis **Publier sur Tailscale** (la commande
+manuelle change aussi : reprenez celle qu'affiche Réglages).
+
+**Plus rien ne répond, l'iPhone affiche une page blanche ou une erreur**
+→ Le PC s'est peut-être endormi : étape 3. Vérifiez aussi que Tailscale est
+activé sur l'iPhone.
+
+**Siri dit « Cette clé Siri appartient à « … » : créez une clé pour cet
+appareil sur le PC. »**
+→ Le raccourci, synchronisé par iCloud, sert sur un autre appareil que
+l'iPhone de sa clé : voir « Vos autres appareils Apple » à l'étape 8. Rien
+n'a été retiré.
+
+**« Refusé : Tailscale transmet des connexions brutes à JARVIS (relais TCP
+ou Funnel)… »**
+→ Une commande `--tcp`, `--tls-terminated-tcp` ou Funnel vise JARVIS :
+n'importe quelle machine de votre réseau pourrait se faire passer pour
+l'iPhone, alors JARVIS refuse tout. Réglages › Accès à distance affiche la
+commande qui l'arrête (« Pour l'arrêter », bouton **Copier**) ; tapez-la
+dans PowerShell, puis **Revérifier**.
+
+**Siri dit « Clé Siri inconnue : recréez-la sur le PC. »**
+→ La clé a été révoquée, ou l'iPhone retiré : créez une autre clé et mettez
+le raccourci à jour.
+
+**Aucune notification**
+→ Réglages › Notifications : la ligne « Dernier échec » dit pourquoi ;
+**Envoyer un test**. Dans ntfy, vérifiez le sujet et le serveur.
+
+### 12. À vérifier la première fois
+
+Certaines choses ne se vérifient que sur un vrai iPhone. Prenez cinq minutes
+la première fois, et notez ce qui cloche :
+
+- [ ] Après l'ajout à l'écran d'accueil, l'icône ouvre JARVIS **sans
+      redemander l'association**, même après avoir fermé l'app (balayée vers
+      le haut) et l'avoir rouverte.
+- [ ] Si vous aviez d'abord ouvert JARVIS dans Safari : l'icône a-t-elle dû
+      être associée à part ? Et l'onglet Safari redemande-t-il moins souvent
+      le micro que l'icône ?
+- [ ] Combien de fois iOS redemande le micro (à chaque lancement, ou plus
+      souvent ?).
+- [ ] L'écho au haut-parleur, puis avec des écouteurs.
+- [ ] Le son sort du haut-parleur (pas du petit écouteur de l'appel) et
+      passe dans les écouteurs Bluetooth quand ils sont connectés.
+- [ ] L'écran reste allumé pendant une conversation, aussi en mode Économie
+      d'énergie.
+- [ ] Verrouiller en pleine conversation puis déverrouiller : la pause, puis
+      la reprise (ou **Reprendre**).
+- [ ] Siri : la réponse arrive avant que Raccourcis abandonne, et « Toujours
+      autoriser » n'est demandé qu'une fois.
+- [ ] ntfy : le nom du bouton (« S'abonner » ou « Subscribe »).
+- [ ] Raccourcis : les libellés « En-têtes », « Corps de la requête » (ou
+      « Demander le corps ») et « Ajouter un nouveau champ ».
+- [ ] Le micro bloqué : le chemin Réglages de l'iPhone › Apps › Safari ›
+      Micro existe bien sur votre version d'iOS.
 
 ---
 
@@ -546,6 +1166,31 @@ sûr et refuse le risqué.
 - Ces protections demandent Claude Code 2.1.259 ou plus récent : tenez-le à
   jour (`claude update`).
 
+### L'accès depuis l'iPhone
+
+- **Coupé par défaut.** Il ne s'allume que sur le PC (Réglages › Accès à
+  distance, ou l'icône JARVIS) ; aucune ligne du fichier `.env` ne l'allume.
+  Depuis l'iPhone, on peut seulement le mettre en pause, 1 h ou 24 h.
+- **Votre réseau Tailscale, jamais internet.** JARVIS refuse ce qui vient
+  d'internet (Funnel) et exige le HTTPS de Tailscale, le nom exact du PC et
+  votre compte Tailscale. L'iPhone entre par une seconde porte du PC (le
+  port 8789), réservée à Tailscale ; la page du PC garde la sienne.
+- **Chaque iPhone est approuvé sur le PC**, une fois, avec le code à
+  4 chiffres. Son secret est lié à sa machine Tailscale et à votre compte :
+  copié sur une autre machine, il ne sert à rien, et l'appareil est retiré.
+- **Moins de pouvoirs à distance.** Ni presse-papiers, ni capture, ni regard
+  sur l'écran, ni ouverture d'applications. Les actions sur le PC et l'accès
+  complet attendent le bouton **Lancer** sur l'iPhone, jamais un « oui » à la
+  voix ; l'accès complet doit en plus être autorisé sur le PC (24 h ou
+  7 jours), jamais après des données externes, jamais pour une routine. Siri
+  n'a que quatre outils.
+- **Un plafond obligatoire.** Sans plafond du jour, l'accès ne s'allume pas
+  et Siri se tait ; la voix à distance est limitée à 12 connexions par
+  10 minutes et 40 par jour.
+- **Tout est noté.** Chaque action à distance s'inscrit dans « Activité
+  récente » ; les alertes de sécurité s'affichent sur le PC et partent sur
+  l'iPhone (ntfy). Cinq échecs en dix minutes bloquent la source 15 minutes.
+
 ### Vos secrets et votre PC
 
 - Votre clé OpenAI **reste sur votre PC**, dans le fichier `.env` : seul
@@ -553,13 +1198,16 @@ sûr et refuse le risqué.
   minutes, et **les tâches Claude ne la reçoivent jamais** (elle est retirée
   de leur environnement, et la lecture du `.env` leur est interdite). Ne
   partagez jamais votre fichier `.env`.
-- JARVIS n'accepte que les requêtes de **sa propre page, sur ce PC**
+- Sur le PC, JARVIS n'accepte que les requêtes de **sa propre page**
   (vérification de l'hôte et de l'origine, plus un jeton secret recréé à
-  chaque démarrage). Ne mettez **jamais** ce serveur sur internet.
+  chaque démarrage). L'iPhone passe par sa propre porte, réservée à Tailscale
+  (ci-dessus). Ne mettez **jamais** ce serveur sur internet : ni redirection
+  de port, ni Funnel, ni ngrok.
 - Les réglages sensibles ne se changent que dans Réglages, avec
   confirmation, jamais à la voix.
 - Plafond par tâche (2 $), durée maximale (10 min), trois tâches à la fois
-  (Réglages › Claude Code) et plafond par jour (Réglages › Coûts).
+  (Réglages › Claude Code) et plafond par jour (Réglages › Coûts),
+  obligatoire pour l'accès depuis l'iPhone.
 
 ---
 
@@ -578,7 +1226,12 @@ sûr et refuse le risqué.
 | Les actualités | Les flux RSS choisis (Le Monde par défaut) ; s'ils sont illisibles au briefing, une tâche Claude Web uniquement avec la seule date |
 | L'agenda, les tâches et les notes A.R.E.S | Restent sur ce PC, entre JARVIS et A.R.E.S (127.0.0.1:6178) |
 | Les polices et bibliothèques de la page | Google Fonts et jsDelivr, téléchargées comme pour n'importe quel site |
-| Journal, mémoire, rappels, coûts, réglages | Ce PC, dossier `data` (Réglages › Données › Ouvrir le dossier data) |
+| Avec l'iPhone : votre voix et ce que vous écrivez en conversation | OpenAI, directement depuis l'iPhone, avec une clé temporaire que lui donne le PC |
+| Le trajet entre l'iPhone et le PC | Tailscale : une connexion chiffrée de bout en bout. Ses serveurs connaissent vos appareils, leurs adresses et votre compte, pas le contenu des échanges |
+| Le nom du PC sur Tailscale (`jarvis-pc.tail0000.ts.net`) | Public : il est inscrit dans les journaux des certificats HTTPS (d'où un nom neutre) |
+| Les notifications ntfy | ntfy.sh (ou votre serveur) : un texte fixe et court, jamais le contenu d'une tâche ; le texte d'un rappel seulement si vous l'avez coché |
+| Ce que vous dites à Siri | La dictée d'Apple, puis le PC envoie le texte à OpenAI (`store=false` : la conversation n'est pas enregistrée dans votre compte OpenAI) |
+| Journal, mémoire, rappels, coûts, réglages, appareils associés, activité à distance | Ce PC, dossier `data` (Réglages › Données › Ouvrir le dossier data) |
 
 ---
 
@@ -724,6 +1377,14 @@ relancer JARVIS.
 | `JARVIS_ARES_URL` | `http://127.0.0.1:6178/mcp` | — | Adresse du serveur MCP d'A.R.E.S |
 | `JARVIS_ARES_MCP_NAME` | `ares` | — | Nom d'A.R.E.S dans `claude mcp add` (voir « Coexistence avec A.R.E.S ») |
 | `JARVIS_ARES_TOKEN` | *(aucun)* | — | Jeton envoyé à A.R.E.S, si une version future en demande un |
+| `JARVIS_REMOTE_HOST` | *(aucune)* | — | Nom Tailscale exact du PC (ex. `jarvis-pc.tail0000.ts.net`) ; vide : le nom détecté et confirmé dans Réglages › Accès à distance |
+| `JARVIS_REMOTE_LOGINS` | *(aucun)* | — | Comptes Tailscale autorisés, séparés par des virgules ; vide : le compte confirmé dans Réglages › Accès à distance |
+| `JARVIS_REMOTE_PORT` | `8789` | — | Port local utilisé seulement par Tailscale Serve (différent de `JARVIS_PORT`) |
+| `JARVIS_SIRI_MODEL` | *(automatique)* | — | Modèle texte du raccourci Siri ; vide : choisi automatiquement |
+| `JARVIS_NTFY` | `0` | Notifications | Notifications ntfy sur l'iPhone |
+| `JARVIS_NTFY_SERVER` | `https://ntfy.sh` | Notifications | Adresse du serveur ntfy |
+| `JARVIS_NTFY_ONLY_AWAY` | `0` | Notifications | Notifications ntfy seulement quand vous n'êtes pas devant le PC |
+| `JARVIS_NTFY_REMINDER_TEXT` | `0` | Notifications | Mettre le texte du rappel dans la notification |
 
 ---
 
@@ -805,6 +1466,14 @@ seule.
 → Un fichier de données était illisible : JARVIS en a gardé une copie et a
 restauré la sauvegarde. Rien à faire.
 
+**« Requête refusée : un proxy ou un antivirus modifie les requêtes locales
+de JARVIS. »**
+→ Même sans iPhone : un antivirus inspecte les connexions internes du PC.
+Voir « JARVIS sur l'iPhone », point 11.
+
+**Sur l'iPhone**
+→ « JARVIS sur l'iPhone », point 11 (« Si ça ne marche pas »).
+
 ---
 
 ## 🧪 Pour les développeurs
@@ -828,7 +1497,9 @@ python -m pytest -m e2e tests/e2e         # l'interface dans Chromium (une douza
 - **Organisation** : `server.py` (FastAPI, en local seulement), `jarvis/` (un
   module par sujet : `tasks.py` et ses profils, `confirm.py`, `settings.py`,
   `health.py`, `scheduler.py`, `briefing.py`, `usage.py`, `ares.py`,
-  `info.py`, `journal.py`, `shell.py` et `desktop.py` pour Windows),
+  `info.py`, `journal.py`, `shell.py` et `desktop.py` pour Windows ;
+  `remote.py`, `devices.py`, `audit.py`, `listener.py`, `tailscale.py`,
+  `notify.py` et `raccourci.py` pour l'iPhone),
   `static/js/` (modules ES ; tous les textes français sont dans
   `strings-fr.js`), `index.html`.
 - **Règles de la maison** : toute nouvelle route `/api` s'ajoute à `KNOWN_API`
@@ -838,7 +1509,8 @@ python -m pytest -m e2e tests/e2e         # l'interface dans Chromium (une douza
   interface en français, avec « vous » ; aucun test ne dépend de l'heure ;
   jamais de `.env` ni de `data/` dans git.
 - `tests/test_readme.py` vérifie ce README contre le code : sections,
-  commandes, raccourcis, réglages et valeurs par défaut.
+  commandes, raccourcis, réglages, valeurs par défaut et le guide de l'iPhone
+  (commandes Tailscale, libellés, durées, messages et alertes).
 
 ## 📄 Licence
 

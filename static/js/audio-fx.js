@@ -11,8 +11,15 @@ let audioCtx = null, wave = null, noise = null;
 export function audio() {
   // One shared context: browsers cap how many can exist, and reconnects add up.
   if (!audioCtx) audioCtx = new AudioContext();
-  if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+  // 'interrupted': Safari's state after a call or Siri took the sound.
+  if (audioCtx.state === "suspended" || audioCtx.state === "interrupted") audioCtx.resume().catch(() => {});
   return audioCtx;
+}
+
+/* Called inside a tap (hud.js, the orb): iOS starts an AudioContext only from
+   a user's gesture, and one created later stays silent. Never throws. */
+export function unlock() {
+  try { audio(); } catch { /* no Web Audio: the earcons stay silent */ }
 }
 
 const GAP = 0.1;     // seconds between notes

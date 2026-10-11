@@ -5,7 +5,7 @@
    Claude was refused. Opened by a card's 'Lire'; Échap or ✕ closes it and the
    focus goes back to that button. Everything shown is text or sanitised
    markdown: a task's output is outside content. */
-import { $, api, bus, md } from "./core.js";
+import { $, api, bus, md, state } from "./core.js";
 import { T, fmtNumber, fmtTime, fr } from "./strings-fr.js";
 import { toast } from "./hud.js";
 
@@ -17,7 +17,9 @@ let dlg = null;
 let opener = null;        // the 'Lire' button: the focus goes back there
 let current = null;       // the task on screen
 let seq = 0;              // a newer task wins over a slow answer
-let revealOk = true;      // false once the server says it can't show files here
+// false once the server says it can't show files here; never on the paired
+// iPhone's page: the explorer would open on the PC, out of the phone's reach.
+let revealOk = !state.remote;
 let logTimer = null, liveTimer = null;
 const el = {};
 

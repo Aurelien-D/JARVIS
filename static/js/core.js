@@ -5,6 +5,13 @@
 export const $ = (id) => document.getElementById(id);
 export const TOKEN = document.querySelector('meta[name="jarvis-token"]').content;
 
+/* What the server stamped into the page: a remote page (the paired iPhone
+   through Tailscale Serve) and the origin string of its caller ("pc",
+   "app:d_…"). A missing tag means this PC's own page. */
+function meta(name) {
+  return document.querySelector(`meta[name="${name}"]`)?.content || "";
+}
+
 export const state = {
   mode: "off",            // off | standby (wake word) | connecting | live
   phase: null,            // live only: listening | user | thinking | tool | speaking | confirm
@@ -26,7 +33,22 @@ export const state = {
   config: { wake_word: true, speech_lang: "fr-FR", idle_minutes: 3 },  // /api/config
   ready: false,           // every module started (main.js)
   synced: false,          // live events connected and the panels loaded (sse.js)
+  remote: meta("jarvis-remote") === "1",  // the paired iPhone, never this PC's page
+  origin: meta("jarvis-origin") || "pc",  // "pc" | "app:d_…": items of this origin are its own
 };
+
+/* iPhone or iPad (iPadOS says "MacIntel" but has a touch screen). */
+export function isIOS() {
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+/* A finger, not a mouse: bigger targets, no hover-only controls. */
+export function touchUI() {
+  return matchMedia("(pointer: coarse)").matches;
+}
+
+/* This page's origin string, as the server stores it on tasks and requests. */
+export function myOrigin() { return state.origin || "pc"; }
 
 export function touch() { state.lastActivity = Date.now(); }
 

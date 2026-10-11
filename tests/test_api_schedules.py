@@ -139,3 +139,44 @@ def test_new_routes_do_nothing_without_the_token_or_from_elsewhere(published):
             assert r.status_code == 403, (method, path)
     assert store.load(scheduler.FILE, []) == before
     assert store.load("remarques.json", {}) == {}
+
+
+# ---------------------------------------------------------------- from the paired iPhone
+
+COMPLET_PC_ONLY = "Routine avec accès complet : modifiable sur le PC seulement."
+
+
+@pytest.fixture
+def phone(monkeypatch):
+    from remote_helpers import as_caller, remote_client
+
+    from jarvis import remote
+    as_caller(monkeypatch, remote.Caller(kind="app", device_id="d_0123456789abcdef"))
+    return remote_client()
+
+
+def test_what_the_phone_adds_is_the_phones(phone, client, published):
+    item = phone.post("/api/schedules", json={"title": "Pain", "text": "Sortir le pain", "delay_minutes": 15}).json()
+    assert item["item"]["via"] == "app:d_0123456789abcdef"
+    assert client.post("/api/schedules", json={"text": "Thé", "delay_minutes": 5}).json()["item"]["via"] == "pc"
+    r = phone.post("/api/schedules", json={"kind": "task", "title": "Ménage", "text": "rm", "at": "08:00",
+                                          "profile": "complet"})
+    assert r.status_code == 403 and r.json()["detail"] == scheduler.T.complet_api
+
+
+def test_the_phone_never_moves_or_snoozes_a_full_access_routine(phone, client, published):
+    routine = scheduler.add("task", "Ménage", "Vide la corbeille", at="08:00", repeat="daily", profile="complet",
+                            allow_complet=True)
+    reminder = scheduler.add("reminder", "Pain", "Sortir le pain", delay_minutes=30)
+    url = f"/api/schedules/{routine['id']}"
+    for r in (phone.patch(url, json={"due": time.time() + 3600}), phone.patch(url, json={"at": "09:00"}),
+              phone.patch(url, json={"title": "Grand ménage"}), phone.post(f"{url}/snooze", json={"minutes": 10})):
+        assert r.status_code == 403 and r.json()["detail"] == COMPLET_PC_ONLY
+    kept = next(i for i in scheduler.items() if i["id"] == routine["id"])
+    assert (kept["due"], kept["title"]) == (routine["due"], "Ménage")
+    # Its other items stay editable from the phone; an unknown one is a 404 as before.
+    assert phone.patch(f"/api/schedules/{reminder['id']}", json={"title": "Baguette"}).status_code == 200
+    assert phone.patch("/api/schedules/zzz", json={"title": "x"}).status_code == 404
+    # The PC may move it; the phone may delete it.
+    assert client.patch(url, json={"at": "09:30"}).status_code == 200
+    assert phone.delete(url).json()["removed"] == 1

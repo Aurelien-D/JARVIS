@@ -35,14 +35,64 @@ def test_every_call_goes_through_the_confirmation_gate(monkeypatch):
     seen = []
 
     def gate(name, args, ctx):
-        seen.append((name, args, ctx.session_id))
+        seen.append((name, args, ctx.session_id, ctx.origin))
         return {"status": "needs_confirmation", "pending_id": "p1"}
 
     monkeypatch.setattr(confirm, "gate", gate)
     out = tools.run_tool("delegate_to_claude", {"title": "x", "prompt": "y"}, tools.ToolCtx("s1"))
     assert out["status"] == "needs_confirmation"
-    assert seen == [("delegate_to_claude", {"title": "x", "prompt": "y"}, "s1")]
+    assert seen == [("delegate_to_claude", {"title": "x", "prompt": "y"}, "s1", "pc")]
     assert not tools.tasks.TASKS  # parked, not started
+    # A refusal from the gate comes back as it is.
+    monkeypatch.setattr(confirm, "gate", lambda name, args, ctx: {"ok": False, "error": "Non."})
+    assert tools.run_tool("get_status", {}, tools.ToolCtx("s1")) == {"ok": False, "error": "Non."}
+
+
+def test_the_effective_origin_reaches_the_gate_and_the_handler(monkeypatch):
+    """A caller saying "pc" in a phone's session is the phone; two remote
+    origins never share one."""
+    confirm.SESSIONS.clear()
+    phone = confirm.new_session(origin="app:d_0123456789abcdef")
+    seen = []
+    monkeypatch.setattr(confirm, "gate", lambda name, args, ctx: seen.append(("gate", ctx.origin)))
+    monkeypatch.setitem(tools.HANDLERS, "get_status", lambda a, ctx: seen.append(("handler", ctx.origin)) or {})
+    monkeypatch.setattr(confirm, "after_tool", lambda name, args, ctx, out: seen.append(("after", ctx.origin)))
+    tools.run_tool("get_status", {}, tools.ToolCtx(phone))
+    assert seen == [("gate", "app:d_0123456789abcdef"), ("handler", "app:d_0123456789abcdef"),
+                    ("after", "app:d_0123456789abcdef")]
+    assert tools.ToolCtx().origin == "pc"
+    out = tools.run_tool("get_status", {}, tools.ToolCtx(phone, origin="app:d_fedcba9876543210"))
+    assert out == {"ok": False, "error": "Session d'un autre appareil."}
+    seen.clear()
+    tools.run_tool("get_status", {}, tools.ToolCtx("unknown-sid", origin="siri:k_9b8a7c6d5e4f3a21"))
+    tools.run_tool("get_status", {}, tools.ToolCtx("unknown-sid"))
+    # Siri may not ask for the status; an unknown session on the PC stays the PC's.
+    assert seen == [("gate", "pc"), ("handler", "pc"), ("after", "pc")]
+    confirm.SESSIONS.clear()
+
+
+def test_remote_allowlists_name_real_tools():
+    names = {t["name"] for fam in tools.FAMILIES for t in fam.TOOLS}
+    assert tools.APP_TOOLS <= names and tools.SIRI_TOOLS <= tools.APP_TOOLS
+    [system] = [t for t in tools.tools_pc.TOOLS if t["name"] == "system_control"]
+    actions = set(system["parameters"]["properties"]["action"]["enum"])
+    assert tools.REMOTE_PC_ACTIONS < actions
+    assert not tools.REMOTE_PC_ACTIONS & {"read_clipboard", "write_clipboard", "save_screenshot"}
+    assert set(confirm.ACTION_FR) == tools.REMOTE_PC_ACTIONS  # every one has its wording on the card
+    assert {"open_app", "look_at_screen"}.isdisjoint(tools.APP_TOOLS)
+
+
+def test_app_tools_list_keeps_the_page_tools_and_drops_the_pc_ones():
+    app = tools.session_tools("app")
+    names = [t["name"] for t in app]
+    assert len(names) == len(set(names))
+    assert "open_app" not in names and "look_at_screen" not in names
+    assert tools.client_tools() <= set(names)
+    # Any other scope gets the phone's list too (fail closed), and the PC's list is untouched.
+    assert [t["name"] for t in tools.session_tools("siri")] == names
+    assert tools.session_tools() == tools.session_tools("pc")
+    [pc_url] = [t for t in tools.session_tools() if t["name"] == "open_url"]
+    assert pc_url["description"].startswith("Open a website in the browser on this PC")
 
 
 def test_unknown_tool_and_errors_come_back_as_messages():

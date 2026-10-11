@@ -317,7 +317,7 @@ NEWS = ('<?xml version="1.0"?><rss version="2.0"><channel><title>Fil</title>'
 
 def open_meteo_and_news(request):
     if request.url.host.startswith("geocoding"):
-        return httpx.Response(200, json={"results": [{"name": "Laon", "latitude": 49.56, "longitude": 3.62}]})
+        return httpx.Response(200, json={"results": [{"name": "Nantes", "latitude": 47.22, "longitude": -1.55}]})
     if "open-meteo" in request.url.host:
         return httpx.Response(200, json={"current": {"temperature_2m": 12, "weather_code": 61}, "daily": {}})
     return httpx.Response(200, content=NEWS)
@@ -332,11 +332,11 @@ def test_weather_and_headlines_show_themselves_on_a_card(jarvis, monkeypatch):
     monkeypatch.setattr(config, "NEWS_FEEDS", "https://news.example/rss.xml")
     try:
         go_live(jarvis)
-        call(jarvis, "info", {"type": "meteo", "ville": "Laon"}, "m1")
+        call(jarvis, "info", {"type": "meteo", "ville": "Nantes"}, "m1")
         card = jarvis.locator("#card-info-meteo")
         card.wait_for()
-        assert card.locator("h3").inner_text() == "Météo · Laon"
-        assert card.locator(".body p").first.inner_text().startswith("À Laon, en ce moment : 12 °C")
+        assert card.locator("h3").inner_text() == "Météo · Nantes"
+        assert card.locator(".body p").first.inner_text().startswith("À Nantes, en ce moment : 12 °C")
         assert card.locator(".body .meta").inner_text() == info.CREDIT  # Open-Meteo's credit (CC-BY)
 
         call(jarvis, "info", {"type": "actus"}, "a1")

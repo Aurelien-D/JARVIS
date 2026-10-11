@@ -10,6 +10,9 @@ déranger », a busy screen).
   tells them as « Pendant votre absence : … ». Items are kept 7 days.
 - With no page open at all, notify_offline() sends one native notification
   and, for a reminder, may bring the JARVIS window back.
+- Each item belongs to an origin (via: "pc", or a paired iPhone "app:d_…",
+  or a Siri key): a page is told only its own origin's items, a phone acks
+  only its own, and the PC never toasts a phone's results.
 """
 import hashlib
 import json
@@ -19,7 +22,7 @@ import time
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from . import config, desktop, events, store
@@ -75,7 +78,7 @@ def add(kind: str, payload: dict) -> dict:
             if item.get("ref") == ref and now - item.get("created", 0) < DEDUPE_SECONDS:
                 return item
         item = {"id": uuid.uuid4().hex[:12], "kind": kind, "payload": payload,
-                "created": now, "acked": None, "ref": ref}
+                "created": now, "acked": None, "ref": ref, "via": payload.get("via") or "pc"}
         items.append(item)
         store.save(FILE, items[-MAX_ITEMS:])
     return item
@@ -86,19 +89,30 @@ def _prune(items: list, now: float) -> list:
             and now - i.get("created", 0) < KEEP_DAYS * 86400]
 
 
-def pending(now: float | None = None) -> list:
-    """Not yet told, from the last 24 hours, oldest first."""
+def _via(item: dict) -> str:
+    return str(item.get("via") or "pc")  # older files: the PC's
+
+
+def pending(now: float | None = None, via: str | None = "pc") -> list:
+    """Not yet told, from the last 24 hours, oldest first. via: whose items
+    (an origin string, the PC's by default); None: every origin."""
     now = time.time() if now is None else now
+    want = None if via is None else (via or "pc")
     items = [i for i in store.load(FILE, []) if isinstance(i, dict) and i.get("id")
-             and not i.get("acked") and now - i.get("created", 0) < REPLAY_HOURS * 3600]
+             and not i.get("acked") and now - i.get("created", 0) < REPLAY_HOURS * 3600
+             and (want is None or _via(i) == want)]
     return sorted(items, key=lambda i: i.get("created", 0))
 
 
-def ack(item_id: str) -> bool:
+def ack(item_id: str, via: str | None = None) -> bool:
+    """Monsieur was told. via: only an item of that origin (a phone acks its
+    own, nothing else); None: any item (the PC)."""
     with store.LOCK:
         items = store.load(FILE, [])
         for item in items:
             if isinstance(item, dict) and item.get("id") == item_id:
+                if via is not None and _via(item) != via:
+                    return False
                 if not item.get("acked"):
                     item["acked"] = time.time()
                     store.save(FILE, items)
@@ -120,7 +134,7 @@ def on_publish(kind: str, data: dict) -> dict:
     if kind == "task":  # nobody else raises the alarm for a task that ends with no page open
         notify_offline(f"Tâche « {data.get('title', '')} »",
                        "Terminée." if data.get("status") == "done" else "Elle n'a pas abouti.",
-                       kind="task")
+                       kind="task", via=data.get("via") or "pc")
     return {**data, "inbox_id": item["id"]}
 
 # ---------------------------------------------------------------- quiet hours & « Ne pas déranger »
@@ -184,11 +198,14 @@ def _attention() -> str:
         return "ok"
 
 
-def notify_offline(title: str, body: str, kind: str = "reminder") -> bool:
+def notify_offline(title: str, body: str, kind: str = "reminder", via: str = "pc") -> bool:
     """No JARVIS page open: one native notification instead (the message
     stays in the inbox for the next page). A reminder monsieur set always
     notifies; anything else waits out quiet hours and a busy screen. Returns
-    whether something was shown."""
+    whether something was shown. A phone's or Siri's message is never shown
+    on the PC: it waits for that device."""
+    if (via or "pc") != "pc":
+        return False
     if events.leader() is not None:
         return False  # a page will tell him
     now = time.time()
@@ -213,14 +230,22 @@ def notify_offline(title: str, body: str, kind: str = "reminder") -> bool:
 
 # ---------------------------------------------------------------- routes
 
+def _caller(request: Request):
+    from . import remote  # late: remote imports events
+    return remote.caller_of(request)
+
+
 @router.get("/api/inbox")
-def get_inbox():
-    return pending()
+def get_inbox(request: Request):
+    caller = _caller(request)
+    return pending(via=caller.origin if caller.remote else "pc")
 
 
 @router.post("/api/inbox/{item_id}/ack")
-def post_ack(item_id: str):
-    if not ack(item_id):
+def post_ack(item_id: str, request: Request):
+    caller = _caller(request)
+    # A phone acks only its own messages (another origin's is not found); the PC any.
+    if not ack(item_id, via=caller.origin if caller.remote else None):
         raise HTTPException(404, "Message introuvable.")
     return {"ok": True}
 
@@ -233,7 +258,10 @@ class PresenceIn(BaseModel):
 
 
 @router.post("/api/presence")
-def post_presence(body: PresenceIn):
+def post_presence(body: PresenceIn, request: Request):
+    if _caller(request).remote:
+        # A phone never takes part in the election: its presence and claims change nothing.
+        return {"leader": None, "live": False, "remote": True}
     try:
         events.presence(body.client, body.focused, body.live, body.claim)
     except ValueError as exc:
@@ -243,10 +271,12 @@ def post_presence(body: PresenceIn):
 
 
 @router.get("/api/delivery")
-def get_delivery():
-    """What the leader page needs to decide how to tell something."""
-    return {"leader": events.leader(), "quiet_hours": config.QUIET_HOURS,
-            "quiet": quiet_hours(), "dnd_until": dnd_until(), "attention": _attention()}
+def get_delivery(request: Request):
+    """What the leader page needs to decide how to tell something. A phone is
+    never the leader, and the PC's busy screen is not the phone's."""
+    away = _caller(request).remote
+    return {"leader": None if away else events.leader(), "quiet_hours": config.QUIET_HOURS,
+            "quiet": quiet_hours(), "dnd_until": dnd_until(), "attention": "ok" if away else _attention()}
 
 
 class DndIn(BaseModel):

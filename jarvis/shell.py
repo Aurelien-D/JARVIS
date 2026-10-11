@@ -6,7 +6,8 @@ start() before it and stop() after):
   A combination another program already holds is refused by Windows: JARVIS
   then says so in French ('warning' event) instead of failing silently;
 - an icon in the notification area (pystray, optional): Ouvrir JARVIS,
-  Parler, Mot d'éveil, Ne pas déranger 1 h, Démarrer avec Windows, Quitter;
+  Parler, Mot d'éveil, Ne pas déranger 1 h, Accès à distance (the iPhone's
+  kill switch: on or off, nothing else), Démarrer avec Windows, Quitter;
 - native notifications through that icon (desktop.toast).
 
 The PC is kept awake while a Claude task runs by the scheduler's loop
@@ -383,6 +384,33 @@ def _toggle_dnd():
     _safely(inbox.set_dnd, None if _dnd_on() else time.time() + 3600)
 
 
+REMOTE_ENABLE_FIRST = "Activez-le d'abord dans Réglages › Accès à distance."
+
+
+def _remote_on() -> bool:
+    from . import remote  # late, like everywhere outside remote.py (no import cycle)
+    return bool(_safely(remote.is_enabled))
+
+
+def _toggle_remote(icon):
+    """The kill switch of remote access, as Réglages has it: on or off, nothing
+    else (no tool, task, decision or turn). Remote access refuses in French
+    what it cannot do (no address yet, no cap): the toast says it."""
+    from . import remote
+
+    def flip():
+        on = not remote.is_enabled()
+        try:
+            remote.set_enabled(on, by=remote.PC)
+        except remote.RemoteError as exc:
+            text = str(exc)
+            # No address confirmed yet: only Réglages can show and confirm it.
+            notify("JARVIS", REMOTE_ENABLE_FIRST if text.startswith("Adresse Tailscale invalide") else text)
+            return
+        notify("JARVIS", "Accès à distance activé." if on else "Accès à distance coupé.")
+    _safely(flip)
+
+
 def _toggle_autostart(icon):
     message = _safely(desktop.set_autostart, not desktop.autostart_enabled())
     if message:
@@ -405,6 +433,7 @@ def tray_menu(pystray):
         item("Parler", lambda: _safely(on_hotkey, "talk")),
         item("Mot d'éveil (activer ou couper)", lambda: _safely(on_hotkey, "wake")),
         item("Ne pas déranger 1 h", _toggle_dnd, checked=lambda _item: _dnd_on()),
+        item("Accès à distance (activer ou couper)", _toggle_remote, checked=lambda _item: _remote_on()),
         item("Démarrer avec Windows", _toggle_autostart,
              checked=lambda _item: bool(_safely(desktop.autostart_enabled))),
         menu.SEPARATOR,

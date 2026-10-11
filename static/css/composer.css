@@ -64,6 +64,11 @@
   font: var(--fs-xs, 12px)/1.45 var(--font-mono); color: var(--muted, #7aa7c2);
 }
 .aide-keys li { white-space: nowrap; }
+.aide-keys-title {
+  margin: 10px 0 0; font: 600 var(--fs-xs, 12px)/1.2 var(--font-mono);
+  letter-spacing: .1em; text-transform: uppercase; color: var(--cyan);
+}
+.aide-keys-title + .aide-keys, .card .body .aide-keys-title + ul.aide-keys { margin-top: 4px; }
 
 @media (forced-colors: active) {
   #askInput, #ask button, #chips .chip, .aide-ex { border: 1px solid ButtonText; }

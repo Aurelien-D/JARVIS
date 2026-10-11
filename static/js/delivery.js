@@ -13,8 +13,13 @@
      acknowledged once the answer that tells it has been said in full: cut
      short (a dropped connection, monsieur stopping JARVIS), it goes back
      behind the badge.
+   - Each message has an origin (via): the PC's, or a paired iPhone's. The
+     iPhone (state.remote) never leads nor waits for the election: it tells
+     only its own messages (mayTell, canTell), and the PC's busy screen
+     doesn't keep it quiet. The PC never tells a phone's messages: they stay
+     in the task panel.
    Other modules ask through bus.emit("deliver", {text, kind, priority, spoken}). */
-import { $, api, bus, settings, state, touch } from "./core.js";
+import { $, api, bus, myOrigin, settings, state, touch } from "./core.js";
 import { earcon } from "./audio-fx.js";
 import { addCard, announce, removeCard, toast } from "./hud.js";
 import { T, fmtTime } from "./strings-fr.js";
@@ -50,11 +55,23 @@ let dndToggle = null;
 let dndShown = null;  // the label on screen, so a refresh doesn't steal the focus
 
 /* ---------------------------------------------------------- leader */
-export function isLeader() { return !leaderId || leaderId === clientId(); }
+export function isLeader() { return !state.remote && (!leaderId || leaderId === clientId()); }  // the phone never leads
 
-/* Resolves once the server has said which page speaks (or after ms). */
+/* This page tells things: the PC's leader, or the phone (its own messages only). */
+export function mayTell() { return state.remote || isLeader(); }
+
+/* A message is this page's to tell: the phone's own, or (on the leading PC
+   page) the PC's; a message without via is the PC's (older inbox files). */
+export function canTell(item) {
+  const via = item && item.via;
+  if (state.remote) return via === myOrigin();
+  return isLeader() && (!via || via === "pc");
+}
+
+/* Resolves once the server has said which page speaks (or after ms). The
+   phone is in no election: nothing to wait for. */
 export function leaderKnown(ms = 2000) {
-  if (leaderSeen) return Promise.resolve();
+  if (leaderSeen || state.remote) return Promise.resolve();
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, ms);
     leaderWaiters.push(() => { clearTimeout(timer); resolve(); });
@@ -62,6 +79,7 @@ export function leaderKnown(ms = 2000) {
 }
 
 function onLeader(ev) {
+  if (state.remote) return;  // the PC's election: not the phone's business
   const before = isLeader(), first = !leaderSeen, wasLive = leaderLive;
   leaderId = ev && ev.client ? String(ev.client) : null;
   leaderLive = !!(ev && ev.live);
@@ -81,6 +99,7 @@ function onLeader(ev) {
 
 /* Another page speaks now: what the inbox holds is its job. */
 function handOver() {
+  if (state.remote) return;
   for (const list of [pending, liveQueue, telling]) {
     for (let i = list.length - 1; i >= 0; i--) {
       if (list[i].inboxIds.length) {
@@ -94,6 +113,7 @@ function handOver() {
 /* The other window in a conversation keeps JARVIS until it ends: no button
    that would do nothing, the reason instead. */
 function renderOtherPage() {
+  if (state.remote) return;  // no "other window" card on the phone, no claim
   if (isLeader()) { removeCard("other-page"); return; }
   if (leaderLive) {
     addCard(S.otherTitle, S.otherLive, "info", { id: "other-page", sticky: true });
@@ -120,9 +140,11 @@ export function inQuietHours(spec, date = new Date()) {
   return start < end ? now >= start && now < end : now >= start || now < end;
 }
 
-/* Nothing aloud: quiet hours, « Ne pas déranger », or a busy screen. */
+/* Nothing aloud: quiet hours, « Ne pas déranger », or a busy screen (the
+   PC's: on the phone it doesn't count). */
 export function quietNow(date = new Date()) {
-  return inQuietHours(quietSpec, date) || dndUntil * 1000 > date.getTime() || attention !== "ok";
+  return inQuietHours(quietSpec, date) || dndUntil * 1000 > date.getTime()
+    || (!state.remote && attention !== "ok");
 }
 
 function updateQuiet() {
@@ -241,7 +263,7 @@ function tell(m) {
 export function deliver(msg = {}) {
   const m = message(msg);
   if (!m.text && !m.data) return;
-  if (!isLeader()) return;  // the leader page tells it
+  if (!mayTell()) return;  // the leader page tells it (or the phone, its own)
   if (isLive()) {
     liveQueue.push(m);
     flushLive();
@@ -333,7 +355,7 @@ function renderBadge() {
   state.pending = n;
   const badge = $("badge");
   if (!badge) return;
-  const show = n > 0 && isLeader();
+  const show = n > 0 && mayTell();
   badge.hidden = !show;
   badge.textContent = show ? String(n) : "";
   badge.title = show ? S.badge(n) : "";
@@ -409,7 +431,7 @@ export function notify(text, kind = "info", tag = "") {
 
 /* Asked in context, the first time it would have been useful. */
 function offerNotifications() {
-  if (offered || !("Notification" in window) || Notification.permission !== "default" || !isLeader()) return;
+  if (offered || !("Notification" in window) || Notification.permission !== "default" || !mayTell()) return;
   if (Date.now() < Number(settings.get("notifLaterUntil", 0))) return;
   offered = true;
   addCard(S.notifTitle, S.notifAsk, "info", { id: "notif-ask", sticky: true, actions: [
@@ -464,10 +486,11 @@ function firstTime(inboxId) {
 export function onTask(tk) {
   state.tasks.set(tk.id, tk);
   if (tk.status === "running") {
-    if (!state.announced.has(tk.id)) offerNotifications();
+    if (!state.announced.has(tk.id) && canTell(tk)) offerNotifications();
     return;
   }
-  if (!FINAL.has(tk.status) || !isLeader() || state.announced.has(tk.id)) return;
+  // Another origin's task stays in the task panel, untold here.
+  if (!FINAL.has(tk.status) || !canTell(tk) || state.announced.has(tk.id)) return;
   state.announced.add(tk.id);
   if (!firstTime(tk.inbox_id)) return;
   if (tk.origin === "briefing") deliver(briefingMessage(tk.output, tk.inbox_id));
@@ -504,12 +527,19 @@ function reminderActions(reminderId, inboxId) {
   ];
 }
 
+/* Shown on this page: every PC page shows the PC's, the phone its own. */
+function ours(item) {
+  const via = item && item.via;
+  return state.remote ? via === myOrigin() : !via || via === "pc";
+}
+
 export function onReminder(r) {
+  if (!ours(r)) return;  // another origin's reminder: that device tells it
   const late = lateText(r);
   const text = r.text || r.title || "";
   addCard(`${S.reminder}${late}`, text, "warning", {
     ...(r.inbox_id ? { id: `rappel-${r.inbox_id}` } : {}), actions: reminderActions(r.id, r.inbox_id) });
-  if (!isLeader() || !firstTime(r.inbox_id)) return;
+  if (!canTell(r) || !firstTime(r.inbox_id)) return;
   announce(`Rappel : ${text}`, { urgent: true });
   deliver({ kind: "reminder",
             text: `Rappel programmé arrivé à échéance${late}, annonce-le à monsieur maintenant : « ${text} »`,
@@ -526,9 +556,10 @@ export function onReminder(r) {
 const BRIEFING_SPOKEN_MAX = 1500;
 
 function onBriefing(b) {
+  if (!ours(b)) return;  // the PC's morning briefing is the PC's
   const text = String(b.text || b.summary || b.output || "");
   if (text) addCard(S.briefing, text, "info", b.inbox_id ? { id: `briefing-${b.inbox_id}` } : {});
-  if (!isLeader() || !firstTime(b.inbox_id)) return;
+  if (!canTell(b) || !firstTime(b.inbox_id)) return;
   const m = message(briefingMessage(text, b.inbox_id));
   if (b.queued && !isLive()) {
     queue(m);
@@ -543,11 +574,20 @@ function onBriefing(b) {
 }
 
 function showWarning(w, inboxId) {
-  const text = (w && (w.text || w.message)) || "";
-  if (text) addCard(S.warning, text, "warning", inboxId ? { id: `avert-${inboxId}` } : {});
+  const text = String((w && (w.text || w.message)) || "");
+  if (!text) return;
+  const options = inboxId ? { id: `avert-${inboxId}` } : {};
+  if (w.plain) {
+    // A remote alert quotes what a phone or the network sent: text, never markdown.
+    const el = addCard(S.warning, "", "warning", options);
+    el.querySelector(".body").textContent = text;
+    return;
+  }
+  addCard(S.warning, text, "warning", options);
 }
 
 function onWarning(w) {
+  if (state.remote) return;  // the PC's warnings: no card, no ack on the phone
   showWarning(w, w.inbox_id);
   if (w.inbox_id && isLeader()) ack([w.inbox_id]);
 }
@@ -633,11 +673,11 @@ export function syncInbox() {
     try {
       await stateLoaded;
       const items = await api("/api/inbox");
-      if (!isLeader() || !Array.isArray(items)) return;
-      const fresh = items.filter(it => it && it.id && !handled.has(it.id));
+      if (!mayTell() || !Array.isArray(items)) return;
+      const fresh = items.filter(it => it && it.id && !handled.has(it.id) && canTell(it));
       if (!fresh.length) return;
       fresh.forEach(it => handled.add(it.id));
-      const warnings = fresh.filter(it => it.kind === "warning");
+      const warnings = state.remote ? [] : fresh.filter(it => it.kind === "warning");
       warnings.forEach(it => showWarning(it.payload, it.id));
       ack(warnings.map(it => it.id));
       const told = fresh.filter(it => it.kind !== "warning");
@@ -710,8 +750,12 @@ export function init() {
     if (liveQueue.length) flushLive();
   });
   bus.on("phase", () => { if (liveQueue.length) flushLive(); });
-  // A page that (re)connects catches up on what nobody was told.
-  bus.on("sse:open", () => { leaderKnown().then(() => { if (isLeader()) syncInbox(); }); });
+  // A page that (re)connects catches up on what nobody was told; the phone at
+  // once (no election to wait for).
+  bus.on("sse:open", () => {
+    if (state.remote) { syncInbox(); return; }
+    leaderKnown().then(() => { if (isLeader()) syncInbox(); });
+  });
 
   setInterval(() => { updateQuiet(); renderDnd(); }, 30e3);
   setInterval(refreshState, 120e3);  // the screen may have gone full screen since

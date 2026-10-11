@@ -65,7 +65,7 @@ def test_vous_everywhere_and_feminine_task():
     import re
     strings = run(ALL)
     for path, s in strings:
-        if re.match(r"T\.help\.(examples|categories\.\d+\.examples)\.", path):
+        if re.match(r"T\.help\.(examples|pcOnly|categories\.\d+\.examples)\.", path):
             continue  # what monsieur says to JARVIS, not what JARVIS writes
         own = re.sub(r"«[^»]*»", "", s)  # quoted examples of what he can say
         assert not re.search(r"\b(tu|toi|ton|ta|tes|te)\b", own, re.I), f"{path}: tutoiement : {s!r}"

@@ -2,8 +2,9 @@
    controls, top actions, clock, display cards, toasts and screen-reader
    announcements. Mode and phase are always written as text here, never
    left to the orb's colour alone. */
-import { $, bus, md, settings, state, usesMarked } from "./core.js";
-import { connect, interrupt, setMuted, sleep } from "./voice.js";
+import { $, bus, isIOS, md, settings, state, touchUI, usesMarked } from "./core.js";
+import { unlock } from "./audio-fx.js";
+import { connect, interrupt, primeAudio, setMuted, sleep } from "./voice.js";
 import { wakeEngine, wakeWanted } from "./wake.js";
 import { T, explainError, fmtElapsed, fmtRelative, fmtTime, fr } from "./strings-fr.js";
 
@@ -48,10 +49,21 @@ function wakeEngineSuffix() {
   return "";
 }
 
+/* The words of the status line: on a touch screen (touchUI) the T.ios
+   variants, which name the orb and the buttons instead of Espace, Échap or
+   Ctrl+M. The iPhone (remote page or iOS) has no wake word to mention. */
+function words() {
+  if (!touchUI()) return T.status;
+  const noWake = state.remote || isIOS();
+  return { ...T.status, off: noWake ? T.ios.standby : T.ios.off, standby: T.ios.standbyWake,
+           wakeOff: noWake ? T.ios.standby : T.ios.wakeOff, speaking: T.ios.speaking, muted: T.ios.muted };
+}
+
 /* {key, text, tick, err}: key changes only when the status really changes, so
    a ticking clock (task time, countdown) is not re-announced every second. */
 function statusModel(now = Date.now()) {
   const phase = uiPhase();
+  const W = words();
   let key, text, tick = "";
   if (ui.error) return { key: `error:${ui.error.text}`, text: `${T.status.error} · ${ui.error.text}`, tick, err: true };
   // (live, the conversation goes on without the server: the chip says it)
@@ -59,10 +71,10 @@ function statusModel(now = Date.now()) {
     key = "server"; text = T.status.serverDown;
   } else if (state.mode === "off") {
     // The wake word switched off is a choice, not an outage (design spec §11).
-    key = "off"; text = wakeEngine() && !wakeWanted() ? T.status.wakeOff : T.status.off;
+    key = "off"; text = wakeEngine() && !wakeWanted() ? W.wakeOff : W.off;
   } else if (state.mode === "standby") {
     key = "standby";
-    text = wakeWanted() ? T.status.standby + wakeEngineSuffix() : T.status.wakeOff;
+    text = wakeWanted() ? W.standby + wakeEngineSuffix() : W.wakeOff;
   } else if (state.mode === "connecting") {
     key = `connecting:${state.retries}`;
     text = state.retries ? T.status.reconnecting(state.retries) : T.status.connecting;
@@ -71,14 +83,14 @@ function statusModel(now = Date.now()) {
     key = `live:${phase}:${state.muted}`;
     if (phase === "user") text = T.status.user;
     else if (phase === "thinking") text = T.status.thinking;
-    else if (phase === "speaking") text = T.status.speaking;
+    else if (phase === "speaking") text = W.speaking;
     else if (phase === "confirm") text = T.status.confirm;
     else if (phase === "tool") {
       text = ui.label || T.status.thinking;
       key += `:${text}`;
       const secs = Math.floor((now - ui.phaseAt) / 1000);
       if (secs >= TOOL_ELAPSED_AFTER) tick = T.status.toolElapsed(secs);
-    } else if (state.muted) text = T.status.muted;
+    } else if (state.muted) text = W.muted;
     else if (countdown !== null) { key += ":countdown"; text = T.status.countdown(countdown); }
     else text = T.status.listening;
   }
@@ -291,6 +303,24 @@ function clearCaption() {
 const cardId = (id) => `card-${id}`;
 const cards = () => [...listEl.querySelectorAll(":scope > .card")];
 const evictable = (el) => !el.dataset.sticky && !el.classList.contains("warning") && !el.classList.contains("confirm");
+const isConfirm = (el) => el.classList.contains("confirm");
+
+/* Pending confirmations stay at the top of the list: the bottom sheet shows
+   the first card only, and a question waiting for [Lancer] must never hide
+   behind '+n'. A new confirmation goes first; any other card goes after the
+   last confirmation; a card that changes kind in place (an answered
+   confirmation) moves to match. */
+function place(el, fresh) {
+  const others = cards().filter(c => c !== el);
+  const before = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  if (isConfirm(el)) {
+    if (fresh || others.some(c => !isConfirm(c) && before(c, el))) listEl.prepend(el);
+    return;
+  }
+  const lastConfirm = others.filter(isConfirm).pop();
+  if (lastConfirm && (fresh || before(el, lastConfirm))) lastConfirm.after(el);
+  else if (fresh) listEl.prepend(el);
+}
 
 /* A card with this id already on screen is updated in place (no new
    animation); warning, confirm and sticky cards are never evicted. */
@@ -308,9 +338,9 @@ export function makeCard(title, kind = "info", { id, sticky = false } = {}) {
       + `<time class="meta"></time><button class="x" type="button"><span aria-hidden="true">✕</span></button></header>`
       + `<div class="body"></div>`;
     el.querySelector(".x").addEventListener("click", () => removeCard(el, { byUser: true }));
-    listEl.prepend(el);
   }
   el.className = `card ${kind}`;
+  place(el, fresh);
   el.querySelector("h3 .t").textContent = title;
   el.querySelector(".x").setAttribute("aria-label", T.hud.closeCard(title));
   el.dataset.born = String(Date.now());
@@ -632,8 +662,12 @@ export function init() {
   if ("ResizeObserver" in window) new ResizeObserver(topH).observe(topbar);
 
   orbBtn.addEventListener("click", () => {
-    if (state.mode === "live" || state.mode === "connecting") sleep();
-    else connect();
+    if (state.mode === "live" || state.mode === "connecting") { sleep(); return; }
+    // Inside the tap itself, before any await: iOS lets sound start only from
+    // a user's gesture (the earcons' AudioContext, then JARVIS's voice).
+    unlock();
+    primeAudio();
+    connect();
   });
 
   bus.on("mode", ({ mode } = {}) => {

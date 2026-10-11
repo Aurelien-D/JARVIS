@@ -1,10 +1,16 @@
 """Tool family: this PC (apps, websites, instant system actions, screen).
 
-The family interface is described in tools.py.
+The family interface is described in tools.py. From a paired iPhone only
+open_url and the volume, music and lock actions are offered (tools.APP_TOOLS),
+and open_url sends the link back to the phone instead of opening it here.
 """
 import base64
+from urllib.parse import urlsplit
 
-from . import desktop
+from . import confirm, desktop
+
+LINK_REFUSED = "Lien refusé : seules les adresses web s'envoient."
+LINK_SENT = "Lien envoyé sur l'iPhone : touchez la carte pour l'ouvrir."
 
 MONITOR = {"type": "string",
            "description": ("Target screen: 'left', 'right', 'top', 'bottom', 'primary', "
@@ -75,9 +81,28 @@ def _look_at_screen(a: dict, ctx) -> dict:
     return {"ok": True, "image": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()}
 
 
+def _open_url(a: dict, ctx) -> dict:
+    """On the PC: open it here. From anywhere else: nothing opens on the PC
+    (monsieur may be away); the phone gets a card with the link to tap."""
+    from . import remote
+    if remote.kind_of(getattr(ctx, "origin", "pc")) == "pc":
+        return desktop.open_target(url=a.get("url", ""), monitor=a.get("monitor"))
+    link = confirm.web_address(a.get("url", ""))
+    try:
+        scheme = urlsplit(link).scheme.lower()
+    except ValueError:
+        scheme = ""
+    domain = confirm._domain(link)
+    if scheme not in ("http", "https") or not domain:
+        return {"ok": False, "error": LINK_REFUSED}
+    link = scheme + link[len(scheme):]  # 'HTTPS://…' too passes the page's own http(s) check
+    return {"ok": True, "opened": False, "link": link, "domain": domain,
+            "tainted": confirm.is_tainted(getattr(ctx, "session_id", None)), "message": LINK_SENT}
+
+
 HANDLERS = {
     "open_app": lambda a, ctx: desktop.open_target(name=a.get("name", ""), monitor=a.get("monitor")),
-    "open_url": lambda a, ctx: desktop.open_target(url=a.get("url", ""), monitor=a.get("monitor")),
+    "open_url": _open_url,
     "system_control": lambda a, ctx: desktop.system_action(a.get("action", ""), a.get("value")),
     "look_at_screen": _look_at_screen,
 }

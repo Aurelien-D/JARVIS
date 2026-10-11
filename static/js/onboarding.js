@@ -8,6 +8,8 @@
    - Client checks run here (microphone permission and devices, speech
      recognition, notifications); the server's come from /api/health.
    - Everything on screen is set as text, never as HTML.
+   - Never on a remote page (the paired iPhone): every check here is about
+     this PC, and only the PC can fix them.
    Also exports what the Réglages dialog reuses: the check list and the key form. */
 import { $, api, bus, settings as prefs, state } from "./core.js";
 import { audio } from "./audio-fx.js";
@@ -426,6 +428,7 @@ export async function refresh(force = false, list = null) {
 }
 
 export function openOnboarding({ list = null, from = null } = {}) {
+  if (state.remote) return;  // the iPhone: this PC's setup is not its business
   if (!dialog && !build()) return;
   if (!dialog.open) {
     invoker = from || (document.activeElement !== document.body ? document.activeElement : null);
@@ -438,6 +441,7 @@ export function isOpen() { return !!dialog?.open; }
 
 /* At load: the first run, or a problem not shown yet. Never blocks the page's start. */
 async function autoOpen() {
+  if (state.remote) return;
   let first = false;
   try {
     first = !(await api("/api/onboarding")).onboarded;

@@ -2,7 +2,7 @@
 keyboard, try again, show a file it wrote)."""
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from . import config, confirm, desktop, tasks, tools
@@ -29,9 +29,15 @@ def list_tasks():
     return tasks.list_tasks()
 
 
+def _caller(request: Request):
+    from . import remote
+    return remote.caller_of(request)
+
+
 @router.post("/api/tasks")
-def create_task(body: TaskIn):
-    """A task typed by monsieur (composer): no voice model, no OpenAI cost."""
+def create_task(body: TaskIn, request: Request):
+    """A task typed by monsieur (composer): no voice model, no OpenAI cost.
+    From a phone it carries the phone's origin (via), so its result goes there."""
     if tasks.normalize_profile(body.profile) == "complet":
         # Full access always goes through the confirmation card (voice or button).
         raise HTTPException(400, COMPLET_REFUSED)
@@ -39,7 +45,7 @@ def create_task(body: TaskIn):
         first_line = (body.prompt.strip().splitlines() or [""])[0][:60]
         task = tasks.create_task(body.title or first_line, body.prompt, profile=body.profile,
                                  complexity=body.complexity, continue_task=body.continue_task,
-                                 origin="clavier")
+                                 origin="clavier", via=_caller(request).origin)
     except ValueError as exc:  # empty prompt, daily cap reached: already in French
         raise HTTPException(400, str(exc)) from None
     return tasks.public(task)
@@ -71,11 +77,13 @@ def cancel_task(task_id: str):
 
 
 @router.post("/api/task/{task_id}/retry")
-def retry_task(task_id: str):
+def retry_task(task_id: str, request: Request):
     """'Réessayer' on a finished task: the same prompt and profile, stored here,
     never sent back by the page. Full access asks first: the request goes to
     the same confirmation store as the voice tool (a card with [Lancer]), and
-    nothing starts before monsieur's click."""
+    nothing starts before monsieur's click. From a phone, full access follows
+    the phone's rules (the PC's opt-in, the phone's own button) or is refused."""
+    caller = _caller(request)
     task = _task(task_id)
     if task["status"] in tasks.ACTIVE:
         raise HTTPException(409, "La tâche est encore en cours.")
@@ -90,14 +98,16 @@ def retry_task(task_id: str):
     if args["profile"] == "complet":
         # The voice tool's own gate parks it; no voice session, so only the
         # card's button can say yes (confirm.decide refuses a voice "oui").
-        parked = confirm.gate("delegate_to_claude", args, tools.ToolCtx(session_id=None))
+        parked = confirm.gate("delegate_to_claude", args, tools.ToolCtx(session_id=None, origin=caller.origin))
         if not parked:  # confirmations switched off in .env: still never from a button
             raise HTTPException(400, COMPLET_REFUSED)
+        if parked.get("ok") is False:  # from a phone: no opt-in on the PC
+            raise HTTPException(403, parked["error"])
         return parked
     try:
         fresh = tasks.create_task(args["title"], args["prompt"], profile=args["profile"],
                                   complexity=args["complexity"], continue_task=args.get("continue_task"),
-                                  origin="clavier")
+                                  origin="clavier", via=caller.origin)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from None
     return {"status": "started", "task": tasks.public(fresh)}

@@ -192,3 +192,37 @@ def test_missing_key_is_explained_in_french(monkeypatch):
         realtime.mint()
     assert exc.value.status == 500
     assert exc.value.detail.startswith("Clé OpenAI absente")
+
+
+def test_the_phone_session_gets_the_phone_tools_and_instructions():
+    """scope="app" (a paired iPhone): no PC-only tool, PC actions described for
+    a monsieur who is away; the PC's payload is the same as without a scope."""
+    from jarvis import tools
+    app = realtime.session_payload("monsieur : bonjour", scope="app")["session"]
+    names = [t["name"] for t in app["tools"]]
+    assert "open_app" not in names and "look_at_screen" not in names
+    assert set(names) <= tools.APP_TOOLS | tools.client_tools()
+    [system] = [t for t in app["tools"] if t["name"] == "system_control"]
+    assert system["parameters"]["properties"]["action"]["enum"] == sorted(tools.REMOTE_PC_ACTIONS)
+    assert system["description"] == ("Volume, music keys and lock of the PC at home; monsieur is away: every "
+                                     "action waits for his [Lancer] on the iPhone.")
+    assert "# Appareil" in app["instructions"]
+    pc = realtime.session_payload("monsieur : bonjour")["session"]
+    assert pc["tools"] == tools.session_tools() and "# Appareil" not in pc["instructions"]
+    assert pc["tools"] == realtime.session_payload("monsieur : bonjour", scope="pc")["session"]["tools"]
+    [pc_system] = [t for t in pc["tools"] if t["name"] == "system_control"]
+    assert "save_screenshot" in pc_system["parameters"]["properties"]["action"]["enum"]  # untouched
+
+
+def test_mint_passes_the_scope_to_the_payload(monkeypatch):
+    sent = []
+
+    def post(payload):
+        sent.append(payload)
+        return httpx.Response(200, json={"value": "ek_fake"})
+
+    monkeypatch.setattr(realtime, "_post", post)
+    assert realtime.mint("", scope="app") == {"value": "ek_fake"}
+    assert realtime.mint("") == {"value": "ek_fake"}
+    names = [{t["name"] for t in p["session"]["tools"]} for p in sent]
+    assert "open_app" not in names[0] and "open_app" in names[1]

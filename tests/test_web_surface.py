@@ -20,7 +20,17 @@ from starlette.requests import Request
 from test_tasks import FAKE_CLAUDE, wait
 
 import server
-from jarvis import config, confirm, events, inbox, memory, realtime, security, tasks
+from jarvis import (
+    config,
+    confirm,
+    events,
+    inbox,
+    memory,
+    realtime,
+    remote,
+    security,
+    tasks,
+)
 
 BASE = "http://127.0.0.1:8788"
 AUTH = {"X-Jarvis-Token": security.TOKEN}
@@ -116,7 +126,7 @@ def test_event_stream_requires_the_token_holds(client):
 async def _replay_all(client_id: str) -> str:
     """Everything the route replays to a page that says it saw nothing (Last-Event-ID: 0)."""
     scope = {"type": "http", "method": "GET", "path": "/api/events", "query_string": b"",
-             "headers": [(b"last-event-id", b"0")]}
+             "headers": [(b"last-event-id", b"0")], "state": {"caller": remote.PC}}
     response = await server.stream_events(Request(scope), client=client_id)
     stream = response.body_iterator
     frames = []
@@ -152,7 +162,8 @@ def test_replayed_events_carry_no_secret_holds(client, fake_claude, monkeypatch)
                 profile="complet")["status"] == "needs_confirmation"
     started = tool("delegate_to_claude", title="Avec refus", prompt="REFUS lis le dossier", profile="lecture")
     wait(tasks.TASKS[started["task_id"]])
-    tool("remember", fact="Le portail est vert")
+    # A tainted session parks remember (spec 4.11 rule c'): launch its card so a memory event exists.
+    api.post(f"/api/pending/{tool('remember', fact='Le portail est vert')['pending_id']}/decide", json={"decision": "oui"})
     tool("schedule", kind="reminder", title="Arrosage", text="Arroser", delay_minutes=60)
     events.publish("reminder", {"id": "r1", "title": "Arrosage", "text": "Arroser"})
     api.post("/api/dnd", json={"minutes": 5})
@@ -194,7 +205,7 @@ def test_data_files_have_fixed_names_under_data_dir_holds():
     """Every store.save/store.load names its file with a module constant (a bare
     file name), and every path built on DATA_DIR appends a literal: no file
     name is ever made from a request, a tool argument or the model."""
-    names = set()
+    names, joined = set(), set()
     for source in SOURCES:
         tree = ast.parse(source.read_text(encoding="utf-8"))
         consts = _module_strings(tree)
@@ -216,7 +227,25 @@ def test_data_files_have_fixed_names_under_data_dir_holds():
                 right = node.right
                 assert isinstance(right, ast.Constant) and re.fullmatch(r"[\w.-]+", str(right.value)), \
                     f"chemin construit sur DATA_DIR : {source.name}:{node.lineno}"
+                joined.add(right.value)
     assert {"inbox.json", "state.json", "memory.json", "schedules.json", "tasks.json"} <= names
+    # Remote access: the switch and the devices through store, the audit trail and
+    # its alerts as literal names under DATA_DIR (never a name from a request).
+    assert {"remote.json", "devices.json"} <= names
+    # The ntfy topic (B1): one fixed file through store, never .env.
+    assert "ntfy.json" in names
+    assert {"remote-audit.jsonl", "remote-audit.1.jsonl", "remote-alerts.jsonl", "remote-alerts.1.jsonl"} <= joined
+
+
+def test_the_ntfy_topic_lives_in_its_data_file_only_holds():
+    """B1: the topic is made into data/ntfy.json through store, under a module
+    constant; notify.py never writes .env nor the environment."""
+    from jarvis import notify
+    assert notify.NTFY_FILE == "ntfy.json"
+    tree = ast.parse((ROOT / "jarvis" / "notify.py").read_text(encoding="utf-8"))
+    names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | \
+        {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    assert not names & {"ENV_FILE", "write_key", "environ", "putenv", "open", "write_text", "write_bytes"}
 
 
 HOSTILE = ["../../evil", "..%2F..%2Fevil", "/tmp/evil", "C:\\evil", "..\\..\\evil", "evil\x00.json", "%00"]
@@ -267,7 +296,11 @@ def test_hostile_ids_and_texts_never_name_a_file_holds(client, fake_claude, tmp_
 # ---------------------------------------------------------------- 6. logs
 
 
-_SECRET_NAMES = {"OPENAI_API_KEY", "TOKEN", "client_secret", "Authorization", "full_prompt"}
+# + remote access (A1): a device or pairing secret, a page token, a cookie. Names
+# and substrings of string constants: a log text may not even say "cookie".
+# + ntfy (B1): the topic is the address of monsieur's notifications.
+_SECRET_NAMES = {"OPENAI_API_KEY", "TOKEN", "client_secret", "Authorization", "full_prompt",
+                 "secret", "page_token", "pair_secret", "cookie", "topic"}
 
 
 def _names(node) -> set:
@@ -362,6 +395,46 @@ def test_the_access_log_with_the_stream_token_is_off_holds(monkeypatch):
         access.handlers[:] = saved[1]
         access.propagate = saved[2]
         server.SERVER = None
+
+def test_the_serve_listener_never_logs_the_phone_token_holds(monkeypatch, caplog, capfd):
+    """The iPhone's event stream carries its page token in its URL too, through
+    the second listener (the one Tailscale Serve reaches): neither uvicorn's
+    request log nor the remote audit ever writes that URL."""
+    import socket
+
+    from remote_helpers import LOGIN, REMOTE_HOST, remote_headers
+
+    from jarvis import listener
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    monkeypatch.setattr(config, "REMOTE_PORT", port)
+    monkeypatch.setattr(config, "DAILY_BUDGET_USD", 5.0)
+    caplog.set_level(logging.DEBUG)
+    # Every uvicorn logger listening (the listener's own Config then sets their level
+    # when it starts: access_log=False and log_level="warning" both keep request lines out).
+    for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+        caplog.set_level(logging.DEBUG, logger=name)
+    secret = "PAGETOKEN-SENTINEL-0123456789abcdef"
+    remote.set_enabled(True, host=REMOTE_HOST, login=LOGIN)  # the real listener
+    try:
+        assert listener.state()["running"] is True
+        with httpx.Client(trust_env=False, timeout=5) as c:
+            r = c.get(f"http://127.0.0.1:{port}/api/events?token={secret}&client=page-1",
+                      headers=remote_headers(origin=False))
+            assert r.status_code == 401  # unpaired: refused, and its URL noted nowhere
+            assert c.get(f"http://127.0.0.1:{port}/healthz?token={secret}",
+                         headers=remote_headers(origin=False)).status_code == 200
+    finally:
+        remote.set_enabled(False)
+    out, err = capfd.readouterr()
+    # The server's own records (the test's httpx client logs its URL itself: not JARVIS's).
+    logged = "\n".join(f"{r.name} {r.getMessage()}" for r in caplog.records
+                       if not r.name.startswith(("httpx", "httpcore")))
+    trail = "".join(p.read_text(encoding="utf-8") for p in config.DATA_DIR.glob("remote-*.jsonl"))
+    assert "/api/events" in trail  # the refusal is audited, by its route
+    for text in (logged, out, err, trail):
+        assert secret not in text and "token=" not in text
 
 # ---------------------------------------------------------------- 7. the ephemeral secret
 

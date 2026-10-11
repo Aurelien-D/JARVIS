@@ -28,6 +28,14 @@
   cursor: pointer;
 }
 #badge[hidden] { display: none; }
+/* A finger's 44 px badge (components.css): its centre goes 34 px beyond the
+   radius, so even its corner stays off the disc. */
+@media (pointer: coarse) {
+  #badge {
+    top: calc(50% - (50% + 34px) * .7071); right: calc(50% - (50% + 34px) * .7071);
+    line-height: 44px;
+  }
+}
 
 /* Windows contrast themes: no canvas, a ring and the state in words. */
 @media (forced-colors: active) {

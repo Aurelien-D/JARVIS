@@ -3,14 +3,19 @@ and the « JARVIS a remarqué » suggestions.
 
 A full-access routine is never created from here (it needs monsieur's "oui"
 through the voice tool's confirmation), and an existing one's instruction
-and frequency can't be changed: only its label and its time.
+and frequency can't be changed: only its label and its time, and only from
+the PC (a phone may still delete it). What is added from a phone carries
+its origin (via); a phone rewrites the instruction of its own routines only.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from . import remarques, scheduler
 
 router = APIRouter()
+
+COMPLET_PC_ONLY = "Routine avec accès complet : modifiable sur le PC seulement."
+TEXT_ELSEWHERE = "Instruction de cette routine : modifiable sur le PC seulement."
 
 
 class ScheduleIn(BaseModel):
@@ -44,12 +49,26 @@ def list_schedules():
     return scheduler.items()
 
 
+def _caller(request: Request):
+    from . import remote
+    return remote.caller_of(request)
+
+
+def _pc_only_if_complet(request: Request, item_id: str):
+    """A phone never re-times nor snoozes a full-access routine (403)."""
+    if not _caller(request).remote:
+        return
+    item = next((i for i in scheduler.items() if i["id"] == item_id), None)
+    if item is not None and item.get("kind") == "task" and item.get("profile") == "complet":
+        raise HTTPException(403, COMPLET_PC_ONLY)
+
+
 @router.post("/api/schedules")
-def add_schedule(body: ScheduleIn):
+def add_schedule(body: ScheduleIn, request: Request):
     try:
         item = scheduler.add(body.kind, body.title, body.text, at=body.at, delay_minutes=body.delay_minutes,
                              repeat=body.repeat, profile=body.profile, complexity=body.complexity,
-                             days=body.days)
+                             days=body.days, via=_caller(request).origin)
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from None
     except ValueError as exc:
@@ -57,8 +76,23 @@ def add_schedule(body: ScheduleIn):
     return {"ok": True, "item": item, "scheduled": scheduler.describe(item)}
 
 
+def _own_instruction_only(request: Request, item_id: str, text) -> None:
+    """A phone rewrites only the instruction of a routine it created itself: a
+    PC routine keeps running as the PC's (its origin never becomes inactive),
+    so words written from a phone must not outlive that phone's removal (403)."""
+    caller = _caller(request)
+    if text is None or not caller.remote:
+        return
+    item = next((i for i in scheduler.items() if i["id"] == item_id), None)
+    if item is not None and item.get("kind") == "task" and (item.get("via") or "pc") != caller.origin \
+            and str(text).strip() != item.get("text"):
+        raise HTTPException(403, TEXT_ELSEWHERE)
+
+
 @router.patch("/api/schedules/{item_id}")
-def edit_schedule(item_id: str, body: ScheduleEdit):
+def edit_schedule(item_id: str, body: ScheduleEdit, request: Request):
+    _pc_only_if_complet(request, item_id)
+    _own_instruction_only(request, item_id, body.text)
     try:
         item = scheduler.update(item_id, title=body.title, text=body.text, at=body.at,
                                 delay_minutes=body.delay_minutes, due=body.due, repeat=body.repeat,
@@ -73,8 +107,9 @@ def edit_schedule(item_id: str, body: ScheduleEdit):
 
 
 @router.post("/api/schedules/{item_id}/snooze")
-def snooze_schedule(item_id: str, body: SnoozeIn | None = None):
+def snooze_schedule(item_id: str, request: Request, body: SnoozeIn | None = None):
     """'+10 min', '+1 h', 'Demain' on a reminder that just went off."""
+    _pc_only_if_complet(request, item_id)
     try:
         item = scheduler.snooze(item_id, (body or SnoozeIn()).minutes)
     except scheduler.Ambiguous as exc:

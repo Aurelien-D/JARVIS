@@ -9,6 +9,9 @@ its API can run commands on this PC. Three layers keep that to this page:
 - Origin check: a browser request sent by another site is refused.
 - Session token: minted at startup and embedded in the page; every /api call
   must carry it, so a page that cannot read ours cannot call us.
+
+A request from a paired device (it arrived through Tailscale Serve) never takes
+this path: jarvis/remote.py classifies it and its own gate decides, without the token.
 """
 import secrets
 from urllib.parse import urlsplit
@@ -33,6 +36,9 @@ def _token_ok(request: Request) -> bool:
 
 
 async def guard(request: Request, call_next):
+    from . import remote  # late, like every module that reads the caller
+    if remote.is_remote_request(request):  # module attribute lookup: tests may monkeypatch it
+        return await remote.remote_guard(request, call_next)
     host = request.headers.get("host", "")
     if _hostname(host) not in ALLOWED_HOSTS:
         return JSONResponse({"detail": "Hôte refusé : JARVIS ne répond qu'en local."}, status_code=403)
@@ -41,4 +47,5 @@ async def guard(request: Request, call_next):
         return JSONResponse({"detail": "Origine refusée."}, status_code=403)
     if request.url.path.startswith("/api/") and not _token_ok(request):
         return JSONResponse({"detail": "Jeton de session invalide : recharge la page."}, status_code=401)
+    request.state.caller = remote.PC
     return await call_next(request)

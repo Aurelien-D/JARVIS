@@ -63,14 +63,20 @@ CLIENT_TOOLS: set = set()
 def _schedule(a: dict, ctx) -> dict:
     # A full-access routine reaches this handler only once monsieur said "oui"
     # (confirm.decide); straight from run_tool the gate would have parked it.
-    # Whatever confirm wouldn't park is never allowed full access here.
-    allowed = confirm.needs_confirmation("schedule", a, getattr(ctx, "session_id", None))
+    # Whatever confirm wouldn't park is never allowed full access here, and
+    # only the PC may ever set one up (from a phone it would outlive the opt-in).
+    from . import remote
+    origin = getattr(ctx, "origin", "pc")
+    allowed = (remote.kind_of(origin) == "pc"
+               and confirm.needs_confirmation("schedule", a, getattr(ctx, "session_id", None), origin="pc"))
     item = scheduler.add(a.get("kind", "reminder"), a.get("title", ""), a.get("text", ""),
                          at=a.get("at"), delay_minutes=a.get("delay_minutes"),
                          repeat=a.get("repeat") or "none",
                          profile=a.get("profile") or "recherche",
                          complexity=a.get("complexity") or "normale",
-                         days=a.get("days"), allow_complet=allowed)
+                         days=a.get("days"), allow_complet=allowed, via=origin,
+                         # Asked after outside content: its words never reach a later prompt.
+                         tainted=confirm.is_tainted(getattr(ctx, "session_id", None)))
     return {"ok": True, "scheduled": scheduler.describe(item)}
 
 

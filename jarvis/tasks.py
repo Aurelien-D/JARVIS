@@ -39,6 +39,9 @@ MAX_OUTPUT = 20000
 LOG_SIZE = 60
 MAX_FILES = 30
 ACTIVE = ("running", "en_file")  # not over yet
+# A task Siri launched (via "siri:k_…") never spends more than this, whatever
+# JARVIS_TASK_BUDGET_USD allows: nobody watches it from a screen.
+SIRI_TASK_BUDGET_USD = 0.50
 
 TASKS: dict = {}
 PROCS: dict = {}  # task_id -> Popen, kept out of TASKS so tasks stay JSON-safe
@@ -284,7 +287,10 @@ def hardening(profile: str) -> list:
 
 
 def build_command(profile: str, model: str = "", resume: str | None = None, *,
-                  allowed: list | None = None, flags: list | None = None) -> list:
+                  allowed: list | None = None, flags: list | None = None,
+                  budget: float | None = None) -> list:
+    """budget: this task's own spending limit (a Siri task's budget_usd); None
+    for JARVIS_TASK_BUDGET_USD."""
     profile = normalize_profile(profile)
     cmd = claude_command() + ["-p", "--output-format", "stream-json", "--verbose"]
     mode = _permission_mode()
@@ -306,8 +312,9 @@ def build_command(profile: str, model: str = "", resume: str | None = None, *,
     if allowed:
         cmd += ["--allowedTools", ",".join(allowed)]
     cmd += hardening(profile) if flags is None else flags
-    if config.TASK_BUDGET_USD > 0:
-        cmd += ["--max-budget-usd", str(config.TASK_BUDGET_USD)]
+    limit = budget if budget is not None else config.TASK_BUDGET_USD
+    if limit > 0:
+        cmd += ["--max-budget-usd", str(limit)]
     # Extra MCP servers only where MCP tools are allowed: elsewhere they would
     # start for nothing (and a stdio server is a process of its own).
     if config.MCP_CONFIG and profile == "complet":
@@ -473,16 +480,29 @@ def _money(usd: float) -> str:
     return f"{usd:.2f} $".replace(".", ",")
 
 
+def siri_budget(via: str) -> float | None:
+    """The spending limit of a task Siri launched: SIRI_TASK_BUDGET_USD, or
+    JARVIS_TASK_BUDGET_USD when it is lower (0 there means no limit, so Siri's
+    still applies). None for anyone else (the usual limit)."""
+    from . import remote  # late: remote is imported inside functions (section 0)
+    if remote.kind_of(via) != "siri":
+        return None
+    cap = config.TASK_BUDGET_USD
+    return min(float(cap), SIRI_TASK_BUDGET_USD) if cap > 0 else SIRI_TASK_BUDGET_USD
+
+
 # ---------------------------------------------------------------- lifecycle
 
 def create_task(title: str, prompt: str, profile: str | None = DEFAULT_PROFILE,
                 complexity: str = "normale", continue_task: str | None = None,
                 origin: str = "voix", voice_session: str | None = None,
-                allowed_tools: list | None = None) -> dict:
+                allowed_tools: list | None = None, *, via: str = "pc") -> dict:
     """Start a task (or queue it when MAX_CONCURRENT_TASKS already run).
 
+    origin: the channel (voix, clavier, routine, approbation, briefing).
     voice_session: the voice session that asked (confirm.py ties approvals to it).
     allowed_tools: approval of denied tools (approve() only).
+    via: who asked, the origin string of remote.Caller ("pc", "app:d_…", "siri:k_…").
     """
     prompt = (prompt or "").strip()
     if not prompt:
@@ -495,7 +515,7 @@ def create_task(title: str, prompt: str, profile: str | None = DEFAULT_PROFILE,
     task = {
         "id": uuid.uuid4().hex[:8], "title": (title or "Tâche").strip()[:80],
         "prompt": prompt, "profile": profile, "complexity": complexity,
-        "model": config.MODELS[complexity], "origin": origin,
+        "model": config.MODELS[complexity], "origin": origin, "via": str(via or "pc"),
         "status": "running", "output": "", "progress": T.starting, "steps": 0,
         "started": time.time(), "ended": None,
         "session_id": None, "resume": None, "resumed_from": None, "cost_usd": None,
@@ -504,6 +524,9 @@ def create_task(title: str, prompt: str, profile: str | None = DEFAULT_PROFILE,
     }
     if allowed_tools:
         task["allowed_tools"] = list(allowed_tools)
+    budget = siri_budget(task["via"])
+    if budget is not None:
+        task["budget_usd"] = budget
     if continue_task:
         prev = _find_resumable(continue_task)
         if prev and profile == "recherche" and normalize_profile(prev.get("profile")) != "recherche":
@@ -535,8 +558,8 @@ def _over_budget() -> str:
     cap = config.DAILY_BUDGET_USD
     if cap and cap > 0:
         try:
-            # One cap for the voice and the tasks (Réglages › Coûts, usage.py).
-            spent = float(usage.claude_spent_today() or 0) + float(usage.realtime_spent_today() or 0)
+            # One cap for the voice, Siri and the tasks (Réglages › Coûts, usage.py).
+            spent = float(usage.spent_today() or 0)
         except Exception:  # noqa: BLE001 - a broken counter must not block every task
             logging.exception("JARVIS: dépense du jour illisible")
             return ""
@@ -564,7 +587,7 @@ def _with_memory(prompt: str, profile: str = DEFAULT_PROFILE) -> str:
     # sending monsieur's private facts out (a search query is enough).
     if profile == "recherche":
         return prompt
-    facts = memory.as_text(1500)
+    facts = memory.as_text(1500, pc_only=profile == "complet")
     if not facts:
         return prompt
     return (f"{prompt}\n\n---\nContexte sur l'utilisateur (mémoire de JARVIS, "
@@ -699,7 +722,7 @@ def _attempt(task: dict, model: str, flags: list) -> _Outcome:
     """Run claude once."""
     try:
         cmd = build_command(task["profile"], model, task.get("resume"),
-                            allowed=task.get("allowed_tools"), flags=flags)
+                            allowed=task.get("allowed_tools"), flags=flags, budget=task.get("budget_usd"))
     except FileNotFoundError:
         return _Outcome("error", T.claude_missing, final=True)
     task["_attempt"] = {"auth_retries": 0}
@@ -770,7 +793,7 @@ def _attempt(task: dict, model: str, flags: list) -> _Outcome:
     auth = task["_attempt"]["auth_retries"] >= 2  # one refusal can be a token being renewed
     if result is not None:
         if result.get("is_error") or result.get("subtype") != "success":
-            detail = _result_error(result, stderr)
+            detail = _result_error(result, stderr, task.get("budget_usd"))
             auth = auth or bool(_AUTH_ERROR.search(detail))
             return _Outcome("error", detail, quick, elapsed, unknown, auth)
         text = result.get("result") if isinstance(result.get("result"), str) else ""
@@ -782,15 +805,16 @@ def _attempt(task: dict, model: str, flags: list) -> _Outcome:
     return _Outcome("error", detail, quick, elapsed, unknown, auth)
 
 
-def _result_error(result: dict, stderr: str) -> str:
-    """A failed result in French: what happened, then Claude's own words."""
+def _result_error(result: dict, stderr: str, budget: float | None = None) -> str:
+    """A failed result in French: what happened, then Claude's own words.
+    budget: the task's own spending limit, when it has one."""
     subtype = result.get("subtype") or ""
     text = result.get("result") if isinstance(result.get("result"), str) else ""
     errors = [str(e) for e in (result.get("errors") or []) if e]
     detail = (text or "").strip() or "; ".join(errors) or stderr[:500]
     known = RESULT_ERRORS.get(subtype)
     if known:
-        known = known.format(budget=_money(config.TASK_BUDGET_USD))
+        known = known.format(budget=_money(config.TASK_BUDGET_USD if budget is None else budget))
         return f"{known} Détail : {detail[:1500]}" if detail else known
     return detail[:2000] or f"Claude Code s'est arrêté ({subtype or 'erreur inconnue'})."
 
@@ -982,7 +1006,7 @@ def approve(task_id: str) -> dict:
     return create_task(task["title"], T.approval, profile=task["profile"],
                        complexity=task.get("complexity", "normale"), continue_task=task_id,
                        origin="approbation", voice_session=task.get("voice_session"),
-                       allowed_tools=names)
+                       allowed_tools=names, via=task.get("via") or "pc")
 
 
 def shutdown():

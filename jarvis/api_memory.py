@@ -1,5 +1,5 @@
 """Side panel API: remembered facts (list, correct, forget, bring back)."""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from . import memory
@@ -20,9 +20,10 @@ def list_memory():
 
 
 @router.patch("/api/memory/{fact_id}")
-def edit_memory(fact_id: str, body: FactIn):
+def edit_memory(fact_id: str, body: FactIn, request: Request):
+    from . import remote
     try:
-        fact = memory.edit(fact_id, body.text)
+        fact = memory.edit(fact_id, body.text, via=remote.caller_of(request).origin)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from None
     if fact is None:

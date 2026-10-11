@@ -57,7 +57,8 @@ def _delegate(a: dict, ctx) -> dict:
                              profile=a.get("profile"),
                              complexity=a.get("complexity") or "normale",
                              continue_task=a.get("continue_task") or None,
-                             voice_session=getattr(ctx, "session_id", None))
+                             voice_session=getattr(ctx, "session_id", None),
+                             via=getattr(ctx, "origin", "pc"))
     queued = task.get("status") == "en_file"  # MAX_CONCURRENT_TASKS already running
     out = {"status": "en_file" if queued else "started", "task_id": task["id"],
            "profile": task["profile"], "model": task["model"] or "défaut"}

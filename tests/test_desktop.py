@@ -428,7 +428,8 @@ def test_tray_menu_speaks_french_and_quits_like_the_api(monkeypatch, fake_pystra
     menu = shell.tray_menu(fake_pystray)
     items = {i.text: i for i in menu.items if i is not FakeMenu.SEPARATOR}
     assert list(items) == ["Ouvrir JARVIS", "Parler", "Mot d'éveil (activer ou couper)",
-                           "Ne pas déranger 1 h", "Démarrer avec Windows", "Quitter JARVIS"]
+                           "Ne pas déranger 1 h", "Accès à distance (activer ou couper)",
+                           "Démarrer avec Windows", "Quitter JARVIS"]
     assert [i.text for i in items.values() if i.default] == ["Ouvrir JARVIS"]  # a click on the icon
     icon = FakeIcon("jarvis", None, "JARVIS")
 
@@ -452,6 +453,13 @@ def test_tray_menu_speaks_french_and_quits_like_the_api(monkeypatch, fake_pystra
     assert items["Démarrer avec Windows"].checked is False
     items["Démarrer avec Windows"].click(icon)
     assert autostart == [True]
+
+    # Remote access: off on a fresh install, and the tray cannot switch it on before
+    # Réglages has an address (the toast says where to go).
+    assert items["Accès à distance (activer ou couper)"].checked is False
+    items["Accès à distance (activer ou couper)"].click(icon)
+    assert icon.notes[-1] == ("JARVIS", "Activez-le d'abord dans Réglages › Accès à distance.")
+    assert items["Accès à distance (activer ou couper)"].checked is False
 
     items["Quitter JARVIS"].click(icon)
     assert quits == [1] and icon.stopped.is_set()
@@ -659,6 +667,37 @@ def test_attention_elsewhere_than_windows_is_ok(monkeypatch):
     monkeypatch.setattr(desktop, "_WIN", None)
     assert desktop.attention_state() == "ok"
     assert desktop.keep_awake() is False and desktop.flash_app_window() is False
+
+
+def test_idle_seconds_counts_from_the_last_input(win32):
+    """GetLastInputInfo and GetTickCount (ntfy's "only when I'm away", B1)."""
+    seen = []
+
+    def last_input(info, when=40_000, ok=1):
+        seen.append(info._obj.cbSize)
+        info._obj.dwTime = when
+        return ok
+    win32.GetLastInputInfo, win32.GetTickCount = last_input, lambda: 100_000
+    assert desktop.idle_seconds() == 60.0
+    assert seen == [ctypes.sizeof(desktop.LASTINPUTINFO)] == [8]
+    # Both counters wrap after 49.7 days: the difference stays right across the wrap.
+    win32.GetLastInputInfo = lambda info: last_input(info, when=0x1_0000_0000 - 5_000)
+    win32.GetTickCount = lambda: 5_000
+    assert desktop.idle_seconds() == 10.0
+    win32.GetLastInputInfo = lambda info: last_input(info, ok=0)  # Windows said no
+    assert desktop.idle_seconds() is None
+
+    def broken(info):
+        raise OSError("refusé")
+    win32.GetLastInputInfo = broken
+    assert desktop.idle_seconds() is None
+
+
+def test_idle_seconds_is_unknown_elsewhere_than_windows(monkeypatch, win32):
+    assert desktop.idle_seconds() is None  # this Windows lacks the functions
+    monkeypatch.setattr(config, "IS_WINDOWS", False)
+    monkeypatch.setattr(desktop, "_win", lambda: None)
+    assert desktop.idle_seconds() is None
 
 
 def test_keep_awake_resets_the_idle_timer_without_holding_it(win32):
@@ -925,6 +964,8 @@ def test_real_windows_api_loads_and_answers():
     assert shell._win() is not None and desktop._win() is not None
     assert desktop.attention_state() in set(desktop.ATTENTION.values())
     assert isinstance(desktop.keep_awake(), bool)
+    idle = desktop.idle_seconds()
+    assert idle is None or idle >= 0
     hwnd = desktop.find_app_window()
     assert hwnd is None or isinstance(hwnd, int)
     assert isinstance(desktop.pictures_dir(), Path)
