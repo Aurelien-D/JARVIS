@@ -13,8 +13,8 @@ One scenario, two pages: the PC's JARVIS and a fresh iPhone browser.
 - The PC removes the device: the phone's stream closes at once, its page token
   and cookie are refused, and its next load is the « Appareil retiré » page.
 
-remote.READY stays False in the code until C2: the test turns it on through
-its test hook (monkeypatch), never in the module.
+remote.READY is True since C2: the PC still has to switch remote access on
+(off by default), which this scenario does from Réglages.
 
 A second test loads the pairing page and the paired page under the real
 remote CSP (no bypass) and checks the browser reports no violation.
@@ -68,11 +68,10 @@ VIOLATIONS = ("window.__csp = []; document.addEventListener('securitypolicyviola
 
 @pytest.fixture
 def remote_on_soon(monkeypatch):
-    """What the PC needs before its switch can turn on: this version's test hook
-    for remote.READY and a daily cap (the Serve name and login come from the
-    harness, as JARVIS_REMOTE_HOST / JARVIS_REMOTE_LOGINS would)."""
-    from jarvis import config, confirm, desktop, remote
-    monkeypatch.setattr(remote, "READY", True)
+    """What the PC needs before its switch can turn on: a daily cap (the Serve
+    name and login come from the harness, as JARVIS_REMOTE_HOST /
+    JARVIS_REMOTE_LOGINS would; remote.READY is True since C2)."""
+    from jarvis import config, confirm, desktop
     monkeypatch.setattr(config, "DAILY_BUDGET_USD", 5.0)
     monkeypatch.setattr(config, "CONFIRM_COMPLET", True)
     ran = []

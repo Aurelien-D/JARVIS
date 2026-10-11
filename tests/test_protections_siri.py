@@ -473,13 +473,13 @@ def test_revoking_a_device_stops_its_siri_conversation_and_workers_holds(monkeyp
     client2, key2, device2, _ = paired_siri(monkeypatch, name="iPad de test")
     for stop in (lambda: store.save(remote.REMOTE_FILE, {**store.load(remote.REMOTE_FILE, {}),
                                                          "paused_until": time.time() + 3600}),
-                 lambda: monkeypatch.setattr(remote, "READY", False)):
+                 lambda: remote.set_enabled(False)):  # the PC's real switch (remote.READY is True since C2)
         job = job_for(key2, device2["id"])
         assert raccourci._may_act(job)
         stop()
         assert not raccourci._may_act(job)
         store.save(remote.REMOTE_FILE, {**store.load(remote.REMOTE_FILE, {}), "paused_until": 0})
-        monkeypatch.setattr(remote, "READY", True)
+        remote.set_enabled(True)
     job = job_for(key2, device2["id"])
     raccourci.forget_device(device2["id"])
     raccourci._WORKERS.add(job)
@@ -500,11 +500,13 @@ def test_pausing_or_switching_off_access_tells_no_late_siri_answer_holds(monkeyp
         store.save(remote.REMOTE_FILE, {**store.load(remote.REMOTE_FILE, {}), "paused_until": time.time() + 3600})
 
     def off():
-        monkeypatch.setattr(remote, "READY", False)
+        remote.set_enabled(False)  # the PC's real switch (remote.READY is True since C2)
 
     def resume():
         store.save(remote.REMOTE_FILE, {**store.load(remote.REMOTE_FILE, {}), "paused_until": 0})
-        monkeypatch.setattr(remote, "READY", True)
+        remote.set_enabled(True)
+        notify._drain()
+        sent.clear()  # the switch's own security alerts (« accès à distance coupé / activé »)
 
     for stop, before_tool in ((pause, True), (off, True), (pause, False), (off, False)):
         asked, release = threading.Event(), threading.Event()
@@ -524,7 +526,8 @@ def test_pausing_or_switching_off_access_tells_no_late_siri_answer_holds(monkeyp
         release.set()
         assert raccourci._wait_workers(10)
         notify._drain()
-        assert sent == [], (stop, before_tool)
+        # The switch sends its own security alert; Siri's late answer is never told.
+        assert [m for m in sent if "sécurité" not in m] == [], (stop, before_tool)
         assert len(fake.bodies) == (1 if before_tool else 2)
         resume()
         raccourci.reset_memory()

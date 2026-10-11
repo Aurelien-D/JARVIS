@@ -87,7 +87,7 @@ def test_state_sources_env_saved_detected_none(pc, monkeypatch):
     body = remote.state_for(remote.PC)
     assert (body["host"], body["host_source"]) == (REMOTE_HOST, "detected")
     assert (body["logins"], body["logins_source"]) == ([LOGIN], "detected")
-    assert body["tailscale"]["installed"] is True and body["enabled"] is False and body["ready"] is False
+    assert body["tailscale"]["installed"] is True and body["enabled"] is False and body["ready"] is True
     enable_remote(monkeypatch, host="maison.tail0000.ts.net", logins=("autre@example.com",))
     body = remote.state_for(remote.PC)
     assert (body["host"], body["host_source"]) == ("maison.tail0000.ts.net", "saved")
@@ -118,7 +118,6 @@ def test_state_for_the_phone_is_its_own(monkeypatch):
 
 
 def test_the_switch_from_the_pc(pc, monkeypatch, remote_events):
-    monkeypatch.setattr(remote, "READY", True)
     started = []
     monkeypatch.setattr(listener, "start", lambda: started.append(1) or {"running": True, "port": config.REMOTE_PORT,
                                                                        "error": ""})

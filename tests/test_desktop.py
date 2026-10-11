@@ -454,10 +454,11 @@ def test_tray_menu_speaks_french_and_quits_like_the_api(monkeypatch, fake_pystra
     items["Démarrer avec Windows"].click(icon)
     assert autostart == [True]
 
-    # Remote access: off, and this version refuses to switch it on (the toast says why).
+    # Remote access: off on a fresh install, and the tray cannot switch it on before
+    # Réglages has an address (the toast says where to go).
     assert items["Accès à distance (activer ou couper)"].checked is False
     items["Accès à distance (activer ou couper)"].click(icon)
-    assert icon.notes[-1] == ("JARVIS", "Accès à distance pas encore disponible dans cette version.")
+    assert icon.notes[-1] == ("JARVIS", "Activez-le d'abord dans Réglages › Accès à distance.")
     assert items["Accès à distance (activer ou couper)"].checked is False
 
     items["Quitter JARVIS"].click(icon)

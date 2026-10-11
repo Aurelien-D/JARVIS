@@ -275,8 +275,7 @@ def remote_page(request, app_server, monkeypatch):
     monkeypatch.setattr(config, "DAILY_BUDGET_USD", 5.0)  # the real check_voice lets the phone talk
     if opts["real_gate"]:
         from jarvis import devices
-        # The test hook of remote.READY (spec 3.17): the module constant itself stays False until C2.
-        monkeypatch.setattr(remote, "READY", True)
+        assert remote.READY is True  # since C2: only remote.json's switch (written here) opens the door
         store.save("remote.json", {"enabled": pair_state != "off", "host": REMOTE_HOST, "logins": [LOGIN],
                                    "paused_until": time.time() + 3600 if pair_state == "paused" else 0,
                                    "complet_until": 0, "published": False, "changed_at": time.time(),
@@ -327,7 +326,7 @@ def remote_page(request, app_server, monkeypatch):
     # would break Playwright's string waits (new Function) and axe's injected script,
     # this fixture's wait_ready included: a proof of the page under the CSP opens its
     # own context without the bypass and polls with page.evaluate
-    # (tests/e2e/test_integration_remote.py::test_the_phone_pages_run_under_the_remote_csp).
+    # (tests/e2e/test_protections_remote_ui.py::test_remote_pages_run_under_the_csp_holds).
     context = browser.new_context(viewport={"width": width, "height": height}, has_touch=True, is_mobile=True,
                                   user_agent=IPHONE_UA if opts["ios"] else None, permissions=["microphone"],
                                   ignore_https_errors=True, bypass_csp=opts["bypass_csp"])

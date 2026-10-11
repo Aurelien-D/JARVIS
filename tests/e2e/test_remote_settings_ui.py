@@ -2,12 +2,12 @@
 
 PC view: the jarvis page on the remote core's real routes (/api/remote/*). The
 server runs in this process, so the PC's side is set up where the server
-keeps it: this version's switch made ready (the test hook of remote.READY),
-Tailscale installed and running (tailscale.self_info and whois faked, Serve's
-status and publish answers too: no Tailscale CLI in the tests), pairing
-requests asked through the remote core, real devices and audit lines. Only the
-P0 30b proof keeps a faked route: the remote core cleans every device string
-before it is stored, so markup could not reach the page otherwise.
+keeps it: a daily cap (remote.READY is True since C2), Tailscale installed
+and running (tailscale.self_info and whois faked, Serve's status and publish
+answers too: no Tailscale CLI in the tests), pairing requests asked through
+the remote core, real devices and audit lines. Only the P0 30b proof keeps a
+faked route: the remote core cleans every device string before it is stored,
+so markup could not reach the page otherwise.
 Phone view: the paired iPhone (remote_page, real gate). The proofs: strings
 from a device, whois or the audit render as text (P0 30b), and the phone's
 pause asks first (P1)."""
@@ -97,7 +97,7 @@ class FakeRemote(Calls):
 def real(monkeypatch):
     """The PC's side, in the server's own process (see the module docstring)."""
     from jarvis import config, remote, tailscale
-    monkeypatch.setattr(remote, "READY", True)
+    assert remote.READY is True  # since C2: the switch itself still starts off
     monkeypatch.setattr(config, "DAILY_BUDGET_USD", 5.0)
     monkeypatch.setattr(config, "REMOTE_HOST", "")  # detected from Tailscale, confirmed by switching on
     fake = SimpleNamespace(serve=dict(SERVE_READY), published=[], unpublished=[], ts={
@@ -436,15 +436,21 @@ def test_remote_strings_render_as_text_holds(jarvis):
     jarvis.click("#settingsConfirm button[value='cancel']")
 
 
-def test_the_section_is_honest_while_this_version_is_not_ready(jarvis):
-    """remote.READY is False in this version: the real state says so, the switch
-    is greyed out and the section says it in French."""
+def test_the_section_is_honest_while_this_version_is_not_ready(jarvis, monkeypatch):
+    """This version is ready (remote.READY, C2): on a fresh install the switch is
+    there, off, and says nothing of « pas encore ». A version held back (the test
+    hook sets READY back to False) greys it out and says so in French."""
     from jarvis import remote
-    assert remote.READY is False
-    jarvis.click("#topActions button:has-text('Réglages')")
-    jarvis.wait_for_selector("#settingsDialog[open] .set-tab[aria-current='true']")
-    jarvis.click("#settingsDialog .set-tab:has-text('Accès à distance')")
-    jarvis.wait_for_selector("#set-sec-distance .rm-block")
+    assert remote.READY is True and not remote.is_enabled()
+    open_distance(jarvis)
+    jarvis.wait_for_selector("#set-remote-enabled")
+    assert jarvis.is_enabled("#set-remote-enabled") and not jarvis.is_checked("#set-remote-enabled")
+    assert "Pas encore disponible" not in section(jarvis)
+    jarvis.keyboard.press("Escape")
+    jarvis.wait_for_selector("#settingsDialog[open]", state="detached")
+    monkeypatch.setattr(remote, "READY", False)
+    open_distance(jarvis)
+    jarvis.wait_for_selector("#set-remote-enabled")
     assert "Pas encore disponible dans cette version de JARVIS." in section(jarvis)
     assert not jarvis.is_enabled("#set-remote-enabled")
 

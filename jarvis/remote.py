@@ -21,8 +21,10 @@ REMOTE_ALLOW decides (deny by default).
 - Lockouts are per credential and source address, never global: a stale cookie
   or Siri key never locks the iPhone out, nobody can lock another device (4.5).
 - remote.json holds the switch (off by default, changed only from the PC), the
-  pause, the full-access opt-in and whether Serve is published. READY keeps it
-  all off until every protection is proven (C2).
+  pause, the full-access opt-in and whether Serve is published. READY says this
+  version may be switched on at all: True since every protection of spec
+  section 8 is proven (C2); it opens nothing by itself, the switch stays off
+  until the PC turns it on with a daily cap.
 
 All the in-memory state below sits behind one RLock: the Serve listener's
 event loop and the main server's thread pool both use it. The gate's decision
@@ -50,8 +52,11 @@ from . import config, devices, events, page, store
 
 log = logging.getLogger(__name__)
 
-# Flipped to True by the integrator in the C2 merge, once every P0 proof is green.
-READY = False
+# True since the C2 merge: every P0 protection of spec section 8 has its passing
+# proof (tests/test_protections_remote.py::test_remote_access_is_ready_and_every_p0_proof_exists_holds).
+# It only lets the PC's switch work: remote access stays off (remote.json) until
+# monsieur turns it on from the PC, with a daily cap. False counts as off everywhere.
+READY = True
 
 PROXY_MARKERS = ("forwarded", "via", "x-real-ip")
 # The Réglages keys the phone may change, and the sections it sees (4.10).
@@ -1272,7 +1277,7 @@ def _decide(ask: _Ask, app) -> _Verdict:
         return _Verdict(caller=base, response=Response(status_code=404), route=route, quiet=True)
     saved = _settings()
     pair_asset = reading and path in PAIR_ASSETS
-    # 4. Off (READY False counts as off).
+    # 4. Off (remote.json's switch; READY False would count as off too).
     if not _enabled_of(saved) and not pair_asset:
         return refuse(403, T_OFF, "off", "off", throttle=unverified)
     # 5. Paused.
