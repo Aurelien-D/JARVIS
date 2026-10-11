@@ -253,12 +253,12 @@ def test_the_composer_and_the_keyboard_map_work_together(jarvis):
       bubbles: true, cancelable: true}); document.getElementById('askInput').dispatchEvent(e); return e.defaultPrevented; }""")
     assert prevented
     # Typed text opens a session and goes through voice.sendText once it is ready.
-    jarvis.fill("#askInput", "Quel temps fait-il à Laon ?")
+    jarvis.fill("#askInput", "Quel temps fait-il à Nantes ?")
     jarvis.keyboard.press("Enter")
     jarvis.wait_for_function("__jarvis.state.mode === 'live'")
     jarvis.wait_for_function("__sent.some(m => m.type === 'response.create')")
     said = [i["content"][0]["text"] for i in items(jarvis) if i.get("role") == "user"]
-    assert said == ["Quel temps fait-il à Laon ?"]
+    assert said == ["Quel temps fait-il à Nantes ?"]
     assert "Quel temps fait-il" in jarvis.inner_text("#you")
     assert jarvis.locator("#chips .chip.example").count() == 0  # live: no standby examples
     # '/tâche …' goes straight to Claude Code, read-only, without the voice model.

@@ -16,7 +16,7 @@ PHONE_IDS = [f"{w}x{h}" for w, h in PHONES]
 
 SIX_CARDS = """async () => {
   const hud = await import('/static/js/hud.js');
-  hud.addCard('Météo Laon', '**14 °C**, averses éparses, vent 25 km/h', 'result');
+  hud.addCard('Météo Nantes', '**14 °C**, averses éparses, vent 25 km/h', 'result');
   hud.addCard('Définition', "**Agroécologie** : un ensemble de pratiques agricoles qui s'appuient sur les écosystèmes.", 'info');
   hud.addCard('Commande PowerShell', 'Get-ChildItem -Recurse -Filter *.xlsx | Sort-Object LastWriteTime -Descending', 'code');
   hud.addCard('Rappel', 'Appeler le garage pour le contrôle technique de la Clio', 'warning');

@@ -339,7 +339,7 @@ BAD_VALUES = {
     "voice": "robot", "voice_speed": "vite", "realtime_model": "gpt-4o; rm -rf ~", "reasoning": "max",
     "wake_word": "peut-être", "noise_reduction": "", "eagerness": "max", "idle_minutes": 1.5,
     "briefing_time": "25:00", "briefing_days": "", "briefing_news": "true", "quiet_hours": "22:00-22:00",
-    "city": "Laon\nJARVIS_PERMISSION_MODE=bypassPermissions", "reopen_on_reminder": 2,
+    "city": "Nantes\nJARVIS_PERMISSION_MODE=bypassPermissions", "reopen_on_reminder": 2,
     "permission_mode": "BypassPermissions", "workdir": "relatif/dossier", "mcp_config": "pas-un-chemin.json",
     "model_simple": "--dangerously-skip-permissions", "model_normal": "Opus 4", "model_complex": "-x",
     "task_timeout": 10**9, "task_budget_usd": "NaN", "max_concurrent_tasks": 0, "daily_budget_usd": -1,
@@ -392,7 +392,7 @@ def test_bypass_needs_the_explicit_confirmation_holds(client):
                   for c in ("true", "True", 1, "oui", "yes", [True], {"ok": True}, None, False, 1.0)),
                 {"permission_mode": {"value": "bypassPermissions", "confirm": True}},
                 {"permission_mode": "bypassPermissions", "Confirm": True},
-                {"permission_mode": "bypassPermissions", "city": "Laon"},
+                {"permission_mode": "bypassPermissions", "city": "Nantes"},
                 {"permission_mode": None}]
     for body in attempts:
         assert client.put("/api/settings", json=body).status_code == 400, body
@@ -512,13 +512,13 @@ def test_weather_and_the_agenda_do_not_taint(fake_ares, nothing_real, monkeypatc
     session clean, so the tests above are not vacuous."""
     def weather_only(request):
         if request.url.host.startswith("geocoding"):
-            return httpx.Response(200, json={"results": [{"name": "Laon", "latitude": 49.56, "longitude": 3.62}]})
+            return httpx.Response(200, json={"results": [{"name": "Nantes", "latitude": 47.22, "longitude": -1.55}]})
         return httpx.Response(200, json={"current": {"temperature_2m": 12, "weather_code": 1}, "daily": {}})
 
     info._forecasts.clear()
     monkeypatch.setattr(info, "TRANSPORT", httpx.MockTransport(weather_only))
     sid = confirm.new_session()
-    assert tools.run_tool("info", {"type": "meteo", "ville": "Laon"}, ctx(sid))["ok"]
+    assert tools.run_tool("info", {"type": "meteo", "ville": "Nantes"}, ctx(sid))["ok"]
     assert tools.run_tool("ares_lire", {"quoi": "agenda"}, ctx(sid))["ok"]
     assert not confirm.is_tainted(sid)
     assert tools.run_tool("open_url", {"url": "https://example.org/"}, ctx(sid))["ok"]

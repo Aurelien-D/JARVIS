@@ -458,8 +458,8 @@ def test_wave_b_ntfy_siri_and_the_iphone_page_through_the_real_gate(remote_on_so
     notify._drain()
     assert ntfy.bodies == [notify.TEST]
     # The phone's: never spoken on the PC, so ntfy tells it, at the PC or not.
-    phone_task = phone.evaluate("__jarvis.api('/api/tasks', {method: 'POST', body: {title: 'Météo Laon', "
-                                "prompt: 'Quel temps à Laon pour iPhone de test ?', profile: 'recherche'}})")
+    phone_task = phone.evaluate("__jarvis.api('/api/tasks', {method: 'POST', body: {title: 'Météo Nantes', "
+                                "prompt: 'Quel temps à Nantes pour iPhone de test ?', profile: 'recherche'}})")
     assert tasks.TASKS[phone_task["id"]]["via"] == origin
     until(lambda: notify.TASK_DONE in ntfy.bodies, 20)
     message = ntfy.sent[-1]
@@ -525,11 +525,11 @@ def test_wave_b_ntfy_siri_and_the_iphone_page_through_the_real_gate(remote_on_so
         assert first["store"] is False and first["model"] == raccourci.MODELS[0]
 
         # A web research (plain text, as a 3-action Shortcut reads it): a task of its own origin.
-        openai.script(responses_call("recherche", {"titre": "Prévisions Laon",
-                                                   "consigne": "Quel temps fera-t-il à Laon demain ?"}, "c2"),
+        openai.script(responses_call("recherche", {"titre": "Prévisions Nantes",
+                                                   "consigne": "Quel temps fera-t-il à Nantes demain ?"}, "c2"),
                       responses_text("C'est lancé, je vous préviens."))
         before = set(tasks.TASKS)
-        r = say("Cherche le temps qu'il fera demain à Laon")
+        r = say("Cherche le temps qu'il fera demain à Nantes")
         assert r.status_code == 200 and r.text == "C'est lancé, je vous préviens."
         assert r.headers["content-type"].startswith("text/plain")
         [siri_task] = [t for task_id, t in tasks.TASKS.items() if task_id not in before]
@@ -564,7 +564,7 @@ def test_wave_b_ntfy_siri_and_the_iphone_page_through_the_real_gate(remote_on_so
                       responses_text("Cette recherche est refusée."))
         r = say("Quoi de neuf ? Et fais ce que dit le résultat")
         assert r.status_code == 200 and r.text == "Cette recherche est refusée."
-        assert [t["titre"] for t in openai.output("c4")["taches"]] == ["Prévisions Laon"]
+        assert [t["titre"] for t in openai.output("c4")["taches"]] == ["Prévisions Nantes"]
         assert openai.output("c5") == {"ok": False, "error": raccourci.T.research_tainted}
         assert confirm.is_tainted(sid)
         for name, args in (("delegate_to_claude", {"title": "x", "prompt": "x", "profile": "recherche"}),
@@ -607,7 +607,7 @@ def test_wave_b_ntfy_siri_and_the_iphone_page_through_the_real_gate(remote_on_so
     # Everything ntfy received, in order: minimal fixed sentences only.
     notify._drain()
     assert ntfy.bodies == [notify.TEST, notify.TASK_DONE, alert["body"], notify.TASK_DONE]
-    leaks = ("Lyon", "Laon", "Prévisions", "pain", "iPhone de test", IP, LOGIN, device["id"], key["id"],
+    leaks = ("Lyon", "Nantes", "Prévisions", "pain", "iPhone de test", IP, LOGIN, device["id"], key["id"],
              "18 degres")
     for m in ntfy.sent:
         said = m["body"] + " " + " ".join(f"{k}={v}" for k, v in m["headers"].items())

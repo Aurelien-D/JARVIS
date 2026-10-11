@@ -91,8 +91,8 @@ def test_every_sensitive_setting_needs_the_confirmation(client, tmp_path):
     for key, value in (("workdir", str(folder)), ("mcp_config", ""), ("permission_mode", "auto")):
         assert client.put("/api/settings", json={key: value}).status_code == 400, key
         # mixed with a harmless one, the confirmation is still needed
-        assert client.put("/api/settings", json={key: value, "city": "Laon"}).status_code == 400, key
-    assert config.CITY != "Laon"
+        assert client.put("/api/settings", json={key: value, "city": "Nantes"}).status_code == 400, key
+    assert config.CITY != "Nantes"
     assert client.put("/api/settings", json={"workdir": str(folder), "confirm": True}).status_code == 200
     assert config.WORKDIR == str(folder)
 
@@ -164,9 +164,9 @@ def test_key_is_added_when_env_has_none_and_ansi_files_stay_ansi(tmp_path):
     env.write_bytes("# Clé à coller ci-dessous\nJARVIS_CITY=Orléans".encode("cp1252"))  # Notepad's ANSI
     settings.write_key(KEY)
     assert env.read_bytes() == f"# Clé à coller ci-dessous\nJARVIS_CITY=Orléans\nOPENAI_API_KEY={KEY}\n".encode("cp1252")
-    env.write_bytes(b"\xef\xbb\xbfOPENAI_API_KEY=\nJARVIS_CITY=Laon\n")  # a BOM stays a BOM
+    env.write_bytes(b"\xef\xbb\xbfOPENAI_API_KEY=\nJARVIS_CITY=Nantes\n")  # a BOM stays a BOM
     settings.write_key(KEY)
-    assert env.read_bytes() == f"\ufeffOPENAI_API_KEY={KEY}\nJARVIS_CITY=Laon\n".encode("utf-8")
+    assert env.read_bytes() == f"\ufeffOPENAI_API_KEY={KEY}\nJARVIS_CITY=Nantes\n".encode("utf-8")
 
 
 def test_mask():
@@ -362,8 +362,8 @@ def test_numbers_and_bools():
 
 
 def test_texts_refuse_control_characters_and_length():
-    assert settings.validate(S["city"], "  Laon ") == "Laon"
-    for bad in ("Laon\nJARVIS_PORT=1", "x" * 81, 12):
+    assert settings.validate(S["city"], "  Nantes ") == "Nantes"
+    for bad in ("Nantes\nJARVIS_PORT=1", "x" * 81, 12):
         with pytest.raises(settings.SettingError):
             settings.validate(S["city"], bad)
 

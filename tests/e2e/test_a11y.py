@@ -41,7 +41,7 @@ def ensure_composer(page):
 def add_cards(page):
     page.evaluate("""async () => {
       const hud = await import('/static/js/hud.js');
-      hud.addCard('Météo Laon', '**14 °C**, averses éparses', 'result');
+      hud.addCard('Météo Nantes', '**14 °C**, averses éparses', 'result');
       hud.addCard('PowerShell', 'Get-ChildItem -Recurse | Sort-Object LastWriteTime -Descending | Select-Object -First 10', 'code');
       hud.addCard('Rappel', 'Appeler le garage', 'warning');
     }""")

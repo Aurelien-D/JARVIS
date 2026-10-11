@@ -185,7 +185,7 @@ def test_every_control_is_at_least_44px(remote_page, nothing_real):
     page = remote_page
     page.evaluate("""async () => {
       const hud = await import('/static/js/hud.js');
-      hud.addCard('Météo Laon', '**14 °C**, averses éparses', 'result');
+      hud.addCard('Météo Nantes', '**14 °C**, averses éparses', 'result');
       hud.addCard('Commande', 'Get-ChildItem', 'code');
     }""")
     go_live(page)
@@ -409,7 +409,7 @@ def test_a_silent_stream_is_reopened_when_the_page_comes_back(remote_page):
 def test_pending_confirmation_comes_first_in_the_sheet(remote_page, nothing_real):
     page = remote_page
     go_live(page)
-    call(page, "display_card", "c1", {"title": "Météo Laon", "content": "14 °C", "kind": "result"})
+    call(page, "display_card", "c1", {"title": "Météo Nantes", "content": "14 °C", "kind": "result"})
     call(page, "system_control", "v1", {"action": "volume_up"})
     assert output(page, "v1")["status"] == "needs_confirmation"
     page.wait_for_selector(".card.confirm[data-state='pending']")
@@ -422,7 +422,7 @@ def test_pending_confirmation_comes_first_in_the_sheet(remote_page, nothing_real
                           ".map(c => c.querySelector('h3').textContent)")
     assert shown == [first.locator("h3").inner_text()]
     assert page.evaluate("[...document.querySelectorAll('#cards .card h3')].map(h => h.textContent)")[1:] \
-        == ["Rappel", "Météo Laon"]
+        == ["Rappel", "Météo Nantes"]
     # Its [Lancer] is in the window, uncovered, and works from there.
     lancer = first.locator(".actions button.primary")
     box = lancer.bounding_box()

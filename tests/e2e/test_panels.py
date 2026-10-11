@@ -340,9 +340,9 @@ def test_memory_shows_text_with_its_date_on_hover_and_undo(jarvis):
     created = time.time() - 86400 * 3
     jarvis.evaluate("f => __jarvis.bus.emit('server:memory', {facts: f})",
                     [{"id": "m1", "text": "Préfère le thé", "created": created},
-                     {"id": "m2", "text": "Habite à Laon", "created": created + 60}])
+                     {"id": "m2", "text": "Habite à Nantes", "created": created + 60}])
     rows = jarvis.locator("#memoryList .item")
-    assert rows.nth(0).locator(".txt").inner_text() == "Habite à Laon"  # newest first
+    assert rows.nth(0).locator(".txt").inner_text() == "Habite à Nantes"  # newest first
     assert rows.nth(1).locator(".txt").get_attribute("title").startswith("Retenu le ")
     assert jarvis.text_content("#memory summary h2") == "Mémoire (2)"
     rows.nth(1).locator("button.x").click()

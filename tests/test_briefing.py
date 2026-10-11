@@ -16,7 +16,7 @@ AGENDA = ("• Appeler le labo — Aujourd'hui · 14:00\n"
           "• Réunion budget — Aujourd'hui · 16:30\n"
           "• Payer la facture EDF — En retard (2 j)\n"
           "• (rappel) Dentiste — Demain · 09:00")
-WEATHER = "Aujourd'hui à Laon : pluie faible, de 8 à 14 °C, risque de pluie 80 %."
+WEATHER = "Aujourd'hui à Nantes : pluie faible, de 8 à 14 °C, risque de pluie 80 %."
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,7 @@ def onboarded(monkeypatch):
 def sources(monkeypatch):
     """A.R.E.S and Open-Meteo as fakes; Claude must never be started."""
     calls = {"weather": [], "tasks": [], "popen": []}
-    monkeypatch.setattr(config, "CITY", "Laon")
+    monkeypatch.setattr(config, "CITY", "Nantes")
     monkeypatch.setattr(config, "BRIEFING_NEWS", False)
     monkeypatch.setattr(ares, "agenda_text", lambda n=1200, **k: AGENDA)
     monkeypatch.setattr(info, "weather", lambda city=None, quand="maintenant":
@@ -57,7 +57,7 @@ def test_local_brief_has_the_weather_and_the_agenda_count_without_claude(publish
     assert WEATHER in text
     assert "Dans A.R.E.S : 2 éléments aujourd'hui, 1 tâche en retard." in text
     assert "Appeler le labo" not in text  # counts only: the agenda's titles stay in A.R.E.S
-    assert sources["weather"] == [("Laon", "aujourdhui")]
+    assert sources["weather"] == [("Nantes", "aujourdhui")]
     payload = briefing.run(MONDAY_8)
     assert payload["text"] == text  # deterministic: the same facts, the same words
     assert sources["tasks"] == [] and sources["popen"] == []
@@ -93,7 +93,7 @@ def test_brief_without_ares_or_city_says_what_it_knows(published, sources, monke
     def boom(*a, **k):
         raise RuntimeError("panne")
     monkeypatch.setattr(ares, "agenda_text", boom)
-    monkeypatch.setattr(config, "CITY", "Laon")
+    monkeypatch.setattr(config, "CITY", "Nantes")
     monkeypatch.setattr(info, "weather", boom)
     assert briefing.local_brief(MONDAY_8).startswith("Bonjour monsieur.")  # a broken source is left out
 
@@ -173,7 +173,7 @@ def test_news_task_when_the_feeds_fail_has_nothing_private(published, sources, m
     title, prompt = args
     assert kwargs["profile"] == "recherche" and kwargs["origin"] == "routine"
     assert "lundi 12 octobre 2026" in prompt
-    for private in ("garage", "Laon", "labo", "EDF", "budget", "Dentiste", "notaire", "rappel", "agenda"):
+    for private in ("garage", "Nantes", "labo", "EDF", "budget", "Dentiste", "notaire", "rappel", "agenda"):
         assert private.lower() not in prompt.lower(), private
     assert briefing.news_prompt(MONDAY_8) == prompt
 

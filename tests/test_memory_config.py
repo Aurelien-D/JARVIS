@@ -65,7 +65,7 @@ def client():
 
 
 def test_forget_with_several_matches_is_ambiguous_and_deletes_nothing(published):
-    facts = [memory.remember(t) for t in ("Monsieur préfère le thé", "Monsieur habite à Laon",
+    facts = [memory.remember(t) for t in ("Monsieur préfère le thé", "Monsieur habite à Nantes",
                                           "Monsieur a un chien")]
     out = memory.forget("monsieur")
     assert out["ok"] is False
