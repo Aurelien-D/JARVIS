@@ -202,6 +202,20 @@ def test_a_personal_login_gets_no_warning(jarvis, real, monkeypatch):
     assert calls.calls_to("GET", "/api/remote/state")
 
 
+def test_a_hidden_apple_address_is_a_personal_account(jarvis, real, monkeypatch):
+    """Sign in with Apple's « Masquer mon adresse e-mail » (the guide's Apple
+    choice): privaterelay.appleid.com is personal, never « Compte professionnel ? »."""
+    from jarvis import config, store
+    hidden = "a1b2c3d4e5@privaterelay.appleid.com"
+    monkeypatch.setattr(config, "REMOTE_LOGINS", "")
+    real.ts["login"] = hidden
+    store.save("remote.json", {"enabled": False, "host": "", "logins": [hidden], "paused_until": 0,
+                               "complet_until": 0, "published": False, "changed_at": 0, "changed_by": "pc"})
+    open_distance(jarvis)
+    text = section(jarvis)
+    assert hidden in text and "Compte professionnel" not in text
+
+
 def test_publish_shows_only_a_tailscale_consent_link_and_the_manual_command(pc, jarvis):
     from jarvis import remote, tailscale
     pc.real.switch_on()  # publishing needs remote access on (409 otherwise)
@@ -235,11 +249,22 @@ def test_publish_shows_only_a_tailscale_consent_link_and_the_manual_command(pc, 
     jarvis.click("#rm-publish")
     jarvis.wait_for_selector(".rm-publish-error:has-text('Access denied')")
     before = len(pc.calls_to("GET", "/api/remote/serve"))
-    pc.real.serve.update(state="funnel", detail="Funnel actif : Tailscale publie ce PC sur internet.")
+    fix = "tailscale funnel --https=443 off"
+    fix_full = fix.replace("tailscale ", f'& "{tailscale.POWERSHELL_EXE}" ', 1)
+    pc.real.serve.update(state="funnel", detail="Funnel actif : Tailscale publie ce PC sur internet.",
+                         fix=fix, fix_full=fix_full)
     jarvis.click("#rm-serve-check")
     jarvis.wait_for_selector(".rm-serve-funnel")
     assert norm(jarvis.text_content(".rm-serve")) == "Serve : Funnel actif"
     assert len(pc.calls_to("GET", "/api/remote/serve")) > before
+    # The command that stops it, on its own line (never wrapped inside a sentence), with Copier.
+    assert "Pour l'arrêter, à taper d'abord dans PowerShell :" in section(jarvis)
+    codes = jarvis.eval_on_selector_all("[data-key='remote-serve'] .rm-command code", "els => els.map(e => e.textContent)")
+    assert codes[:2] == [fix, fix_full]
+    jarvis.click("#rm-copy-fix")
+    assert jarvis.evaluate("navigator.clipboard.readText()") == fix
+    jarvis.click("#rm-copy-fix-full")
+    assert jarvis.evaluate("navigator.clipboard.readText()") == fix_full
 
 
 def test_pairing_shows_the_url_a_text_fallback_for_the_qr_and_asks_the_code_when_two_wait(pc, jarvis):
@@ -276,6 +301,9 @@ def test_pairing_shows_the_url_a_text_fallback_for_the_qr_and_asks_the_code_when
     jarvis.click(f"{row} button:has-text('Autoriser')")
     jarvis.wait_for_selector(f"{row} .rm-code-input")
     assert pc.calls_to("POST", allow) == []
+    # One [Autoriser] at a time: the row's first buttons give way to the code's.
+    assert jarvis.locator(f"{row} button:visible", has_text="Autoriser").count() == 1
+    assert not jarvis.is_visible(f"{row} > .set-actions")
     jarvis.fill(f"{row} .rm-code-input", first["code"])  # the other phone's code
     jarvis.click(f"{row} .rm-code-form button[type='submit']")
     jarvis.wait_for_selector(f"{row} .set-status.err")
@@ -401,6 +429,28 @@ def test_recent_activity_in_plain_french(pc, jarvis):
     assert "Alerte : Nouvel appareil associé" in lines[2]
     assert jarvis.get_attribute("#rm-audit-toggle", "aria-expanded") == "true"
     assert pc.calls_to("GET", "/api/remote/audit") == [None]
+
+
+def test_recent_activity_credits_the_pcs_own_actions_to_the_pc(pc, jarvis):
+    """Switching on, allowing full access and making a Siri key are the PC's own
+    clicks: « PC », never « appareil non associé » nor the iPhone the key is for;
+    the duration reads as the buttons say it."""
+    from jarvis import devices, raccourci, remote
+    dev, _ = devices.add("iPhone de test", ip=IP, login=LOGIN, os="iOS", ips=(IP,))
+    pc.real.switch_on()
+    remote.set_complet("24h")
+    raccourci.create_key(dev["id"], remote.PC)
+    open_distance(jarvis)
+    jarvis.click("#rm-audit-toggle")
+    jarvis.wait_for_selector(".rm-audit-line")
+    rows = jarvis.eval_on_selector_all(".rm-audit-line", """els => els.map(e => [
+        e.querySelector('.rm-audit-who').textContent, e.querySelector('.rm-audit-what').textContent])""")
+    rows = [(norm(who), norm(what)) for who, what in rows]
+    assert rows and {who for who, _ in rows} == {"PC"}, rows
+    whats = " | ".join(what for _, what in rows)
+    for words in ("Accès à distance activé.", "Accès complet depuis l'iPhone : 24 h.", "Clé Siri créée"):
+        assert words in whats, (words, whats)
+    assert "24h" not in whats
 
 
 def test_remote_strings_render_as_text_holds(jarvis):

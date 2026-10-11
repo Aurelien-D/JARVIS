@@ -324,7 +324,12 @@ def test_both_serve_commands_are_the_ones_jarvis_runs():
                  "redirection de port", "ngrok", "Cloudflare"):
         assert word in rule, word
     assert FLAT.count("`tailscale funnel`") == 1
-    assert "PowerShell (Win+X › Terminal)" in guide() and "Win+X › Terminal" in js_text("remote", "manualHelp")
+    # PowerShell is opened the way step 1 taught it (Windows 10 has no « Terminal » in Win+X).
+    assert "PowerShell (touche Windows → tapez `powershell` → Entrée)" in guide()
+    assert "(touche Windows, tapez powershell, Entrée)" in js_text("remote", "manualHelp")
+    assert "Win+X" not in guide() and "Win+X" not in js_block("remote")
+    # Rule zero leaves room for the one Funnel command JARVIS gives: the one that ends with off.
+    assert "(sauf la commande terminée par `off` que JARVIS vous donne pour l'arrêter)" in rule
 
 
 def test_the_serve_port_default_is_the_configs():
@@ -606,7 +611,7 @@ def test_what_siri_can_do_and_its_limits_are_the_codes():
 def test_the_troubleshooting_messages_are_the_codes():
     text = guide()
     for message in (remote.T_PROXY, remote.T_LOGIN, remote.T_MOVED, remote.T_LOCKED, remote.T_CAPPED,
-                    remote.T_MINTS):
+                    remote.T_MINTS, remote.T_SAME_PORT_PAGE):
         assert f"« {message} »" in text, message
     assert remote.T_NO_CAP.startswith("Fixez d'abord un plafond de dépense par jour")
     assert "« Fixez d'abord un plafond de dépense par jour… »" in text
@@ -653,3 +658,62 @@ def test_the_settings_column_of_the_variables_table_is_the_schemas():
         attr = found.group(1) if found else f"MODELS.{model.group(1)}" if model else ""
         expected = "Connexion" if var == "OPENAI_API_KEY" else by_attr.get(attr, "—")
         assert shown == expected, (var, shown, expected)
+
+
+def test_the_final_review_facts_of_the_guide_are_the_codes(monkeypatch):
+    """What the final review found missing or wrong in the guide, each pinned to
+    the code that makes it true."""
+    text = guide()
+    # Step 1: the Tailscale icon, right-click, maybe under the « ^ » arrow.
+    assert "Cliquez avec le bouton droit sur l'icône Tailscale" in text and "la flèche « ^ »" in text
+    # Step 3: a laptop's Windows menu says « Alimentation et batterie ».
+    assert "Système › Alimentation (« Alimentation et batterie » sur un portable)" in text
+    # Step 4: the first-time mentions next to the address and the account.
+    for key in ("hostSource", "loginSource"):
+        block = re.search(rf"{key}: \{{([^}}]*)\}}", js_block("remote")).group(1)
+        for kind in ("detected", "saved"):
+            said = re.search(rf'{kind}: "([^"]*)"', block).group(1)
+            assert f"« {said} »" in text, (key, kind)
+    # Step 4: every danger's command comes alone, under « Pour l'arrêter », with Copier.
+    assert js_text("remote", "fixLabel").startswith("Pour l'arrêter") and "« Pour l'arrêter » (bouton **Copier**)" in text
+    for state in tailscale.DANGEROUS:
+        status = tailscale._status(state, fix="tailscale funnel --https=443 off" if state == "funnel" else "")
+        assert status["fix"].endswith(" off") and status["fix"] in status["detail"], state
+        assert status["fix_full"].startswith(f'& "{tailscale.POWERSHELL_EXE}" '), state
+    # Step 5: the QR code may open another browser; the rest is Safari's.
+    assert "copiez l'adresse et collez-la dans Safari" in text
+    # Step 7: every message ntfy sends has its row, the counted ones too.
+    raw = raw_section(IPHONE)
+    arrives = raw[raw.index("**Ce qui arrive**"):raw.index("**Les alertes de sécurité**")]
+    for message in (notify.TASKS_FAILED.format(n=2), notify.PENDINGS.format(n=2), notify.SIRI_FAILED):
+        assert f"| « {message} » |" in arrives, message
+    assert 'upstream-base-url: "https://ntfy.sh"' in text  # a server of one's own, for iOS
+    # Step 8: the recipe's buttons, in the guide and in the assistant; the iCloud-synced key.
+    recipe = js_block("siri")
+    for words in ("Ajouter un nouvel en-tête", "Ajouter un nouveau champ", "Demander le corps"):
+        assert words in recipe and words in text, words
+    assert "« Ajouter un nouveau champ »" in section("## 📱 JARVIS sur l'iPhone")[text.index("### 12."):]
+    assert "`Authorization` et `text` se tapent à la main" in text
+    assert "révoquez sur le PC la clé perdue (deux clés au plus par iPhone)" in text
+    assert f"« {remote.T_SIRI_ELSEWHERE.format(name='iPhone de test')} »" in text
+    assert "Raccourcis synchronise ce raccourci, clé comprise, par iCloud" in text
+    # Step 10: the tray switch cuts remote access, not ntfy; only « Retirer » renews the topic.
+    assert ("coupe l'accès à distance, Siri compris, mais pas les notifications ntfy : seul **Retirer** (qui "
+            "change le sujet)") in text
+    enable_remote(monkeypatch)
+    topic = notify.topic()
+    monkeypatch.setattr(tailscale, "serve_status", lambda: {"state": "absent"})
+    remote.set_enabled(False)
+    assert notify.topic(create=False) == topic
+    # Step 11: the refusal while a raw forward reaches JARVIS.
+    assert remote.T_SERVE_UNSAFE.startswith("Refusé : Tailscale transmet des connexions brutes à JARVIS (relais TCP ou Funnel)")
+    assert "« Refusé : Tailscale transmet des connexions brutes à JARVIS (relais TCP ou Funnel)… »" in text
+    # The help card's weather example names a big city, the same in the guide and the app.
+    assert STRINGS_JS.count("Quel temps fera-t-il demain à ") == 2 and STRINGS_JS.count("demain à Lyon ?") == 2
+    assert "Quel temps fera-t-il demain à Lyon ?" in STRINGS_JS and "« Quel temps fera-t-il demain à Lyon ? »" in README
+    # The iPhone's Aide names its touch list on screen, as the guide says.
+    assert 'title.className = "aide-keys-title"' in COMPOSER_JS and "« Commandes tactiles »" in section("## ⌨️ Raccourcis")
+    # The refused pairing page does not repeat its title.
+    refused = re.search(r'refused: "([^"]*)"', js_block("pair")[js_block("pair").index("states: {"):]).group(1)
+    assert not refused.startswith("Accès refusé")
+

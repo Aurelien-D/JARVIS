@@ -2,7 +2,7 @@
    or /, see keys.js), the suggestion chips, the rotating "Essayez" hint, the "Ce que je
    sais faire" help card (? or the Aide button) and JARVIS introducing itself
    on the very first session (design spec §3, §8, §11). */
-import { $, api, bus, state } from "./core.js";
+import { $, api, bus, state, touchUI } from "./core.js";
 import { addCard, removeCard, toast } from "./hud.js";
 import * as strings from "./strings-fr.js";
 import * as voice from "./voice.js";
@@ -19,8 +19,13 @@ const ONBOARDED_KEY = "jarvis.onboarded.voice";
 const HINT_MS = 8000;
 const RESULT_CHIPS_MS = 10 * 60e3;
 
-/* The help card: every example is a button that asks it for real. */
-const CATEGORIES = () => T.help.categories || [];
+/* The help card: every example is a button that asks it for real. On the
+   iPhone, never one of the PC's own (open_app, look_at_screen: tools.py keeps
+   them off its list), which would only get a refusal there. */
+const pcOnly = (example) => !!state.remote && (T.help.pcOnly || []).includes(example);
+const CATEGORIES = () => (T.help.categories || [])
+  .map(c => ({ ...c, examples: c.examples.filter(e => !pcOnly(e)) }))
+  .filter(c => c.examples.length);
 
 let input = null;
 let history = [], historyPos = 0, draft = "";
@@ -31,7 +36,7 @@ let chipsKey = "";
 let introSent = false;
 const resultsSeen = new Set(); // a finished task offers its follow-ups once
 
-const examples = () => (T.help && T.help.examples) || CATEGORIES().flatMap(c => c.examples);
+const examples = () => ((T.help && T.help.examples) || CATEGORIES().flatMap(c => c.examples)).filter(e => !pcOnly(e));
 
 /* ---------------------------------------------------------- sending */
 /* What monsieur typed (or clicked): to the live session, or it opens one. */
@@ -181,7 +186,16 @@ function buildHelp() {
     li.textContent = part;
     keys.append(li);
   }
-  wrap.append(grid, keys);
+  // Under a finger the list is named on screen (« Commandes tactiles », as the
+  // guide says); the PC's keyboard list needs no title.
+  if (touchUI()) {
+    const title = document.createElement("h4");
+    title.className = "aide-keys-title";
+    title.textContent = L.shortcuts;
+    wrap.append(grid, title, keys);
+  } else {
+    wrap.append(grid, keys);
+  }
   return wrap;
 }
 

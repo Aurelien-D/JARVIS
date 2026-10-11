@@ -587,7 +587,7 @@ def _with_memory(prompt: str, profile: str = DEFAULT_PROFILE) -> str:
     # sending monsieur's private facts out (a search query is enough).
     if profile == "recherche":
         return prompt
-    facts = memory.as_text(1500)
+    facts = memory.as_text(1500, pc_only=profile == "complet")
     if not facts:
         return prompt
     return (f"{prompt}\n\n---\nContexte sur l'utilisateur (mémoire de JARVIS, "

@@ -662,7 +662,7 @@ export const T = typeset({
       "Analyse le fichier ventes.xlsx et fais-moi un tableau de bord",
       "Retiens que je préfère le thé",
       "Cherche les meilleurs aspirateurs robots sous 400 €",
-      "Quel temps fera-t-il demain à Laon ?",
+      "Quel temps fera-t-il demain à Lyon ?",
       "Qu'est-ce que j'ai aujourd'hui ?",
       "Note que je dois rappeler le garage",
       "De quoi on a parlé hier ?",
@@ -680,7 +680,7 @@ export const T = typeset({
         examples: ["Cherche les meilleurs aspirateurs robots sous 400 €",
                    "Analyse le fichier ventes.xlsx et fais-moi un tableau de bord"] },
       { title: "Météo et actualités",
-        examples: ["Quel temps fera-t-il demain à Laon ?", "Quels sont les titres de l'actualité ?"] },
+        examples: ["Quel temps fera-t-il demain à Lyon ?", "Quels sont les titres de l'actualité ?"] },
       { title: "Vision",
         examples: ["Regarde mon écran : tu vois l'erreur ?", "Regarde-moi avec la caméra : je suis bien coiffé ?"] },
       { title: "Mémoire et journal", examples: ["Retiens que je préfère le thé", "De quoi on a parlé hier ?"] },
@@ -690,6 +690,8 @@ export const T = typeset({
       { title: "Agenda A.R.E.S", ares: true,
         examples: ["Qu'est-ce que j'ai aujourd'hui ?", "Note que je dois rappeler le garage"] },
     ],
+    // Examples of the PC's own tools (open_app, look_at_screen): never offered on the iPhone.
+    pcOnly: ["Jarvis, ouvre Spotify sur l'écran de gauche", "Regarde mon écran : tu vois l'erreur ?"],
     tryThis: (example) => `Essayez : « ${example} »`,
     shortcuts: "Espace : parler · Ctrl+J : écrire · Échap : interrompre · Ctrl+M : micro",
     // The global hotkey (Réglages › Système), when one works on this PC.
@@ -751,7 +753,8 @@ export const T = typeset({
     serveStates: { ready: "prêt", absent: "absent", funnel: "Funnel actif", tcp: "relais TCP", wrong_target: "cible inattendue",
                    stopped: "Tailscale arrêté", no_tailscale: "Tailscale absent", unknown: "inconnu" },
     manual: "Commande manuelle",
-    manualHelp: "À taper dans PowerShell (Win+X › Terminal) si le bouton ne suffit pas :",
+    manualHelp: "À taper dans PowerShell (touche Windows, tapez powershell, Entrée) si le bouton ne suffit pas :",
+    fixLabel: "Pour l'arrêter, à taper d'abord dans PowerShell :",
     manualFull: "Si PowerShell ne trouve pas tailscale :",
     // 4. pairing
     pairTitle: "Associer un iPhone",
@@ -821,7 +824,7 @@ export const T = typeset({
       locked: "refusée : bloqué après des échecs", token: "refusée : jeton expiré", revoked: "refusée : appareil retiré",
       ip: "refusée : autre machine", unpaired: "refusée : appareil non associé", scope: "refusée : réservé au PC",
       rate: "refusée : trop de demandes", cap: "refusée : plafond atteint", clamped: "relevé plafonné",
-      throttled: "lignes regroupées",
+      throttled: "lignes regroupées", serve_unsafe: "refusée : relais TCP ou Funnel vers JARVIS",
     },
     // the paired iPhone's own view
     thisPhone: "Cet iPhone",
@@ -885,7 +888,7 @@ export const T = typeset({
       closed: "L'association est fermée. Sur le PC : Réglages › Accès à distance › Associer un iPhone, puis touchez Réessayer.",
       off: "L'accès à distance est coupé sur le PC. Il se rallume sur le PC, dans Réglages › Accès à distance ou depuis l'icône JARVIS près de l'horloge.",
       paused: "L'accès à distance est en pause. Il reprendra seul à la fin de la pause, ou plus tôt depuis le PC.",
-      refused: "Accès refusé. Vérifiez que cet appareil est connecté à Tailscale avec le même compte que le PC, puis ouvrez JARVIS depuis son icône sur l'écran d'accueil ou en tapant son adresse dans Safari.",
+      refused: "Vérifiez que cet appareil est connecté à Tailscale avec le même compte que le PC, puis ouvrez JARVIS depuis son icône sur l'écran d'accueil ou en tapant son adresse dans Safari.",
       locked: "Trop d'échecs depuis cet appareil : réessayez dans 15 minutes.",
       revoked: "Cet appareil a été retiré sur le PC. Pour l'associer à nouveau : Réglages › Accès à distance › Associer un iPhone, sur le PC.",
     },
@@ -957,7 +960,7 @@ export const T = typeset({
     recipeStart: "App Raccourcis › + (sur iOS 27, ignorez « Décrire un raccourci ») › nommez-le Jarvis.",
     recipe: [
       "Dicter le texte (langue : Français).",
-      "Obtenir le contenu de l'URL : collez l'adresse ; « En afficher plus » › Méthode POST ; En-tête : Authorization = la valeur copiée ; Corps de la requête JSON, champ text = Texte dicté.",
+      "Obtenir le contenu de l'URL : collez l'adresse ; « En afficher plus » › Méthode POST ; En-têtes › Ajouter un nouvel en-tête : Authorization = la valeur copiée ; Corps de la requête (ou « Demander le corps ») JSON › Ajouter un nouveau champ › Texte : text = Texte dicté.",
       "Énoncer le texte (le contenu de l'URL).",
     ],
     recipeEnd: "Premier lancement : répondez « Toujours autoriser ». Puis dites « Dis Siri, Jarvis ».",

@@ -33,7 +33,8 @@ const QR_TIMEOUT_MS = 15000;
 const CONSENT_RE = /^https:\/\/login\.tailscale\.com\/[\w\-/?=&.%]+$/;
 const POLL_MS = 3000;  // the pairing requests, while pairing is open
 // Personal Tailscale logins (spec 3.16b); anything else gets an information line.
-const PERSONAL = new Set(["gmail.com", "googlemail.com", "icloud.com", "me.com", "mac.com", "outlook.com",
+const PERSONAL = new Set(["gmail.com", "googlemail.com", "icloud.com", "me.com", "mac.com",
+  "privaterelay.appleid.com", "outlook.com",
   "outlook.fr", "hotmail.com", "hotmail.fr", "live.com", "live.fr", "msn.com", "yahoo.com", "yahoo.fr",
   "proton.me", "protonmail.com", "gmx.fr", "gmx.com", "laposte.net", "orange.fr", "free.fr", "sfr.fr"]);
 const COMPLET = [["never", "never"], ["24h", "day"], ["7d", "week"]];
@@ -344,6 +345,18 @@ function renderServe(v) {
     out.push(h("div", { class: "rm-serve-line" },
                  h("p", { class: `rm-serve rm-serve-${serve?.state || "wait"}`, text: R.serveLine(word) }), check));
     if (serve?.detail) out.push(h("p", { class: "set-help rm-serve-detail", text: String(serve.detail) }));
+    // A danger: the command that removes just it, on its own line with Copier
+    // (in the sentence above it would wrap anywhere, « -- » included).
+    if (serve?.fix) {
+      out.push(h("p", { class: "set-label", text: R.fixLabel }),
+               h("div", { class: "rm-command" }, h("code", { class: "mono", text: String(serve.fix) }),
+                 copyButton("rm-copy-fix", String(serve.fix), v, "serve")));
+      if (serve.fix_full) {
+        out.push(h("p", { class: "set-help", text: R.manualFull }),
+                 h("div", { class: "rm-command" }, h("code", { class: "mono", text: String(serve.fix_full) }),
+                   copyButton("rm-copy-fix-full", String(serve.fix_full), v, "serve")));
+      }
+    }
     if (command) {
       const full = serve?.command_full || "";
       out.push(h("p", { class: "set-label", text: R.manual }),
@@ -466,7 +479,14 @@ function askCode(v, li, r, rowStatus) {
   const input = h("input", { id, class: "set-input mono rm-code-input", type: "text", inputmode: "numeric",
                              autocomplete: "off", maxlength: "4", pattern: "[0-9]{4}" });
   const ok = h("button", { type: "submit", class: "ctl primary", text: R.allow });
-  const cancel = button(R.cancel, () => { form.remove(); v.editing.delete("pairing"); renderPairing(v); });
+  // The row's first [Autoriser] [Refuser] give way to the code's own buttons.
+  const first = li.querySelector(":scope > .set-actions");
+  const cancel = button(R.cancel, () => {
+    form.remove();
+    first?.removeAttribute("hidden");
+    v.editing.delete("pairing");
+    renderPairing(v);
+  });
   const form = h("form", { class: "rm-code-form" },
     h("label", { class: "set-label", for: id, text: R.typeCode }), input, h("div", { class: "set-actions" }, ok, cancel));
   form.addEventListener("submit", (e) => {
@@ -481,6 +501,7 @@ function askCode(v, li, r, rowStatus) {
     }
     allowRequest(v, r, code, rowStatus);
   });
+  first?.setAttribute("hidden", "");
   li.insertBefore(form, rowStatus);
   input.focus();
 }
@@ -799,8 +820,11 @@ async function loadAudit(v) {
 function auditRow(line, names) {
   const when = Number(line.t) ? fmtRelative(Number(line.t) * 1000) : "";
   const device = String(line.device || "");
-  const who = names.get(device) || (line.caller ? R.callers[line.caller] || String(line.caller) : "")
-    || R.callers.unpaired;
+  // The PC's own actions (switch, opt-in, a Siri key made for a device) and the
+  // alerts with no caller (the PC's switch, the Serve watch) are the PC's.
+  const who = line.caller === "pc" ? R.callers.pc
+    : names.get(device) || (line.caller ? R.callers[line.caller] || String(line.caller) : "")
+    || (line.kind === "alert" ? R.callers.pc : R.callers.unpaired);
   const where = line.ip ? ` (${line.ip})` : "";
   const kind = R.kinds[line.kind] || String(line.kind || "");
   let what = line.text ? String(line.text) : "";

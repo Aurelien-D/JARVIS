@@ -8,7 +8,7 @@ from datetime import datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from remote_helpers import IP, LOGIN, as_caller, remote_client
+from remote_helpers import IP, LOGIN, allow_stamped_streams, as_caller, remote_client
 from starlette.requests import Request
 
 import server
@@ -235,6 +235,7 @@ def test_every_stream_gets_a_ping_data_frame_even_when_busy_and_a_phone_stays_al
     monkeypatch.setattr(events, "PING_SECONDS", 0.3)
     kept = []
     monkeypatch.setattr(remote, "keepalive", lambda caller: kept.append(caller))
+    allow_stamped_streams(monkeypatch)
 
     async def until_ping(stream) -> list:
         seen, deadline = [], time.monotonic() + 3

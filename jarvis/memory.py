@@ -24,7 +24,13 @@ def _clean(text) -> str:
     return " ".join(str(text or "").split())
 
 
-def remember(text: str) -> dict:
+def _is_pc(via) -> bool:
+    return str(via or "pc") == "pc"
+
+
+def remember(text: str, via: str = "pc") -> dict:
+    """A new fact; one said from a phone keeps its origin (via): it never
+    reaches a full-access task's prompt (as_text(pc_only=True))."""
     text = _clean(text)[:MAX_TEXT]
     if not text:
         raise ValueError("rien à retenir")
@@ -34,6 +40,8 @@ def remember(text: str) -> dict:
             if fact["text"].lower() == text.lower():
                 return fact
         fact = {"id": uuid.uuid4().hex[:6], "text": text, "created": time.time()}
+        if not _is_pc(via):
+            fact["via"] = str(via)
         items = (items + [fact])[-MAX_FACTS:]
         store.save(FILE, items)
     events.publish("memory", {"facts": items})
@@ -117,8 +125,9 @@ def undo(fact_id: str) -> dict | None:
     return fact
 
 
-def edit(fact_id: str, text: str) -> dict | None:
-    """Correct a fact's wording (None: no such fact). ValueError on an empty or too long text."""
+def edit(fact_id: str, text: str, via: str = "pc") -> dict | None:
+    """Correct a fact's wording (None: no such fact). ValueError on an empty or too long text.
+    The fact takes the origin of whoever wrote these words (via)."""
     text = _clean(text)
     if not text:
         raise ValueError("Le souvenir ne peut pas être vide.")
@@ -131,15 +140,23 @@ def edit(fact_id: str, text: str) -> dict | None:
             return None
         fact["text"] = text
         fact["edited"] = time.time()
+        if _is_pc(via):
+            fact.pop("via", None)
+        else:
+            fact["via"] = str(via)
         store.save(FILE, items)
     events.publish("memory", {"facts": items})
     return fact
 
 
-def as_text(limit_chars: int = 3000) -> str:
-    """Newest facts first, as a bullet list that fits the budget."""
+def as_text(limit_chars: int = 3000, pc_only: bool = False) -> str:
+    """Newest facts first, as a bullet list that fits the budget. pc_only: only
+    the facts written on the PC (a full-access task's prompt: a phone in other
+    hands must not leave it standing orders that outlive the phone's removal)."""
     lines, used = [], 0
     for fact in reversed(facts()):
+        if pc_only and not _is_pc(fact.get("via")):
+            continue
         line = f"- {fact['text']}"
         if used + len(line) > limit_chars:
             break

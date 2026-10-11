@@ -237,6 +237,17 @@ def _keepalive(caller):
         logging.exception("JARVIS: flux distant : maintien en échec")
 
 
+def _still_allowed(caller) -> bool:
+    """remote.stream_allowed: False (fail closed) when it cannot tell; the page
+    reconnects through the guard."""
+    from . import remote  # late: remote imports events
+    try:
+        return bool(remote.stream_allowed(caller))
+    except Exception:  # noqa: BLE001
+        logging.exception("JARVIS: flux distant : droit d'accès illisible")
+        return False
+
+
 async def stream(client_id: str = "", last_event_id=None, caller=None):
     """One page's event stream. client_id is the page's own id (sse.js); with
     last_event_id, the buffered events after it are replayed first. caller: the
@@ -272,6 +283,10 @@ async def stream(client_id: str = "", last_event_id=None, caller=None):
     try:
         if _closing.is_set():
             return
+        # Subscribed now, so a later revocation closes it: one admitted by the
+        # guard just before a revocation, a switch-off or a pause ends here.
+        if remote_page and not _still_allowed(caller):
+            return
         yield "retry: 3000\n\n"
         last = after or 0
         for event_id, message in backlog:
@@ -287,6 +302,8 @@ async def stream(client_id: str = "", last_event_id=None, caller=None):
             if wait <= 0:  # due even on a busy stream: a phone's token must not lapse
                 next_ping = time.monotonic() + PING_SECONDS
                 if remote_page:
+                    if not _still_allowed(caller):
+                        return
                     _keepalive(caller)
                 yield PING
                 continue

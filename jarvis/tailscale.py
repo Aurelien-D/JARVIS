@@ -18,6 +18,9 @@
   never `tailscale serve reset` (that would delete the user's other services).
 - A watch thread re-checks that every 10 minutes and alerts the PC (and the
   iPhone through ntfy), whether remote access is on or off.
+- A raw TCP forward (or Funnel) that reaches JARVIS lets any tailnet node
+  write the headers only Serve's proxy may set: while the last reading saw
+  one, unsafe_state() names it and remote's guard refuses every remote request.
 
 publish() and unpublish() never raise: remote.set_enabled calls them best effort.
 """
@@ -68,6 +71,10 @@ DETAILS = {
            "{fix} dans PowerShell, puis cliquez Publier sur Tailscale.",
     "wrong_target": "Cible inattendue : Tailscale publie autre chose que JARVIS (port {port}). Tapez "
                     "{fix} dans PowerShell, puis cliquez Publier sur Tailscale.",
+    # wrong_target too: Serve hands the iPhone's requests to the PC page's own port.
+    "same_port": "JARVIS_REMOTE_PORT doit différer de JARVIS_PORT : Tailscale publie la page du PC (port {port}). "
+                 "Changez JARVIS_REMOTE_PORT dans le fichier .env, relancez JARVIS, puis cliquez Publier sur "
+                 "Tailscale.",
     "stopped": "Tailscale est arrêté ou déconnecté sur ce PC : connectez-le (icône près de l'horloge).",
     "no_tailscale": "Tailscale n'est pas installé sur ce PC.",
     "unknown": "La configuration de Tailscale Serve n'a pas pu être lue : réessayez.",
@@ -85,6 +92,7 @@ _proc_lock = threading.Lock()     # one publish process at a time
 _proc: dict = {"process": None, "timer": None}
 _watch_lock = threading.Lock()
 _watch: dict = {"thread": None, "stop": None}
+_unsafe: dict = {"state": ""}     # the last reading's Funnel or raw TCP forward reaching JARVIS (under _lock)
 
 # ---------------------------------------------------------------- running tailscale
 
@@ -248,9 +256,14 @@ def _configs(data: dict) -> list:
     return out
 
 
-def _status(state: str, url: str = "", fix: str = "") -> dict:
-    detail = DETAILS[state].format(port=config.REMOTE_PORT, fix=fix or "tailscale serve --https=443 off")
-    return {"state": state, "detail": detail, "url": url}
+def _status(state: str, url: str = "", fix: str = "", detail: str = "") -> dict:
+    """A danger also carries its command alone (fix) and in its PowerShell form
+    with the literal install path (fix_full): Réglages shows each with Copier."""
+    fix = fix or "tailscale serve --https=443 off"
+    out = {"state": state, "detail": DETAILS[detail or state].format(port=config.REMOTE_PORT, fix=fix), "url": url}
+    if state in DANGEROUS:
+        out.update(fix=fix, fix_full=fix.replace("tailscale ", f'& "{POWERSHELL_EXE}" ', 1))
+    return out
 
 
 def _jarvis_target(target) -> bool:
@@ -270,11 +283,13 @@ def _jarvis_target(target) -> bool:
 
 
 def _in_use() -> bool:
-    """Remote access is on or JARVIS was published: then any Funnel, TCP forward
-    or other target counts, not only what reaches JARVIS's ports."""
+    """Remote access is on: then any Funnel, TCP forward or other target counts,
+    not only what reaches JARVIS's ports. Switched off, JARVIS's own publication
+    is withdrawn (remote.published() only says to restore it when switched on
+    again): monsieur's other Serve services are his own business then."""
     from . import remote  # late: remote imports this module inside its functions too
     try:
-        return remote.is_enabled() or remote.published()
+        return remote.is_enabled()
     except Exception:  # noqa: BLE001 - unreadable: the strict reading
         return True
 
@@ -287,18 +302,35 @@ def serve_status() -> dict:
     """What Tailscale Serve publishes: {state, detail, url}. state, checked in
     this order: no_tailscale, stopped, funnel, tcp, absent, wrong_target, ready
     (unknown when the config cannot be read). Until remote access is in use,
-    Funnel, TCP and other targets count only when they reach JARVIS's ports."""
+    Funnel, TCP and other targets count only when they reach JARVIS's ports.
+    Every reading but an unreadable one also updates unsafe_state()."""
+    status, unsafe = _read_serve()
+    if status["state"] != "unknown":
+        with _lock:
+            _unsafe["state"] = status["state"] if unsafe else ""
+    return status
+
+
+def unsafe_state() -> str:
+    """'funnel' or 'tcp' while the last reading saw a Funnel or a raw TCP
+    forward reach JARVIS's ports (remote's guard then refuses everything), else ''."""
+    with _lock:
+        return _unsafe["state"]
+
+
+def _read_serve() -> tuple:
+    """(serve_status's answer, whether a Funnel or a raw TCP forward reaches JARVIS)."""
     if exe_path() is None:
-        return _status("no_tailscale")
+        return _status("no_tailscale"), False
     info = self_info()
     if not info.get("running"):
-        return _status("stopped")
+        return _status("stopped"), False
     dns = str(info.get("dns_name") or "")
     url = f"https://{dns}/" if dns else ""
     try:
         data = _json(_run(["serve", "status", "--json"], STATUS_TIMEOUT).stdout)
     except Exception:  # noqa: BLE001 - an older CLI, no rights, a timeout
-        return _status("unknown", url)
+        return _status("unknown", url), False
     configs = _configs(data)
     strict = _in_use()
     tcps = [(str(port), _dict(h)) for conf in configs for port, h in _dict(conf.get("TCP")).items()]
@@ -318,24 +350,29 @@ def serve_status() -> dict:
         scheme = "http" if any(h.get("HTTP") for p, h in tcps if p == port) else "https"
         return f"tailscale serve --{scheme}={port} off"
 
-    for conf in configs:
-        for hostport, on in _dict(conf.get("AllowFunnel")).items():
-            if on and (strict or web_hits(hostport) or tcp_hits(_port_of(hostport))):
-                return _status("funnel", url, f"tailscale funnel --https={_port_of(hostport)} off")
-    for port, h in tcps:
-        if (h.get("TCPForward") or h.get("TerminateTLS")) and (strict or _jarvis_target(h.get("TCPForward"))):
+    funnels = [hostport for conf in configs for hostport, on in _dict(conf.get("AllowFunnel")).items() if on]
+    raw = [(port, h) for port, h in tcps if h.get("TCPForward") or h.get("TerminateTLS")]
+    unsafe = any(web_hits(hp) or tcp_hits(_port_of(hp)) for hp in funnels) \
+        or any(_jarvis_target(h.get("TCPForward")) for _, h in raw)
+    for hostport in funnels:
+        if strict or web_hits(hostport) or tcp_hits(_port_of(hostport)):
+            return _status("funnel", url, f"tailscale funnel --https={_port_of(hostport)} off"), unsafe
+    for port, h in raw:
+        if strict or _jarvis_target(h.get("TCPForward")):
             flag = "--tls-terminated-tcp" if h.get("TerminateTLS") else "--tcp"
-            return _status("tcp", url, f"tailscale serve {flag}={port} off")
+            return _status("tcp", url, f"tailscale serve {flag}={port} off"), unsafe
     ours = next((k for k in webs if (k == f"{dns}:443" if dns else str(k).endswith(":443"))), None)
     others = [k for k in webs if k != ours and (strict or web_hits(k))]
     expected = {"/": {"Proxy": f"http://127.0.0.1:{config.REMOTE_PORT}"}}
     if ours is not None and _dict(webs[ours]).get("Handlers") != expected and (strict or web_hits(ours)):
-        return _status("wrong_target", url, web_off(ours))
+        return _status("wrong_target", url, web_off(ours)), unsafe
     if others:
-        return _status("wrong_target", url, web_off(others[0]))
+        return _status("wrong_target", url, web_off(others[0])), unsafe
     if ours is None or _dict(webs[ours]).get("Handlers") != expected:
-        return _status("absent", url)  # nothing, or another service of the user's on that name
-    return _status("ready", url)
+        return _status("absent", url), unsafe  # nothing, or another service of the user's on that name
+    if int(config.REMOTE_PORT) == int(config.PORT):  # JARVIS's target, but that port is the PC page's
+        return _status("wrong_target", url, web_off(ours), detail="same_port"), unsafe
+    return _status("ready", url), unsafe
 
 # ---------------------------------------------------------------- publishing
 
@@ -503,9 +540,10 @@ def stop_watch() -> None:
 
 
 def reset_memory() -> None:
-    """Tests: forget the caches and the running publish process."""
+    """Tests: forget the caches, the last unsafe reading and the running publish process."""
     with _lock:
         _cache.clear()
+        _unsafe["state"] = ""
     with _proc_lock:
         process, timer = _proc["process"], _proc["timer"]
         _proc.update(process=None, timer=None)

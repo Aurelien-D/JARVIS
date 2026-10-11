@@ -39,6 +39,7 @@ import json
 import logging
 import re
 import socket
+import subprocess
 import sys
 import time
 from datetime import date
@@ -52,6 +53,7 @@ from remote_helpers import (
     IP,
     LOGIN,
     REMOTE_HOST,
+    allow_stamped_streams,
     enable_remote,
     page_token,
     paired_client,
@@ -149,6 +151,12 @@ async def opened(client_id: str, caller=None, last_event_id=None):
     stream = events.stream(client_id, last_event_id, caller)
     assert (await anext(stream)).startswith("retry:")
     return stream
+
+
+@pytest.fixture
+def stamped_streams(monkeypatch):
+    """A0's stream proofs use stamped callers (remote_helpers.allow_stamped_streams)."""
+    allow_stamped_streams(monkeypatch)
 
 
 def _remote_subs(device_id: str) -> list:
@@ -270,10 +278,12 @@ P0_PROOFS = {
     "7": (P + "test_device_secret_is_stored_hashed_and_never_returned_or_logged_holds",
           P + "test_device_cookie_is_host_prefixed_httponly_secure_strict_holds",
           UI + "test_real_gate_end_to_end_holds"),
-    "8": (P + "test_device_cookie_from_another_address_or_login_is_refused_holds",),
+    "8": (P + "test_device_cookie_from_another_address_or_login_is_refused_holds",
+          P + "test_a_siri_key_synced_to_another_device_never_removes_its_iphone_holds"),
     "9": (P + "test_remote_api_needs_both_cookie_and_its_own_page_token_holds",),
     "10": (P + "test_unpaired_remote_page_holds_no_token_holds",),
     "11": (P + "test_revoked_device_is_refused_at_once_and_its_streams_and_requests_end_holds",
+           P + "test_a_stream_admitted_just_before_a_revocation_ends_holds",
            P + "test_phone_tools_and_requests_hold_through_the_real_gate_holds",
            SIRI_P + "test_revoking_a_device_stops_its_siri_conversation_and_workers_holds",
            UI + "test_real_gate_end_to_end_holds"),
@@ -333,7 +343,8 @@ P0_PROOFS = {
            "tests/test_protections_wave2.py::test_hotkey_and_tray_do_no_more_than_the_page_buttons_holds",
            OPS + "test_the_tray_kill_switch_with_the_real_module_says_why_it_cannot"),
     "30": (OPS + "test_publish_runs_only_the_fixed_command_without_a_shell_holds",
-           OPS + "test_serve_health_flags_funnel_tcp_and_wrong_target_holds"),
+           OPS + "test_serve_health_flags_funnel_tcp_and_wrong_target_holds",
+           P + "test_a_raw_tcp_forward_to_jarvis_closes_remote_access_holds"),
     "30b": ("tests/e2e/test_remote_settings_ui.py::test_remote_strings_render_as_text_holds",),
     "31": (SIRI_P + "test_siri_never_reaches_files_full_access_memory_or_the_pc_holds",
            SIRI_P + "test_siri_refuses_anything_needing_confirmation_holds",
@@ -477,6 +488,7 @@ def test_ready_opens_nothing_on_a_fresh_install_holds(monkeypatch):
 
 # ---------------------------------------------------------------- P0-25: the phone's event stream
 
+@pytest.mark.usefixtures("stamped_streams")
 def test_remote_stream_never_becomes_leader_holds():
     async def scenario():
         assert not events._subscribers
@@ -503,6 +515,7 @@ def test_remote_stream_never_becomes_leader_holds():
     asyncio.run(scenario())
 
 
+@pytest.mark.usefixtures("stamped_streams")
 def test_remote_stream_drops_pc_control_events_holds(monkeypatch):
     # PHONE is no paired device here: A1's real floor would replay nothing to it,
     # and this proof is about what a replay may hold, so it starts from zero.
@@ -535,6 +548,7 @@ def test_remote_stream_drops_pc_control_events_holds(monkeypatch):
     asyncio.run(scenario())
 
 
+@pytest.mark.usefixtures("stamped_streams")
 def test_a_phone_stream_never_silences_pc_toasts_holds(monkeypatch):
     notified = []
     monkeypatch.setattr(inbox, "notify_offline", lambda *a, **k: notified.append((a, k)) or True)
@@ -550,6 +564,7 @@ def test_a_phone_stream_never_silences_pc_toasts_holds(monkeypatch):
     assert notified == [(("Rappel", "Sortir le pain"), {"kind": "reminder", "via": "pc"})]
 
 
+@pytest.mark.usefixtures("stamped_streams")
 def test_closing_the_phone_streams_never_ends_the_pc_holds():
     """A revocation closes the phone's streams only; the PC keeps its stream and
     can still open new ones (only a shutdown ends them for good)."""
@@ -572,6 +587,7 @@ async def _drain(stream) -> list:
 
 # ---------------------------------------------------------------- P1: streams per device
 
+@pytest.mark.usefixtures("stamped_streams")
 def test_streams_per_device_are_capped_holds():
     async def scenario():
         pc = await opened("page-pc")
@@ -1247,6 +1263,33 @@ def test_device_cookie_from_another_address_or_login_is_refused_holds(monkeypatc
     assert [k for k, _ in alerts.hooks] == ["login_change", "ip_change", "secret_copied"]
     assert all(text == audit.ALERTS[k]["ntfy_text"] for k, text in alerts.hooks)
 
+def test_a_siri_key_synced_to_another_device_never_removes_its_iphone_holds(monkeypatch, alerts):
+    """iCloud syncs the « Jarvis » Shortcut, its Siri key included, to the other
+    iPhone, iPad or Mac of the Apple ID. Said there, the key comes from another
+    node of the same account: refused in a sentence Siri can read, the key's
+    iPhone keeps its pairing, its keys and the ntfy topic; the PC hears one
+    deduplicated « ip_change », never « secret_copied »."""
+    from jarvis import notify
+    enable_remote(monkeypatch)
+    device, secret = devices.add("iPhone de test", ip=IP, login=LOGIN, node_id="nPHONE", ips=(IP,))
+    key_id, key_secret = devices.add_siri_key(device["id"])
+    nodes = {IP_B: {"node_id": "nIPAD", "addresses": [IP_B], "login": LOGIN}}
+    monkeypatch.setattr(tailscale, "whois", lambda ip: nodes.get(ip, {}))
+    topic = notify.topic()
+    for _ in range(2):
+        r = siri_client(key_id, key_secret, ip=IP_B).post("/api/raccourci", json={"text": "Quelle heure est-il ?"})
+        assert r.status_code == 403
+        assert r.text == remote.T_SIRI_ELSEWHERE.format(name="iPhone de test")
+    assert not devices.is_revoked(device["id"]) and devices.siri_key_known(key_id)
+    assert notify.topic(create=False) == topic
+    assert alerts.kinds() == ["ip_change"] and [k for k, _ in alerts.hooks] == ["ip_change"]
+    # Its own iPhone still works, cookie and key alike.
+    assert with_cookie(f"{device['id']}.{secret}").get("/").status_code == 200
+    monkeypatch.setattr(raccourci, "answer", lambda caller, raw: (200, "Il est midi.", False))
+    r = siri_client(key_id, key_secret).post("/api/raccourci", json={"text": "Quelle heure est-il ?"})
+    assert (r.status_code, r.text) == (200, "Il est midi.")
+
+
 # ---------------------------------------------------------------- P0-9 and 10: cookie plus its page token
 
 
@@ -1352,6 +1395,50 @@ def test_revoked_device_is_refused_at_once_and_its_streams_and_requests_end_hold
     assert devices.get(device["id"]) is None
     r = with_cookie(value).get("/api/config")
     assert r.status_code == 401 and r.json()["detail"] == remote.T_REVOKED
+
+def test_a_stream_admitted_just_before_a_revocation_ends_holds(monkeypatch, pc):
+    """Revoking, switching off and pausing close the streams already open; a
+    stream the guard admitted just before (it subscribes on its first frame)
+    must not slip through: it checks once subscribed, and at every ping."""
+    monkeypatch.setattr(events, "PING_SECONDS", 0.2)
+    phone, device, _ = paired_client(monkeypatch)
+    other, device2, _ = paired_client(monkeypatch, name="iPad de test", ip=IP_B)
+
+    def caller_of(dev, ip=IP):
+        return remote.Caller(kind="app", device_id=dev["id"], ip=ip, login=LOGIN, name=dev["name"])
+
+    async def ends_at_once(stream):
+        with pytest.raises(StopAsyncIteration):
+            await asyncio.wait_for(anext(stream), 2)
+
+    async def scenario():
+        # Built by the route after the guard, then « Retirer » lands, then the response starts.
+        late = events.stream("", None, caller_of(device))
+        assert pc.delete(f"/api/remote/devices/{device['id']}").status_code == 200
+        await ends_at_once(late)
+        events.publish("task", {"id": "t1", "status": "done", "title": "Relevé", "output": "IBAN FR76…"})
+        # The same with a pause, then with remote access switched off.
+        late = events.stream("", None, caller_of(device2, IP_B))
+        remote.pause(1, by=remote.PC)
+        await ends_at_once(late)
+        remote.pause(0, by=remote.PC)
+        late = events.stream("", None, caller_of(device2, IP_B))
+        monkeypatch.setattr(tailscale, "serve_status", lambda: {"state": "absent"})
+        remote.set_enabled(False)
+        await ends_at_once(late)
+        # Already open, its device revoked without its streams being closed: the next ping ends it.
+        enable_remote(monkeypatch)
+        third, device3, _ = paired_client(monkeypatch, name="iPhone 3")
+        open_stream = await opened("", caller_of(device3))
+        control = await opened("", caller_of(device2, IP_B))
+        devices.revoke(device3["id"])
+        assert await asyncio.wait_for(_drain(open_stream), 2) == []
+        got = await asyncio.wait_for(anext(control), 2)
+        assert got == events.PING  # an allowed phone's stream goes on
+        await control.aclose()
+    asyncio.run(scenario())
+    assert not [s for s in events._subscribers if s.caller is not None]
+
 
 def test_a_removed_device_loses_the_ntfy_topic_too_holds(monkeypatch, pc, alerts):
     """The ntfy topic is the only key to the notifications and every paired
@@ -2043,7 +2130,53 @@ def test_equal_pc_and_serve_ports_never_make_the_pc_page_remote_holds(monkeypatc
     assert local.get("/api/config", headers=AUTH).json()["remote"] is False
     enable_remote(monkeypatch)
     r = remote_client(token="x").get("/api/config")
-    assert r.status_code == 403 and r.json()["detail"] == remote.T_PROXY
+    # What Serve hands to that port is refused, and the phone is told the real cause (no antivirus).
+    assert r.status_code == 403 and r.json()["detail"] == remote.T_SAME_PORT_PAGE
+    page = remote_client().get("/", headers={"Sec-Fetch-Site": "none", "Sec-Fetch-Dest": "document"})
+    assert page.status_code == 403 and "JARVIS_REMOTE_PORT doit différer de JARVIS_PORT" in page.text
+    assert "antivirus" not in page.text and page_token(page.text) == ""
+
+
+def test_a_raw_tcp_forward_to_jarvis_closes_remote_access_holds(monkeypatch):
+    """`tailscale serve --tcp` or `--tls-terminated-tcp` to the Serve port hands
+    raw connections to JARVIS: any tailnet node could write the Host,
+    X-Forwarded-For and Tailscale-User-Login only Serve's proxy may set (the
+    iPhone's identity, its pairing request). Once a reading of Serve (the watch,
+    Réglages, switching on, opening the pairing) sees one, every remote request
+    is refused until a reading finds it gone; a TCP forward elsewhere closes nothing."""
+    import test_tailscale as tt
+    fake = tt.FakeTailscale(serve="ready")
+    monkeypatch.setattr(tailscale, "RUN", fake)
+    monkeypatch.setattr(tailscale, "exe_path", lambda: tt.EXE)
+    tailscale.reset_memory()
+    phone, device, _ = paired_client(monkeypatch)
+    key_id, key_secret = devices.add_siri_key(device["id"])
+    assert tailscale.serve_status()["state"] == "ready" and phone.get("/api/config").status_code == 200
+    forward = {"TCP": {"443": {"HTTPS": True}, "8443": {"TCPForward": "127.0.0.1:8789"}},
+               "Web": {f"{tt.DNS}:443": tt.OURS}}
+    fake.serve = forward
+    assert tailscale.serve_status()["state"] == "tcp" and tailscale.unsafe_state() == "tcp"
+    r = phone.get("/api/config")
+    assert r.status_code == 403 and r.json()["detail"] == remote.T_SERVE_UNSAFE
+    assert last_request_reason() == "serve_unsafe"
+    assert remote_client(ip=IP_B).post("/api/remote/pair-request", json={"name": "x"}).status_code == 403
+    page = remote_client().get("/", headers={"Sec-Fetch-Site": "none", "Sec-Fetch-Dest": "document"})
+    assert page.status_code == 403 and "relais TCP" in page.text and page_token(page.text) == ""
+    assert siri_client(key_id, key_secret).post("/api/raccourci", json={"text": "?"}).text == remote.T_SERVE_UNSAFE
+    # An unreadable Serve keeps the last reading; a safe one opens again.
+    fake.serve = subprocess.TimeoutExpired("tailscale", 10)
+    assert tailscale.serve_status()["state"] == "unknown" and phone.get("/api/config").status_code == 403
+    fake.serve = tt.SERVE["ready"]
+    assert tailscale.serve_status()["state"] == "ready" and phone.get("/api/config").status_code == 200
+    # Opening the pairing reads Serve first (a TLS-terminated forward this time).
+    fake.serve = {**tt.SERVE["ready"], "TCP": {"443": {"HTTPS": True},
+                                               "5432": {"TCPForward": "127.0.0.1:8789", "TerminateTLS": tt.DNS}}}
+    remote.open_pairing()
+    assert phone.get("/api/config").status_code == 403
+    # A TCP forward to something else (SSH) is flagged in Réglages but hands nothing to JARVIS.
+    fake.serve = {**tt.SERVE["ready"], "TCP": {"443": {"HTTPS": True}, "2222": {"TCPForward": "127.0.0.1:22"}}}
+    assert tailscale.serve_status()["state"] == "tcp" and tailscale.unsafe_state() == ""
+    assert phone.get("/api/config").status_code == 200
 
 
 def test_an_impossible_serve_port_is_refused_in_french_holds(monkeypatch):

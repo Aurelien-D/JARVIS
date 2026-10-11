@@ -115,6 +115,7 @@ select.set-input, input.set-input[type="text"], input.set-input[type="password"]
 .set-lock { flex: none; width: 14px; height: 14px; fill: var(--amber); vertical-align: -2px; }
 .set-note .set-lock { margin-top: 2px; }
 .set-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.set-actions[hidden] { display: none; }
 .set-path { overflow-wrap: anywhere; color: var(--text); }
 .set-where {
   margin: 10px 0 4px; padding: 10px 12px; max-width: 70ch;

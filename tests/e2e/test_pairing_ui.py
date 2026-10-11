@@ -72,6 +72,7 @@ def test_every_refusal_state_says_why_with_a_retry(remote_page, request):
     title, sentence = TEXTS[state]
     assert norm(remote_page.text_content(".pair-title")) == title
     assert sentence in norm(remote_page.text_content(".pair-text"))
+    assert not norm(remote_page.text_content(".pair-text")).startswith(title)  # the title is not said twice
     assert remote_page.title() == "JARVIS"
     # The page never holds a token nor loads the app.
     assert remote_page.evaluate("!document.querySelector('meta[name=jarvis-token]') && !window.__jarvis")

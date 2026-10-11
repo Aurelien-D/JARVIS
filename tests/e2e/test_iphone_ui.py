@@ -236,6 +236,28 @@ def test_no_keyboard_words_on_a_touch_screen(remote_page):
     assert keyboard_words() == []
 
 
+PC_ONLY = ("Jarvis, ouvre Spotify sur l'écran de gauche", "Regarde mon écran : tu vois l'erreur ?")
+
+
+def test_aide_and_the_chips_offer_only_what_the_iphone_can_do(remote_page, jarvis):
+    """open_app and look_at_screen stay on the PC (tools.py): on the iPhone, Aide,
+    the standby chips and « Essayez : … » never offer them, and its touch list is
+    titled « Commandes tactiles » on screen; the PC keeps them, with no title."""
+    page = remote_page
+    page.locator("#topActions button", has_text="Aide").tap()
+    page.wait_for_selector("#card-aide .aide-ex")
+    offered = [plain(t) for t in page.locator("#card-aide .aide-ex").all_inner_texts()]
+    assert offered and not set(PC_ONLY) & set(offered)
+    assert "Regarde-moi avec la caméra : je suis bien coiffé ?" in offered  # the iPhone's own camera
+    assert page.locator("#card-aide .aide-keys-title").inner_text().strip().lower() == "commandes tactiles"
+    shown = plain(page.inner_text("#chips") + " " + page.inner_text("#hint"))
+    assert not [e for e in PC_ONLY if e in shown]
+    jarvis.evaluate("__jarvis.bus.emit('ui:open', 'aide')")
+    jarvis.wait_for_selector("#card-aide .aide-ex")
+    assert set(PC_ONLY) <= {plain(t) for t in jarvis.locator("#card-aide .aide-ex").all_inner_texts()}
+    assert jarvis.locator("#card-aide .aide-keys-title").count() == 0
+
+
 def test_the_pc_page_keeps_its_keyboard_words(jarvis):
     assert jarvis.get_attribute("#askInput", "placeholder") == "Écrivez à JARVIS… (Ctrl+J)"
     jarvis.evaluate("__jarvis.bus.emit('ui:open', 'aide')")

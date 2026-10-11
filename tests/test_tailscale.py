@@ -219,10 +219,24 @@ def test_serve_status_unreadable_is_unknown(ts):
 
 def test_serve_status_follows_the_remote_port(monkeypatch, ts):
     monkeypatch.setattr(config, "REMOTE_PORT", 8790)
-    assert tailscale.serve_status()["state"] == "absent"  # never published: 8789 is not JARVIS any more
-    remote.note_published(True)
-    assert tailscale.serve_status()["state"] == "wrong_target"  # published: Serve still aims at 8789
+    assert tailscale.serve_status()["state"] == "absent"  # remote access off: 8789 is not JARVIS any more
+    monkeypatch.setattr(remote, "is_enabled", lambda: True)
+    assert tailscale.serve_status()["state"] == "wrong_target"  # on: Serve still aims at 8789
     assert tailscale.manual_command() == "tailscale serve --bg --https=443 http://127.0.0.1:8790"
+
+
+def test_a_serve_port_equal_to_the_pc_port_is_named(monkeypatch, ts):
+    """JARVIS_PORT moved onto the Serve port after publishing: Serve now hands the
+    iPhone's requests to the PC page's own port (refused there). Never « prêt »:
+    a wrong target that names the clash, an error in the health check."""
+    from jarvis import health
+    monkeypatch.setattr(config, "PORT", 8789)
+    monkeypatch.setattr(remote, "is_enabled", lambda: True)
+    status = tailscale.serve_status()
+    assert status["state"] == "wrong_target"
+    assert status["detail"].startswith("JARVIS_REMOTE_PORT doit différer de JARVIS_PORT")
+    (check,) = health.check_remote()
+    assert check["level"] == "error" and "JARVIS_REMOTE_PORT doit différer" in check["message_fr"]
 
 # Another service of the user's, published with Serve: not JARVIS.
 OTHERS = {
@@ -240,15 +254,33 @@ OTHERS = {
     ("nas_beside", "ready", "wrong_target"),
 ])
 def test_other_services_count_only_once_remote_access_is_in_use(monkeypatch, ts, name, unused, in_use):
-    """Never switched on nor published: a NAS page or an SSH forward published with
-    Serve is not JARVIS (no error, no alert). Switched on or published: any of them is."""
+    """Remote access off: a NAS page or an SSH forward published with Serve is not
+    JARVIS (no error, no alert), even when JARVIS was published once (switching
+    off withdrew it; the flag only restores it). Switched on: any of them is."""
     ts.serve = OTHERS[name]
     assert tailscale.serve_status()["state"] == unused
     remote.note_published(True)
-    assert tailscale.serve_status()["state"] == in_use
-    remote.note_published(False)
+    assert tailscale.serve_status()["state"] == unused
     monkeypatch.setattr(remote, "is_enabled", lambda: True)
     assert tailscale.serve_status()["state"] == in_use
+
+
+def test_switched_off_the_users_own_services_stay_quiet(monkeypatch, ts):
+    """Remote access tried, published, then switched off (JARVIS's publication
+    withdrawn, the flag kept to restore it): monsieur's NAS published later on
+    443 is his own business: no « cible inattendue », no alert, no health error."""
+    from jarvis import health
+    from remote_helpers import enable_remote
+    enable_remote(monkeypatch)
+    remote.note_published(True)
+    remote.set_enabled(False)
+    assert remote.published() and ts.serve == {}  # withdrawn, restored when switched on again
+    ts.serve = OTHERS["nas"]
+    toasts = []
+    monkeypatch.setattr(audit.desktop, "toast", lambda title, text: toasts.append(text))
+    assert tailscale.serve_status()["state"] == "absent"
+    tailscale._watch_once()
+    assert toasts == [] and health.check_remote() == []
 
 
 @pytest.mark.parametrize("config_name, command", [
@@ -258,10 +290,16 @@ def test_other_services_count_only_once_remote_access_is_in_use(monkeypatch, ts,
     ("other_port", "tailscale serve --https=8443 off"),
 ])
 def test_each_danger_names_the_command_that_removes_just_it(ts, config_name, command):
-    """Never `tailscale serve reset`: it would delete the user's other services too."""
+    """Never `tailscale serve reset`: it would delete the user's other services too.
+    The command also comes alone, and in its PowerShell form with the install
+    path, for Réglages to show each on its own line with Copier."""
     ts.serve = SERVE[config_name]
-    detail = tailscale.serve_status()["detail"]
-    assert command in detail and "reset" not in detail
+    status = tailscale.serve_status()
+    assert command in status["detail"] and "reset" not in status["detail"]
+    assert status["fix"] == command
+    assert status["fix_full"] == command.replace("tailscale ", '& "C:\\Program Files\\Tailscale\\tailscale.exe" ', 1)
+    ts.serve = SERVE["ready"]
+    assert "fix" not in tailscale.serve_status()  # nothing to remove
 
 # ---------------------------------------------------------------- publish
 

@@ -79,3 +79,11 @@ def paired_client(monkeypatch, name="iPhone de test", ip=IP, *, login=LOGIN, **k
     assert token, "page sans jeton"
     client.headers["X-Jarvis-Token"] = token
     return client, device, token
+
+
+def allow_stamped_streams(monkeypatch) -> None:
+    """Proofs that open a phone's event stream with a stamped caller (no paired
+    device, remote access off) and test something else than its right to go on:
+    remote.stream_allowed says yes. That right itself is proven through the real
+    state in test_protections_remote.py::test_a_stream_admitted_just_before_a_revocation_ends_holds."""
+    monkeypatch.setattr(remote, "stream_allowed", lambda caller: True)

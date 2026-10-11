@@ -141,12 +141,18 @@ T_REFUSED = "Requête distante refusée."
 T_ADDRESS = "Requête distante refusée : ouvrez JARVIS à l'adresse affichée sur le PC (Réglages › Accès à distance)."
 T_BAD_PORT = "JARVIS_REMOTE_PORT invalide : choisissez un port entre 1024 et 65535."
 T_SAME_PORT = "JARVIS_REMOTE_PORT doit différer de JARVIS_PORT."
+T_SAME_PORT_PAGE = ("Requête refusée : sur le PC, JARVIS_REMOTE_PORT doit différer de JARVIS_PORT "
+                    "(fichier .env), puis Publier sur Tailscale.")
+T_SERVE_UNSAFE = ("Refusé : Tailscale transmet des connexions brutes à JARVIS (relais TCP ou Funnel). Sur le PC, "
+                  "Réglages › Accès à distance dit quoi taper, puis Revérifier.")
 T_LOGIN = "Compte Tailscale non autorisé : connectez l'iPhone avec le même compte que le PC."
 T_LOCKED = "Trop d'échecs : réessayez dans 15 minutes."
 T_SIRI_UNKNOWN = "Clé Siri inconnue : recréez-la sur le PC."
 T_SIRI_REFUSED = "Clé Siri refusée : recréez-la sur le PC."
 T_REVOKED = "Cet appareil a été retiré : associez-le à nouveau."
 T_MOVED = "Appareil associé depuis une autre adresse ou un autre compte : associez-le à nouveau."
+# iCloud syncs a Shortcut, its Siri key included, to every device of the Apple ID.
+T_SIRI_ELSEWHERE = "Cette clé Siri appartient à « {name} » : créez une clé pour cet appareil sur le PC."
 T_PAGE_KEY = "Jeton de session invalide : recharge la page."
 T_UNPAIRED = "Appareil non associé : associez-le depuis le PC."
 T_PC_ONLY = "Réservé au PC."
@@ -404,6 +410,7 @@ def set_enabled(on: bool, *, host: str | None = None, login: str | None = None, 
                 audit.event(by, "state", text=f"Publication Tailscale : {result.get('state', '?')}.")
             except Exception:  # best effort, the switch is on regardless
                 log.exception("JARVIS: publication Tailscale impossible")
+        _check_serve()
         return state_for(PC)
     if by.kind != "pc":
         raise RemoteError("Seul le PC peut couper l'accès à distance.", 403)
@@ -468,7 +475,8 @@ def set_complet(duration: str) -> float:
         raise RemoteError("Durée inconnue : Jamais, 24 h ou 7 jours.")
     until = _now() + spans[duration] if spans[duration] else 0.0
     _save_settings(complet_until=until)
-    audit.event(PC, "state", text=f"Accès complet depuis l'iPhone : {duration}.")
+    said = {"never": "jamais", "24h": "24 h", "7d": "7 jours"}[duration]
+    audit.event(PC, "state", text=f"Accès complet depuis l'iPhone : {said}.")
     if until:
         audit.alert("complet_optin", f"Accès complet depuis l'iPhone autorisé jusqu'au {_date(until)}.")
     return until
@@ -601,6 +609,15 @@ def _drop_tokens(device_id: str | None = None) -> None:
             del _tokens[h]
 
 
+def stream_allowed(caller) -> bool:
+    """May this phone's event stream go on? Remote access on, not paused, its
+    device still paired. Checked once the stream has subscribed and at every
+    ping: a stream the guard admitted just before a revocation, a switch-off or
+    a pause (which close only the streams already open) ends there."""
+    saved = _settings()
+    return _enabled_of(saved) and not _paused_of(saved) and origin_active(getattr(caller, "origin", ""))
+
+
 def keepalive(caller) -> None:
     """The device's event stream is still connected: its page tokens slide."""
     if caller is None or getattr(caller, "kind", "") != "app":
@@ -696,6 +713,7 @@ def open_pairing(minutes: int = PAIR_MINUTES) -> float:
     """Open the pairing window (PC), in memory; returns its end."""
     if not is_enabled():
         raise RemoteError(T_NEEDS_ON, 409)
+    _check_serve()
     minutes = max(1, min(PAIR_MINUTES, int(minutes)))
     until = _now() + minutes * 60
     with _lock:
@@ -1202,19 +1220,29 @@ def _refusal(status: int, text: str, where: str, state: str = "refused", plain: 
     return JSONResponse({"detail": text}, status_code=status)
 
 
-def _bound_to_node(device: dict, ip: str, caller: Caller) -> bool:
-    """A valid secret from an address of the device's own node (4.2): True. From
+def _bound_to_node(device: dict, ip: str, caller: Caller) -> str:
+    """A valid secret from an address of the device's own node (4.2): "". From
     another address: the node's other one (whois) is learnt; another machine
-    means the secret was copied, and the device is revoked."""
+    means a device cookie was copied, and the device is revoked. Else the
+    sentence the refusal answers with.
+
+    A Siri key from another machine is only refused: iCloud syncs the Shortcut,
+    its key included, to the other iPhone, iPad or Mac of the Apple ID, so the
+    key's own iPhone did nothing wrong and keeps its pairing (a device cookie
+    never leaves its browser)."""
     from . import audit
     if ip in device["ips"]:
-        return True
+        return ""
     node = str(_whois(ip).get("node_id") or "")
     if node and device["node_id"] and node == device["node_id"]:
         devices.add_ip(device["id"], ip)
-        return True
+        return ""
     who = Caller(kind=caller.kind, device_id=device["id"], key_id=caller.key_id, ip=ip, login=caller.login,
                  name=device["name"])
+    if node and device["node_id"] and caller.kind == "siri":
+        audit.alert("ip_change", f"Clé Siri de « {device['name']} » utilisée depuis un autre appareil : "
+                                 "refusée.", who)
+        return T_SIRI_ELSEWHERE.format(name=device["name"])
     if node and device["node_id"]:
         revoke_device(device["id"], by=who)
         renew_notify_topic()  # whoever copied the secret may have read the topic too
@@ -1222,7 +1250,24 @@ def _bound_to_node(device: dict, ip: str, caller: Caller) -> bool:
                                      "appareil retiré.", who)
     else:  # whois could not tell: refused, kept
         audit.alert("ip_change", f"« {device['name']} » utilisé depuis une autre machine : refusé.", who)
-    return False
+    return T_MOVED
+
+
+def _serve_unsafe() -> str:
+    """tailscale.unsafe_state(): the last Serve reading (the watch, Réglages,
+    publishing, switching on, opening the pairing) saw a Funnel or a raw TCP
+    forward reach JARVIS."""
+    from . import tailscale
+    return tailscale.unsafe_state()
+
+
+def _check_serve() -> None:
+    """A fresh Serve reading before what opens remote access (best effort)."""
+    from . import tailscale
+    try:
+        tailscale.serve_status()
+    except Exception:  # noqa: BLE001 - the watch reads it again within 10 minutes
+        log.exception("JARVIS: lecture de Tailscale Serve impossible")
 
 
 def _touch(caller: Caller) -> None:
@@ -1271,10 +1316,16 @@ def _decide(ask: _Ask, app) -> _Verdict:
     # 2. Only the Serve listener is a remote door (never the PC's own port, even
     #    when JARVIS_REMOTE_PORT names it).
     if not on_serve_port:
+        if serve_port() is None:  # Serve aims at the PC page's own port: say so, no antivirus is to blame
+            return refuse(403, T_SAME_PORT_PAGE, "proxy_on_pc_port", plain=T_SAME_PORT_PAGE, throttle=unverified)
         return refuse(403, T_PROXY, "proxy_on_pc_port", plain=T_PROXY, throttle=unverified)
     # 3. iOS probes these icons on its own: a quiet 404.
     if path in QUIET_PATHS:
         return _Verdict(caller=base, response=Response(status_code=404), route=route, quiet=True)
+    # 3b. A raw TCP forward (or Funnel) reaching JARVIS lets any tailnet node write
+    #     the headers below: closed until a reading of Serve finds it gone (fail closed).
+    if _serve_unsafe():
+        return refuse(403, T_SERVE_UNSAFE, "serve_unsafe", plain=T_SERVE_UNSAFE, throttle=unverified)
     saved = _settings()
     pair_asset = reading and path in PAIR_ASSETS
     # 4. Off (remote.json's switch; READY False would count as off too).
@@ -1343,8 +1394,9 @@ def _decide(ask: _Ask, app) -> _Verdict:
             return refuse(401, T_SIRI_REFUSED, "unpaired")
         device, _ = found
         who = Caller(kind="siri", device_id=device["id"], key_id=key_id, ip=ip, login=login, name=device["name"])
-        if not _bound_to_node(device, ip, who):
-            return refuse(403, T_MOVED, "ip", caller=who)
+        moved = _bound_to_node(device, ip, who)
+        if moved:
+            return refuse(403, moved, "ip", caller=who)
         if login != device["login"]:
             audit.alert("login_change", f"Compte Tailscale inattendu pour « {device['name']} » : refusé.", who)
             return refuse(403, T_MOVED, "login", caller=who)
@@ -1373,8 +1425,9 @@ def _decide(ask: _Ask, app) -> _Verdict:
                         _fail(("ip", ip), ip)
                 else:
                     who = Caller(kind="app", device_id=device["id"], ip=ip, login=login, name=device["name"])
-                    if not _bound_to_node(device, ip, who):
-                        return refuse(403, T_MOVED, "ip", caller=who)
+                    moved = _bound_to_node(device, ip, who)
+                    if moved:
+                        return refuse(403, moved, "ip", caller=who)
                     if login != device["login"]:
                         audit.alert("login_change", f"Compte Tailscale inattendu pour « {device['name']} » : "
                                                     "refusé.", who)

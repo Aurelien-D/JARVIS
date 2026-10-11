@@ -5,7 +5,7 @@ A full-access routine is never created from here (it needs monsieur's "oui"
 through the voice tool's confirmation), and an existing one's instruction
 and frequency can't be changed: only its label and its time, and only from
 the PC (a phone may still delete it). What is added from a phone carries
-its origin (via).
+its origin (via); a phone rewrites the instruction of its own routines only.
 """
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -15,6 +15,7 @@ from . import remarques, scheduler
 router = APIRouter()
 
 COMPLET_PC_ONLY = "Routine avec accès complet : modifiable sur le PC seulement."
+TEXT_ELSEWHERE = "Instruction de cette routine : modifiable sur le PC seulement."
 
 
 class ScheduleIn(BaseModel):
@@ -75,9 +76,23 @@ def add_schedule(body: ScheduleIn, request: Request):
     return {"ok": True, "item": item, "scheduled": scheduler.describe(item)}
 
 
+def _own_instruction_only(request: Request, item_id: str, text) -> None:
+    """A phone rewrites only the instruction of a routine it created itself: a
+    PC routine keeps running as the PC's (its origin never becomes inactive),
+    so words written from a phone must not outlive that phone's removal (403)."""
+    caller = _caller(request)
+    if text is None or not caller.remote:
+        return
+    item = next((i for i in scheduler.items() if i["id"] == item_id), None)
+    if item is not None and item.get("kind") == "task" and (item.get("via") or "pc") != caller.origin \
+            and str(text).strip() != item.get("text"):
+        raise HTTPException(403, TEXT_ELSEWHERE)
+
+
 @router.patch("/api/schedules/{item_id}")
 def edit_schedule(item_id: str, body: ScheduleEdit, request: Request):
     _pc_only_if_complet(request, item_id)
+    _own_instruction_only(request, item_id, body.text)
     try:
         item = scheduler.update(item_id, title=body.title, text=body.text, at=body.at,
                                 delay_minutes=body.delay_minutes, due=body.due, repeat=body.repeat,

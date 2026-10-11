@@ -20,7 +20,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from remote_helpers import IP, LOGIN, as_caller, remote_client
+from remote_helpers import IP, LOGIN, allow_stamped_streams, as_caller, remote_client
 from starlette.requests import Request
 
 import server
@@ -30,6 +30,12 @@ AUTH = {"X-Jarvis-Token": security.TOKEN}
 PHONE = remote.Caller(kind="app", device_id="d_0123456789abcdef", ip=IP, login=LOGIN, name="iPhone de test")
 OTHER_PHONE = remote.Caller(kind="app", device_id="d_fedcba9876543210", ip=IP, login=LOGIN, name="iPhone 2")
 SIRI = remote.Caller(kind="siri", device_id=PHONE.device_id, key_id="k_0123456789abcdef", ip=IP, login=LOGIN)
+
+
+@pytest.fixture(autouse=True)
+def stamped_streams(monkeypatch):
+    """These proofs open phone streams with stamped callers (remote_helpers.allow_stamped_streams)."""
+    allow_stamped_streams(monkeypatch)
 
 
 @pytest.fixture(autouse=True)
