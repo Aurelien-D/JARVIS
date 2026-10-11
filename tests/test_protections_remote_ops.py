@@ -130,12 +130,33 @@ def test_tray_kill_switch_only_toggles_remote_access_holds(monkeypatch, caplog):
 
 
 def test_the_tray_kill_switch_with_the_real_module_says_why_it_cannot(monkeypatch):
-    """This version's remote module refuses (READY is False): the tray says so and changes nothing."""
+    """The real remote module (READY since C2) on a fresh install: the tray cannot
+    switch remote access on before Réglages has an address, nor without a daily
+    cap; it says why in French and changes nothing. With both, it switches it on
+    and off, the PC's own switch."""
+    from jarvis import config, listener, store
     notes = []
     monkeypatch.setattr(shell, "notify", lambda title, body: notes.append(body) or True)
+    monkeypatch.setattr(listener, "start", lambda: {"running": True, "port": config.REMOTE_PORT, "error": ""})
+    monkeypatch.setattr(listener, "stop", lambda: None)
+    assert remote.READY is True
     shell._toggle_remote(None)
-    assert notes == ["Accès à distance pas encore disponible dans cette version."]
+    assert notes == ["Activez-le d'abord dans Réglages › Accès à distance."]
     assert remote.is_enabled() is False and shell._remote_on() is False
+    assert store.load(remote.REMOTE_FILE, None) is None  # nothing saved
+    # The address and account confirmed in Réglages, but no daily cap: still off, and it says why.
+    monkeypatch.setattr(config, "REMOTE_HOST", "jarvis-pc.tail0000.ts.net")
+    monkeypatch.setattr(config, "REMOTE_LOGINS", "monsieur@example.com")
+    monkeypatch.setattr(config, "DAILY_BUDGET_USD", 0)
+    shell._toggle_remote(None)
+    assert notes[-1].startswith("Fixez d'abord un plafond de dépense par jour")
+    assert remote.is_enabled() is False and shell._remote_on() is False
+    # With a cap: the tray is the PC's own switch, on then off.
+    monkeypatch.setattr(config, "DAILY_BUDGET_USD", 5.0)
+    shell._toggle_remote(None)
+    assert notes[-1] == "Accès à distance activé." and remote.is_enabled() and shell._remote_on()
+    shell._toggle_remote(None)
+    assert notes[-1] == "Accès à distance coupé." and remote.is_enabled() is False
 
 # ---------------------------------------------------------------- 30. Publier sur Tailscale
 

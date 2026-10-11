@@ -117,7 +117,7 @@ def test_stop_closes_the_remote_streams_first(port, monkeypatch):
 
 def test_start_if_enabled_follows_the_switch(port, monkeypatch):
     listener.start_if_enabled()
-    assert listener.state()["running"] is False  # off (and READY False)
+    assert listener.state()["running"] is False  # off (no remote.json: off by default)
     monkeypatch.setattr(remote, "is_enabled", lambda: True)
     listener.start_if_enabled()
     assert listener.state()["running"] is True

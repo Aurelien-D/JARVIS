@@ -4,7 +4,10 @@ Scaffold (A0):
 - P0-1: a proxy header or the Serve port makes a request remote, whatever its
   Host; the remote path never hands out nor accepts the PC's page token.
 - P0-2: every listener binds the literal 127.0.0.1 and trusts no forwarded header.
-- P0-2b: remote access cannot be switched on before remote.READY.
+- P0-2b (C2): remote.READY is True because every P0 row of spec section 8 maps
+  to an existing proof (checked here, row by row), and READY opens nothing by
+  itself: on a fresh install remote access is off, the Serve listener is not
+  started and every remote request is refused.
 - P0-25: a phone's event stream never takes part in the election, never hears
   the PC's controls and never silences the PC's toasts; P1: at most 4 streams
   per device.
@@ -18,6 +21,15 @@ port, so __Host- cookies and the classifier work as with Tailscale Serve):
   revocation, the route table, harmless settings, lockouts per credential and
   address, remote voice cost, the audit trail, alerts, safe headers, the opt-in;
   P1: at most 5 devices and 2 Siri keys each.
+
+Final proof (C2), through the real gate where A2 and A3 stamp the caller:
+- P0-1: a paired phone never reads the PC's token in any route it may open.
+- P0-12: the route table is exactly the spec's (3.14), nothing wider.
+- P0-11 and 19 to 23: a paired phone's tools, cards, full access, routines and
+  sessions, with the PC's real opt-in and real alerts; its revocation cancels
+  its real cards and its real running task.
+- P0-25 to 27: its presence is ignored, its replay starts at its real pairing,
+  its inbox is its own.
 """
 import ast
 import asyncio
@@ -27,6 +39,7 @@ import json
 import logging
 import re
 import socket
+import sys
 import time
 from datetime import date
 from pathlib import Path
@@ -46,6 +59,7 @@ from remote_helpers import (
     remote_headers,
 )
 from test_security import served_routes
+from test_tasks import FAKE_CLAUDE, wait
 
 import server
 from jarvis import (
@@ -63,9 +77,11 @@ from jarvis import (
     scheduler,
     security,
     settings,
+    shell,
     store,
     tailscale,
     tasks,
+    tools,
     usage,
 )
 
@@ -215,24 +231,249 @@ def test_server_binds_loopback_only_holds():
     assert not re.search(r"^(HOST|BIND\w*|LISTEN\w*)\s*=", config_src, re.MULTILINE)
     assert '"JARVIS_HOST"' not in config_src
 
-# ---------------------------------------------------------------- P0-2b: the release gate
+# ---------------------------------------------------------------- P0-2b: the release gate (C2)
 
-def test_remote_access_cannot_be_enabled_before_ready_holds():
-    assert remote.READY is False
-    store.save("remote.json", {"enabled": True, "host": REMOTE_HOST, "logins": [LOGIN], "paused_until": 0,
-                               "complet_until": 0, "published": True, "changed_at": 1, "changed_by": "pc"})
-    assert remote.is_enabled() is False
-    with pytest.raises(remote.RemoteError):
+P = "tests/test_protections_remote.py::"
+TOOLS = "tests/test_protections_remote_tools.py::"
+EVENTS = "tests/test_protections_remote_events.py::"
+OPS = "tests/test_protections_remote_ops.py::"
+SIRI_P = "tests/test_protections_siri.py::"
+NTFY = "tests/test_notify.py::"
+UI = "tests/e2e/test_protections_remote_ui.py::"
+# Every P0 row of spec section 8, with the tests that prove it: the ones the row
+# names, then the real-gate proofs C2 added. READY is True only while each exists.
+P0_PROOFS = {
+    "1": (P + "test_serve_request_with_a_spoofed_local_host_is_remote_holds",
+          P + "test_requests_on_the_serve_port_are_remote_holds",
+          P + "test_pc_token_is_never_accepted_on_the_remote_path_holds"),
+    "1b": (P + "test_proxy_headers_on_the_pc_port_are_refused_holds",
+           P + "test_equal_pc_and_serve_ports_never_make_the_pc_page_remote_holds"),
+    "2": (P + "test_server_binds_loopback_only_holds",),
+    "2b": (P + "test_remote_access_is_ready_and_every_p0_proof_exists_holds",
+           P + "test_ready_opens_nothing_on_a_fresh_install_holds"),
+    "3": (P + "test_remote_host_is_exact_and_never_a_wildcard_holds",
+          P + "test_remote_origin_must_be_the_exact_https_origin_holds",
+          P + "test_forwarded_proto_and_tailnet_address_are_required_holds",
+          P + "test_funnel_and_anonymous_tailnet_requests_are_refused_holds",
+          P + "test_forged_funnel_requests_never_flood_the_pc_with_alerts_holds"),
+    "4": (P + "test_remote_access_is_off_by_default_and_closed_while_off_holds",
+          P + "test_remote_access_turns_on_only_from_the_pc_with_a_cap_holds",
+          P + "test_ready_opens_nothing_on_a_fresh_install_holds"),
+    "4b": (P + "test_switching_off_cuts_remote_streams_and_the_listener_holds",
+           P + "test_switching_off_withdraws_the_serve_configuration_holds"),
+    "5": (P + "test_the_phone_can_pause_but_never_resume_or_enable_holds",),
+    "6": (P + "test_pairing_window_and_approval_are_pc_only_holds",
+          P + "test_device_secret_is_delivered_once_to_the_requesting_browser_holds",
+          P + "test_pairing_requests_are_rate_limited_and_expire_holds",
+          P + "test_pairing_poll_for_ten_minutes_is_not_rate_limited_holds",
+          P + "test_one_waiting_pairing_request_per_address_even_when_concurrent_holds"),
+    "7": (P + "test_device_secret_is_stored_hashed_and_never_returned_or_logged_holds",
+          P + "test_device_cookie_is_host_prefixed_httponly_secure_strict_holds",
+          UI + "test_real_gate_end_to_end_holds"),
+    "8": (P + "test_device_cookie_from_another_address_or_login_is_refused_holds",),
+    "9": (P + "test_remote_api_needs_both_cookie_and_its_own_page_token_holds",),
+    "10": (P + "test_unpaired_remote_page_holds_no_token_holds",),
+    "11": (P + "test_revoked_device_is_refused_at_once_and_its_streams_and_requests_end_holds",
+           P + "test_phone_tools_and_requests_hold_through_the_real_gate_holds",
+           SIRI_P + "test_revoking_a_device_stops_its_siri_conversation_and_workers_holds",
+           UI + "test_real_gate_end_to_end_holds"),
+    "12": (P + "test_every_route_is_pc_only_unless_listed_for_remote_holds",
+           P + "test_siri_key_reaches_only_the_raccourci_endpoint_holds",
+           "tests/test_remote_api.py::test_iphone_only_routes_refuse_the_pc",
+           P + "test_the_remote_route_table_is_exactly_the_spec_table_holds"),
+    "13": (P + "test_remote_only_harmless_settings_change_from_the_phone_holds",),
+    "14": (P + "test_auth_failures_lock_only_the_failing_credential_holds",),
+    "15": (P + "test_remote_voice_needs_a_daily_cap_and_respects_it_holds",
+           P + "test_remote_voice_minting_is_rate_limited_per_device_holds",
+           P + "test_concurrent_voice_mints_respect_the_per_device_limit_holds"),
+    "16": (P + "test_remote_usage_reports_are_bounded_holds",),
+    "17": (P + "test_every_remote_request_is_audited_without_secrets_holds",
+           "tests/test_web_surface.py::test_the_serve_listener_never_logs_the_phone_token_holds"),
+    "18": (P + "test_pc_is_alerted_of_sensitive_remote_events_holds",
+           P + "test_a_flood_of_repeated_alerts_never_pushes_an_earlier_one_out_holds"),
+    "18b": (P + "test_remote_responses_carry_csp_and_safe_headers_holds",),
+    "18c": (P + "test_complet_optin_is_pc_only_holds", P + "test_complet_optin_expires_by_itself_holds"),
+    "19": (TOOLS + "test_remote_tool_allowlist_is_enforced_by_the_server_holds",
+           P + "test_phone_tools_and_requests_hold_through_the_real_gate_holds"),
+    "20": (TOOLS + "test_complet_from_the_phone_is_refused_unless_opted_in_on_the_pc_holds",
+           TOOLS + "test_opted_in_complet_runs_only_on_the_phone_button_never_by_voice_holds",
+           TOOLS + "test_decide_rechecks_the_optin_and_the_taint_holds",
+           P + "test_phone_tools_and_requests_hold_through_the_real_gate_holds"),
+    "21": (TOOLS + "test_pc_actions_from_the_phone_wait_for_the_phone_button_holds",
+           TOOLS + "test_open_url_from_the_phone_never_opens_on_the_pc_holds",
+           P + "test_phone_tools_and_requests_hold_through_the_real_gate_holds"),
+    "21b": (TOOLS + "test_phone_can_never_create_or_retime_a_complet_routine_holds",
+            P + "test_phone_tools_and_requests_hold_through_the_real_gate_holds"),
+    "22": (TOOLS + "test_phone_can_cancel_any_request_but_approve_only_its_own_holds",
+           P + "test_phone_tools_and_requests_hold_through_the_real_gate_holds"),
+    "23": (TOOLS + "test_sessions_are_bound_to_their_origin_holds",
+           TOOLS + "test_taint_is_inherited_only_within_one_origin_holds",
+           P + "test_phone_tools_and_requests_hold_through_the_real_gate_holds"),
+    "23b": (TOOLS + "test_remote_sessions_never_evict_or_launder_a_pc_session_holds",),
+    "24": ("tests/test_protections_confirm.py::test_tainted_session_parks_web_research_with_its_full_prompt_holds",
+           "tests/test_protections_confirm.py::test_tainted_session_parks_remember_holds"),
+    "24b": (TOOLS + "test_siri_needing_confirmation_creates_no_pending_holds",
+            SIRI_P + "test_siri_refuses_anything_needing_confirmation_holds"),
+    "25": (P + "test_remote_stream_never_becomes_leader_holds",
+           P + "test_remote_stream_drops_pc_control_events_holds",
+           P + "test_a_phone_stream_never_silences_pc_toasts_holds",
+           EVENTS + "test_remote_presence_and_claims_are_ignored_holds",
+           P + "test_phone_streams_and_inbox_hold_through_the_real_gate_holds"),
+    "26": (EVENTS + "test_remote_fresh_stream_replays_nothing_holds",
+           EVENTS + "test_remote_replay_never_goes_before_pairing_holds",
+           EVENTS + "test_pc_only_events_never_reach_a_remote_stream_holds",
+           P + "test_phone_streams_and_inbox_hold_through_the_real_gate_holds"),
+    "27": (EVENTS + "test_inbox_is_split_by_origin_holds",
+           UI + "test_pc_never_speaks_phone_results_holds",
+           UI + "test_remote_page_ignores_the_pc_busy_screen_holds",
+           P + "test_phone_streams_and_inbox_hold_through_the_real_gate_holds"),
+    "27b": (UI + "test_remote_alert_text_renders_as_plain_text_holds",),
+    "28": (UI + "test_wake_word_is_off_on_remote_and_ios_pages_holds",),
+    "29": (OPS + "test_tray_kill_switch_only_toggles_remote_access_holds",
+           "tests/test_protections_wave2.py::test_hotkey_and_tray_do_no_more_than_the_page_buttons_holds",
+           OPS + "test_the_tray_kill_switch_with_the_real_module_says_why_it_cannot"),
+    "30": (OPS + "test_publish_runs_only_the_fixed_command_without_a_shell_holds",
+           OPS + "test_serve_health_flags_funnel_tcp_and_wrong_target_holds"),
+    "30b": ("tests/e2e/test_remote_settings_ui.py::test_remote_strings_render_as_text_holds",),
+    "31": (SIRI_P + "test_siri_never_reaches_files_full_access_memory_or_the_pc_holds",
+           SIRI_P + "test_siri_refuses_anything_needing_confirmation_holds",
+           SIRI_P + "test_siri_refuses_web_research_in_a_tainted_conversation_holds",
+           SIRI_P + "test_siri_conversation_is_kept_server_side_and_bound_to_its_key_holds",
+           SIRI_P + "test_siri_rate_limits_daily_cap_and_task_caps_hold_holds",
+           SIRI_P + "test_siri_answers_within_the_deadline_holds",
+           SIRI_P + "test_siri_key_is_handed_once_to_its_own_paired_app_holds",
+           SIRI_P + "test_revoking_a_device_stops_its_siri_conversation_and_workers_holds",
+           SIRI_P + "test_pausing_or_switching_off_access_tells_no_late_siri_answer_holds"),
+    "32": (NTFY + "test_notifications_carry_minimal_text_only_holds",
+           NTFY + "test_topic_never_reaches_logs_or_errors_holds",
+           NTFY + "test_a_failing_ntfy_never_breaks_publish_holds",
+           NTFY + "test_ntfy_server_must_be_https_or_local_holds",
+           EVENTS + "test_every_reminder_and_siri_result_reaches_the_phone_holds"),
+}
+# The P0 rows of spec section 8, in its order (1 to 32 and their lettered rows).
+P0_ROWS = ("1", "1b", "2", "2b", "3", "4", "4b", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15",
+           "16", "17", "18", "18b", "18c", "19", "20", "21", "21b", "22", "23", "23b", "24", "24b", "25", "26",
+           "27", "27b", "28", "29", "30", "30b", "31", "32")
+# Its P1 rows, with their proofs (the two last ones are C2's).
+P1_PROOFS = (
+    EVENTS + "test_remote_replay_is_limited_to_ten_minutes_holds",
+    P + "test_device_and_key_counts_are_capped_holds",
+    P + "test_streams_per_device_are_capped_holds",
+    "tests/test_health.py::test_remote_check_reports_serve_state",
+    "tests/e2e/test_remote_settings_ui.py::test_phone_pause_asks_first_holds",
+    "tests/e2e/test_iphone_ui.py::test_pending_confirmation_comes_first_in_the_sheet",
+    UI + "test_remote_pages_run_under_the_csp_holds",
+    UI + "test_real_gate_end_to_end_holds",
+)
+
+
+def _collected(path: str) -> dict:
+    """The test functions a file defines at its top level (what pytest collects
+    there), name -> their decorators' source, read from the file itself."""
+    tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
+    return {node.name: [ast.unparse(d) for d in node.decorator_list] for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")}
+
+
+def _e2e_marked(path: str) -> bool:
+    text = (ROOT / path).read_text(encoding="utf-8")
+    return re.search(r"^pytestmark = pytest\.mark\.e2e$", text, re.MULTILINE) is not None
+
+
+def test_remote_access_is_ready_and_every_p0_proof_exists_holds(monkeypatch):
+    """READY is True only because every P0 row of spec section 8 has its proof:
+    each node id below names a test function its file defines (collected from
+    the source), never skipped nor expected to fail, an e2e one in a file the
+    e2e run collects. The full unit and e2e runs make them pass."""
+    assert remote.READY is True and remote.state_for(remote.PC)["ready"] is True
+    assert tuple(P0_PROOFS) == P0_ROWS  # every row, in order, nothing else
+    files = {}
+    for row, proofs in [*P0_PROOFS.items(), ("P1", P1_PROOFS)]:
+        assert proofs and len(set(proofs)) == len(proofs), row
+        for node_id in proofs:
+            path, sep, name = node_id.partition("::")
+            assert sep and path.startswith("tests/") and path.endswith(".py"), node_id
+            if path not in files:
+                files[path] = _collected(path)
+            assert name in files[path], f"P0 {row}: {node_id} n'existe pas"
+            assert not [d for d in files[path][name] if "skip" in d or "xfail" in d], node_id
+            assert path.startswith("tests/e2e/") == _e2e_marked(path), node_id
+    # What READY guards still holds: a version held back counts as off,
+    # whatever remote.json says, and its switch refuses.
+    enable_remote(monkeypatch)
+    assert remote.is_enabled() is True
+    monkeypatch.setattr(remote, "READY", False)
+    assert remote.is_enabled() is False and remote.state_for(remote.PC)["ready"] is False
+    with pytest.raises(remote.RemoteError, match="pas encore disponible"):
         remote.set_enabled(True, host=REMOTE_HOST, login=LOGIN)
-    assert remote.is_enabled() is False
-    listener.start_if_enabled()
-    assert listener.state()["running"] is False
-    # From the PC page: refused too, and nothing was switched on.
-    pc = TestClient(server.app, base_url="http://127.0.0.1:8788")
-    r = pc.post("/api/remote/state", headers=AUTH, json={"enabled": True, "host": REMOTE_HOST, "login": LOGIN})
-    assert r.status_code >= 400 and remote.is_enabled() is False
-    # And the phone still meets a closed door.
-    assert remote_client().get("/").status_code == 403
+    r = remote_client().get("/api/config")
+    assert r.status_code == 403 and r.json()["detail"] == remote.T_OFF
+
+
+def test_ready_opens_nothing_on_a_fresh_install_holds(monkeypatch):
+    """READY True on a fresh data folder: JARVIS starts (its lifespan runs) with
+    remote access off, the Serve listener not started, nothing asked of Tailscale
+    but reads, and every remote request refused, even with a Serve name and an
+    account in .env and a daily cap. Only the PC's switch opens it."""
+    assert remote.READY is True
+    assert not (config.DATA_DIR / remote.REMOTE_FILE).exists()
+    port = free_port()
+    monkeypatch.setattr(config, "REMOTE_PORT", port)
+    asked, published_ = [], []
+
+    def run(args, timeout):
+        asked.append(list(args))
+        raise FileNotFoundError("tailscale")
+    monkeypatch.setattr(tailscale, "RUN", run)
+    monkeypatch.setattr(tailscale, "publish", lambda: published_.append(1) or {"ok": True, "state": "ready"})
+    with TestClient(server.app, base_url="http://127.0.0.1:8788", headers=AUTH) as pc:  # startup and shutdown
+        assert listener.state() == {"running": False, "port": port, "error": ""}
+        with pytest.raises(OSError), socket.create_connection(("127.0.0.1", port), timeout=2):
+            pass  # nothing listens on the Serve port
+        state = pc.get("/api/remote/state").json()
+        assert (state["ready"], state["enabled"], state["listener"]["running"], state["devices"]) == \
+            (True, False, False, [])
+        assert remote.is_enabled() is False and shell._remote_on() is False
+        # Even when .env names this PC's Serve name and account, and a cap is set.
+        monkeypatch.setattr(config, "REMOTE_HOST", REMOTE_HOST)
+        monkeypatch.setattr(config, "REMOTE_LOGINS", LOGIN)
+        monkeypatch.setattr(config, "DAILY_BUDGET_USD", 5.0)
+        listener.start_if_enabled()
+        assert listener.state()["running"] is False and remote.is_enabled() is False
+        phone = remote_client()
+        events._closing.set()  # a stream that did open would end at once
+        checked = 0
+        for path, methods in sorted(served_routes().items()):
+            url = "/static/js/main.js" if "MOUNT" in methods else re.sub(r"\{[^}]+\}", "x", path)
+            for method in sorted((methods - {"HEAD", "OPTIONS", "MOUNT"}) or {"GET"}):
+                r = phone.request(method, url)
+                assert r.status_code == 403, (method, path, r.status_code)
+                if url == "/":
+                    assert 'content="off"' in r.text and page_token(r.text) == ""
+                elif path == "/api/raccourci":
+                    assert r.text == remote.T_OFF
+                else:
+                    assert r.json() == {"detail": remote.T_OFF}, (method, path)
+                checked += 1
+        assert checked > 60
+        # Only the pairing page's own public files go out (so it can say « coupé »), and the icon probes 404.
+        for asset in remote.PAIR_ASSETS:
+            assert phone.get(asset).status_code == 200
+        assert phone.get("/favicon.ico").status_code == 404
+        # A device or a Siri key left in devices.json opens nothing either.
+        device, secret = devices.add("iPhone de test", ip=IP, login=LOGIN, ips=(IP,))
+        key_id, key_secret = devices.add_siri_key(device["id"])
+        holder = remote_client()
+        holder.cookies.set(remote.COOKIE, f"{device['id']}.{secret}", domain="127.0.0.1", path="/")
+        page = holder.get("/", headers={"Sec-Fetch-Site": "none", "Sec-Fetch-Dest": "document"})
+        assert page.status_code == 403 and page_token(page.text) == "" and remote._tokens == {}
+        assert holder.get("/api/config").json()["detail"] == remote.T_OFF
+        r = siri_client(key_id, key_secret).post("/api/raccourci", json={"text": "bonjour"})
+        assert r.status_code == 403 and r.text == remote.T_OFF
+        assert listener.state()["running"] is False
+    # Nothing was published, nothing but reads asked of Tailscale, nothing saved as on.
+    assert published_ == [] and all(a[:1] == ["status"] or a[:2] == ["serve", "status"] for a in asked), asked
+    assert store.load(remote.REMOTE_FILE, None) is None and remote.is_enabled() is False
 
 # ---------------------------------------------------------------- P0-25: the phone's event stream
 
@@ -478,6 +719,17 @@ def test_pc_token_is_never_accepted_on_the_remote_path_holds(monkeypatch, minted
         r = phone.get(target, headers=headers)
         assert r.status_code == 401 and r.json()["detail"] == remote.T_PAGE_KEY, target
     assert security.TOKEN not in phone.get("/").text
+    # With its own page token, every route the phone may read answers it something: never the PC's token.
+    phone.headers["X-Jarvis-Token"] = page_token(phone.get("/").text)
+    read = 0
+    for methods, template, scopes in remote.REMOTE_ALLOW:
+        if "GET" in methods and "app" in scopes:
+            url = "/static/js/main.js" if template == "/static/{path:path}" else re.sub(r"\{[^}]+\}", "x", template)
+            r = phone.get(url)
+            assert r.status_code not in (401, 403), (url, r.status_code)
+            assert security.TOKEN not in r.text and security.TOKEN not in str(r.headers), url
+            read += 1
+    assert read > 20
 
 
 def test_proxy_headers_on_the_pc_port_are_refused_holds(monkeypatch):
@@ -575,7 +827,8 @@ def test_forwarded_proto_and_tailnet_address_are_required_holds(monkeypatch):
 
 
 def test_funnel_and_anonymous_tailnet_requests_are_refused_holds(monkeypatch, alerts):
-    # Off (READY is False): a Funnel request is still refused, and the PC hears of it.
+    # Off (as on a fresh install): a Funnel request is still refused, and the PC hears of it.
+    assert remote.is_enabled() is False
     r = remote_client(extra={"Tailscale-Funnel-Request": "?1"}).get("/api/config")
     assert r.status_code == 403 and r.json()["detail"] == remote.T_FUNNEL
     assert alerts.kinds() == ["funnel"] and alerts.hooks == [("funnel", audit.ALERTS["funnel"]["ntfy_text"])]
@@ -604,7 +857,8 @@ def test_funnel_and_anonymous_tailnet_requests_are_refused_holds(monkeypatch, al
 
 
 def test_remote_access_is_off_by_default_and_closed_while_off_holds(monkeypatch):
-    assert remote.READY is False and remote.is_enabled() is False
+    # READY (this version may be switched on) opens nothing: off until the PC turns it on.
+    assert remote.READY is True and remote.is_enabled() is False
     assert store.load(remote.REMOTE_FILE, None) is None
     assert remote.state_for(remote.PC)["enabled"] is False
     # No variable of .env can open it: none exists.
@@ -614,10 +868,13 @@ def test_remote_access_is_off_by_default_and_closed_while_off_holds(monkeypatch)
     for name in ("JARVIS_REMOTE", "JARVIS_REMOTE_ENABLED", "JARVIS_REMOTE_ACCESS"):
         monkeypatch.setenv(name, "1")
     assert remote.is_enabled() is False
-    # READY alone opens nothing: the switch stays off until the PC turns it on.
-    monkeypatch.setattr(remote, "READY", True)
     page = remote_client().get("/")
     assert page.status_code == 403 and 'content="off"' in page.text
+    # A hand-written remote.json that is not exactly « enabled: true » opens nothing.
+    for enabled in ("true", 1, "1", None, [True], {"on": True}):
+        store.save(remote.REMOTE_FILE, {"enabled": enabled, "host": REMOTE_HOST, "logins": [LOGIN]})
+        assert remote.is_enabled() is False, enabled
+    store.save(remote.REMOTE_FILE, {})
     # Off is a 403 even with a valid cookie and its token.
     phone, _, token = paired_client(monkeypatch)
     assert phone.get("/api/config").status_code == 200
@@ -627,7 +884,7 @@ def test_remote_access_is_off_by_default_and_closed_while_off_holds(monkeypatch)
         assert r.status_code == 403 and r.json()["detail"] == remote.T_OFF, path
     page = phone.get("/")
     assert page.status_code == 403 and 'content="off"' in page.text and page_token(page.text) == ""
-    # READY False counts as off, whatever remote.json says.
+    # A version held back (READY False, the test hook) counts as off, whatever remote.json says.
     store.save(remote.REMOTE_FILE, {**store.load(remote.REMOTE_FILE, {}), "enabled": True})
     assert phone.get("/api/config").status_code == 401  # on again: but switching off dropped its token
     monkeypatch.setattr(remote, "READY", False)
@@ -636,7 +893,6 @@ def test_remote_access_is_off_by_default_and_closed_while_off_holds(monkeypatch)
 
 def test_remote_access_turns_on_only_from_the_pc_with_a_cap_holds(monkeypatch, pc):
     calls = []
-    monkeypatch.setattr(remote, "READY", True)
     monkeypatch.setattr(listener, "start", lambda: calls.append("start") or
                         {"running": True, "port": config.REMOTE_PORT, "error": ""})
     monkeypatch.setattr(listener, "stop", lambda: calls.append("stop"))
@@ -684,7 +940,6 @@ def test_switching_off_cuts_remote_streams_and_the_listener_holds(monkeypatch):
     port = free_port()
     monkeypatch.setattr(config, "REMOTE_PORT", port)
     monkeypatch.setattr(config, "DAILY_BUDGET_USD", 5.0)
-    monkeypatch.setattr(remote, "READY", True)
     remote.set_enabled(True, host=REMOTE_HOST, login=LOGIN)  # the real listener
     assert listener.state() == {"running": True, "port": port, "error": ""}
     with httpx.Client(trust_env=False, timeout=5) as c:  # through the listener itself: the gate's door
@@ -1173,6 +1428,46 @@ def test_every_route_is_pc_only_unless_listed_for_remote_holds(monkeypatch, mint
     assert devices.get(device["id"])["revoked"] is False
 
 
+def test_the_remote_route_table_is_exactly_the_spec_table_holds():
+    """Deny by default, and no wider than spec 3.14: a route opened to the phone
+    or Siri later has to be opened here too, on purpose."""
+    spec = {("GET", "/"): {"open", "app"}, ("GET", "/static/{path:path}"): {"open", "app"},
+            ("GET", "/healthz"): {"open", "app"}, ("POST", "/api/remote/pair-request"): {"open", "app"},
+            ("GET", "/api/remote/pair-status"): {"open", "app"}, ("POST", "/api/raccourci"): {"siri"}}
+    app_only = {
+        "GET": ("/api/config", "/api/onboarding", "/api/delivery", "/api/ares", "/api/remarques", "/api/pending",
+                "/api/inbox", "/api/remote/state", "/api/notify", "/api/remote/siri-key", "/api/task/{task_id}",
+                "/api/task/{task_id}/log", "/api/tasks", "/api/schedules", "/api/journal", "/api/usage",
+                "/api/settings", "/api/memory", "/api/events"),
+        "POST": ("/api/tasks", "/api/schedules", "/api/journal", "/api/usage", "/api/session", "/api/tool",
+                 "/api/presence", "/api/dnd", "/api/voice/turn", "/api/voice/taint", "/api/task/{task_id}/cancel",
+                 "/api/task/{task_id}/retry", "/api/schedules/{item_id}/snooze", "/api/remarques/{key}/dismiss",
+                 "/api/undo/{fact_id}", "/api/inbox/{item_id}/ack", "/api/pending/{pending_id}/decide",
+                 "/api/remote/pause", "/api/remote/forget", "/api/notify/test"),
+        "PUT": ("/api/settings",),
+        "PATCH": ("/api/schedules/{item_id}", "/api/memory/{fact_id}"),
+        "DELETE": ("/api/schedules/{item_id}", "/api/memory/{fact_id}"),
+    }
+    for method, paths in app_only.items():
+        for path in paths:
+            spec[(method, path)] = {"app"}
+    code = {}
+    for methods, template, scopes in remote.REMOTE_ALLOW:
+        for method in methods:
+            assert (method, template) not in code, (method, template)  # one line per route
+            code[(method, template)] = set(scopes)
+    assert code == spec
+    # What stays PC-only (spec 3.14), named: none of it is in the table.
+    for method, path in (("POST", "/api/shutdown"), ("POST", "/api/autostart"), ("POST", "/api/settings/openai-key"),
+                         ("POST", "/api/settings/open-data"), ("POST", "/api/task/{task_id}/reveal"),
+                         ("DELETE", "/api/journal"), ("POST", "/api/onboarding"), ("GET", "/api/health"),
+                         ("POST", "/api/notify/topic"), ("POST", "/api/remote/state"), ("POST", "/api/remote/pairing"),
+                         ("GET", "/api/remote/devices"), ("POST", "/api/remote/complet"),
+                         ("POST", "/api/remote/devices/{device_id}/siri-key"),
+                         ("DELETE", "/api/remote/siri-keys/{key_id}")):
+        assert (method, path) not in code, (method, path)
+
+
 def test_siri_key_reaches_only_the_raccourci_endpoint_holds(monkeypatch, clock):
     phone, device, _ = paired_client(monkeypatch)
     key_id, secret = devices.add_siri_key(device["id"])
@@ -1421,7 +1716,6 @@ def test_every_remote_request_is_audited_without_secrets_holds(monkeypatch, pc):
 
 
 def test_pc_is_alerted_of_sensitive_remote_events_holds(monkeypatch, pc, alerts):
-    monkeypatch.setattr(remote, "READY", True)
     monkeypatch.setattr(listener, "start", lambda: {"running": True, "port": config.REMOTE_PORT, "error": ""})
     monkeypatch.setattr(listener, "stop", lambda: None)
     monkeypatch.setattr(config, "DAILY_BUDGET_USD", 5.0)
@@ -1753,7 +2047,6 @@ def test_equal_pc_and_serve_ports_never_make_the_pc_page_remote_holds(monkeypatc
 
 
 def test_an_impossible_serve_port_is_refused_in_french_holds(monkeypatch):
-    monkeypatch.setattr(remote, "READY", True)
     monkeypatch.setattr(config, "DAILY_BUDGET_USD", 5.0)
     for port in (87890, 65536, 0, -1):
         monkeypatch.setattr(config, "REMOTE_PORT", port)
@@ -1786,3 +2079,188 @@ def test_a_refused_page_explains_itself_without_its_files_holds(monkeypatch):
         plain(remote_client(**kw).get("/"), remote.T_ADDRESS)
         r = remote_client(**kw).get("/api/config")
         assert r.status_code == 403 and r.json()["detail"] == remote.T_REFUSED
+
+# ================================================================ final proof (C2): through the real gate
+
+COMPLET = {"title": "Ranger les téléchargements", "prompt": "Range ~/Downloads par type", "profile": "complet"}
+ROUTINE = {"kind": "task", "title": "Ménage", "text": "Vide la corbeille chaque matin", "at": "08:00",
+           "repeat": "daily", "profile": "complet"}
+
+
+@pytest.fixture
+def fake_claude(tmp_path, monkeypatch):
+    """Real tasks, run by a fake claude (a prompt with DORS keeps running)."""
+    script = tmp_path / "fake_claude.py"
+    script.write_text(FAKE_CLAUDE, encoding="utf-8")
+    monkeypatch.setattr(tasks, "claude_command", lambda: [sys.executable, str(script)])
+    monkeypatch.setattr(tasks, "claude_version", lambda refresh=False: (2, 1, 300))
+    monkeypatch.setattr(config, "WORKDIR", str(tmp_path / "travail"))
+    monkeypatch.setattr(config, "MAX_CONCURRENT_TASKS", 3)
+    monkeypatch.setattr(config, "CONFIRM_COMPLET", True)
+    for store_ in (confirm.PENDING, confirm.SESSIONS, confirm.FORGOTTEN):
+        store_.clear()
+    yield script
+    for store_ in (confirm.PENDING, confirm.SESSIONS, confirm.FORGOTTEN):
+        store_.clear()
+
+
+def test_phone_tools_and_requests_hold_through_the_real_gate_holds(monkeypatch, pc, minted, alerts, fake_claude):
+    """Rows 19 to 23 and 11 once more, end to end: A2's proofs stamp the caller;
+    here a paired iPhone sends its own cookie and page token through the real
+    gate, the PC opts in through its real route, alerts are the real ones, and
+    the revocation cancels the phone's real card and real running task."""
+    ran = []
+    monkeypatch.setattr(desktop, "open_target", lambda **kw: ran.append(("open", kw.get("url") or kw.get("name")))
+                        or {"ok": True})
+    monkeypatch.setattr(desktop, "system_action", lambda action, value=None: ran.append((action, value))
+                        or {"ok": True})
+    monkeypatch.setattr(desktop, "screenshot_jpeg", lambda monitor=None: ran.append(("screen", monitor))
+                        or b"\xff\xd8jpeg")
+    phone, device, _ = paired_client(monkeypatch)
+    other, _, _ = paired_client(monkeypatch, name="iPad de test", ip=IP_B)
+    app = f"app:{device['id']}"
+    T = confirm.T
+
+    def tool(client, name, args, sid):
+        return client.post("/api/tool", json={"name": name, "arguments": args, "session_id": sid})
+
+    def decide(client, pending_id, decision="oui"):
+        return client.post(f"/api/pending/{pending_id}/decide", json={"decision": decision}).json()
+
+    def complet_tasks():
+        return [t for t in tasks.TASKS.values() if t["profile"] == "complet"]
+
+    # 23. The phone's voice session, minted through the gate, is its own.
+    sid = phone.post("/api/session", json={}).json()["session_id"]
+    assert confirm.SESSIONS[sid]["origin"] == app and minted == ["app"]
+    pc_sid = pc.post("/api/session", json={}).json()["session_id"]
+    foreign = "Session d'un autre appareil."
+    assert tool(pc, "get_status", {}, sid).status_code == 403
+    assert tool(other, "get_status", {}, sid).json()["detail"] == foreign
+    for route in ("/api/voice/turn", "/api/voice/taint"):
+        assert phone.post(route, json={"session_id": pc_sid, "reason": "x"}).json()["detail"] == foreign
+    assert tool(phone, "get_status", {}, sid).status_code == 200
+    # 19. What stays on the PC is refused by the server, whatever the page asks.
+    for name, args in (("open_app", {"name": "notepad"}), ("look_at_screen", {}),
+                       ("system_control", {"action": "read_clipboard"}),
+                       ("system_control", {"action": "write_clipboard", "value": "x"}),
+                       ("system_control", {"action": "save_screenshot"})):
+        out = tool(phone, name, args, sid).json()
+        assert out["ok"] is False and "PC" in out["error"], (name, args)
+    assert ran == []
+    # 20. Full access: closed until the PC opts in (the phone cannot), nothing parked.
+    assert tool(phone, "delegate_to_claude", COMPLET, sid).json() == {"ok": False, "error": T.complet_closed}
+    assert phone.post("/api/remote/complet", json={"duration": "7d"}).status_code == 403
+    assert phone.post("/api/tasks", json={"prompt": "Range", "profile": "complet"}).status_code == 400
+    assert not confirm.PENDING
+    assert pc.post("/api/remote/complet", json={"duration": "24h"}).status_code == 200
+    # Parked for this phone's button only.
+    out = tool(phone, "delegate_to_claude", COMPLET, sid).json()
+    assert out["status"] == "needs_confirmation", out
+    pending = out["pending_id"]
+    [card] = [p for p in phone.get("/api/pending").json() if p["id"] == pending]
+    assert (card["via"], card["button_only"], card["launch_from"], card["remote_kind"]) == (app, True, app, "complet")
+    # Never by voice (even a fresh « oui »), never the PC's button, never another phone's.
+    assert phone.post("/api/voice/turn", json={"session_id": sid}).json() == {"ok": True}
+    out = tool(phone, "confirm_action", {"pending_id": pending, "decision": "oui"}, sid).json()
+    assert out == {"ok": False, "error": T.button_only}
+    assert decide(pc, pending) == {"ok": False, "error": T.from_phone}
+    assert decide(other, pending) == {"ok": False, "error": T.other_device}
+    # The PC withdraws its opt-in between the card and the button: refused at decide time.
+    assert pc.post("/api/remote/complet", json={"duration": "never"}).json() == {"complet_until": 0}
+    assert decide(phone, pending) == {"ok": False, "error": T.complet_closed}
+    assert not complet_tasks() and "remote_complet" not in alerts.kinds()
+    # Opted in again: the phone's own button launches it, for the phone, and the PC is alerted.
+    pc.post("/api/remote/complet", json={"duration": "24h"})
+    assert decide(phone, pending)["state"] == "done"
+    [task] = complet_tasks()
+    assert task["via"] == app and task["prompt"] == COMPLET["prompt"]
+    assert alerts.kinds().count("remote_complet") == 1
+    assert ("remote_complet", audit.ALERTS["remote_complet"]["ntfy_text"]) in alerts.hooks
+    wait(task)
+    # A conversation that read outside content (the page reports it): refused, nothing parked.
+    assert phone.post("/api/voice/taint", json={"session_id": sid, "reason": "résultat de tâche"}).json()["ok"]
+    assert tool(phone, "delegate_to_claude", COMPLET, sid).json() == {"ok": False, "error": T.complet_tainted}
+    # 21. A PC action waits for the phone's button; a link never opens on the PC.
+    clean = phone.post("/api/session", json={}).json()["session_id"]
+    out = tool(phone, "system_control", {"action": "lock_screen"}, clean).json()
+    assert out["status"] == "needs_confirmation" and confirm.PENDING[out["pending_id"]]["button_only"]
+    lock = out["pending_id"]
+    assert decide(pc, lock) == {"ok": False, "error": T.from_phone} and ran == []
+    link = tool(phone, "open_url", {"url": "https://example.org/page"}, clean).json()
+    assert link["ok"] is True and link["opened"] is False and ran == []
+    # 21b. Never a full-access routine from the phone, by voice or by the panel.
+    assert tool(phone, "schedule", ROUTINE, clean).json() == \
+        {"ok": False, "error": "Une routine avec accès complet se programme sur le PC."}
+    assert phone.post("/api/schedules", json=ROUTINE).status_code == 403
+    assert scheduler.items() == []
+    # 22. The phone may cancel the PC's request, never launch it.
+    pc_request = tools.run_tool("delegate_to_claude", {**COMPLET, "title": "Du PC"},
+                                tools.ToolCtx(confirm.new_session()))["pending_id"]
+    assert decide(phone, pc_request) == {"ok": False, "error": T.other_device}
+    assert decide(phone, pc_request, "non")["state"] == "cancelled"
+    # 11. Revocation, for real: its open cards are cancelled, its running task stopped.
+    value = phone.cookies.get(remote.COOKIE)
+    mute = tool(phone, "system_control", {"action": "mute"}, clean).json()["pending_id"]
+    running = phone.post("/api/tasks", json={"prompt": "Veille DORS", "profile": "recherche"}).json()
+    assert tasks.TASKS[running["id"]]["via"] == app and tasks.TASKS[running["id"]]["status"] in tasks.ACTIVE
+    other_task = other.post("/api/tasks", json={"prompt": "Autre DORS", "profile": "recherche"}).json()
+    r = pc.delete(f"/api/remote/devices/{device['id']}")
+    assert r.json()["cancelled_tasks"] == 1
+    assert confirm.PENDING[lock]["state"] == confirm.PENDING[mute]["state"] == "cancelled"
+    wait(tasks.TASKS[running["id"]])
+    assert tasks.TASKS[running["id"]]["status"] == "cancelled"
+    assert tasks.TASKS[other_task["id"]]["status"] in tasks.ACTIVE  # another device's work goes on
+    r = phone.get("/api/config")
+    assert r.status_code == 401 and r.json()["detail"] == remote.T_REVOKED
+    r = with_cookie(value, token=phone.headers["X-Jarvis-Token"]).post(f"/api/pending/{mute}/decide",
+                                                                       json={"decision": "oui"})
+    assert r.status_code == 401 and r.json()["detail"] == remote.T_REVOKED
+    assert ran == []  # nothing ever ran on the PC for this phone
+
+
+def test_phone_streams_and_inbox_hold_through_the_real_gate_holds(monkeypatch, pc):
+    """Rows 25 to 27 with a phone paired for real: its presence never touches the
+    election, its replay starts at its real pairing (remote.replay_floor reads
+    paired_seq, nothing faked), and it reads and acknowledges only its own inbox."""
+    enable_remote(monkeypatch)
+    before = [events.publish("task", {"id": f"t{n}", "title": "Avant", "status": "done"}) for n in range(3)]
+    phone, device, _, _ = pair_phone(pc)
+    phone.headers["X-Jarvis-Token"] = page_token(phone.get("/").text)
+    assert devices.get(device["id"])["paired_seq"] >= before[-1]
+    other, other_device, _ = paired_client(monkeypatch, name="iPad de test", ip=IP_B)
+    caller = remote.Caller(kind="app", device_id=device["id"], ip=IP, login=LOGIN, name=device["name"])
+    after = events.publish("memory", {"n": "après"})
+
+    async def scenario():
+        pc_stream = await opened("page-pc")
+        # 25. Its presence and claims, through the gate: the election never hears of them.
+        ranks = {cid: p.rank() for cid, p in events._clients.items()}
+        for body in ({"client": "page-pc", "claim": True, "focused": True, "live": True},
+                     {"client": "page-iphone", "claim": True, "focused": True, "live": True}):
+            r = phone.post("/api/presence", json=body)
+            assert r.json() == {"leader": None, "live": False, "remote": True}, body
+        assert {cid: p.rank() for cid, p in events._clients.items()} == ranks and events.leader() == "page-pc"
+        # 26. Back with Last-Event-ID 0: only what came after its pairing.
+        stream = await opened("", caller, last_event_id="0")
+        assert await frames(stream, 1) == [(after, {"type": "memory", "n": "après"})]
+        marker = events.publish("memory", {"n": "suite"})
+        assert await frames(stream, 1) == [(marker, {"type": "memory", "n": "suite"})]
+        await stream.aclose()
+        await pc_stream.aclose()
+    asyncio.run(scenario())
+    # 27. Its inbox is its own: another device's and the PC's messages are not even found.
+    monkeypatch.setattr(inbox, "notify_offline", lambda *a, **k: False)
+    mine = inbox.add("task", {"id": "t-tel", "title": "Météo", "status": "done", "via": f"app:{device['id']}"})
+    theirs = inbox.add("task", {"id": "t-ipad", "title": "Trajet", "status": "done",
+                                "via": f"app:{other_device['id']}"})
+    ours = inbox.add("reminder", {"id": "r-pc", "text": "Arroser", "via": "pc"})
+    assert [i["id"] for i in phone.get("/api/inbox").json()] == [mine["id"]]
+    assert [i["id"] for i in other.get("/api/inbox").json()] == [theirs["id"]]
+    for item in (theirs, ours):
+        assert phone.post(f"/api/inbox/{item['id']}/ack").status_code == 404
+    assert phone.post(f"/api/inbox/{mine['id']}/ack").json() == {"ok": True}
+    pc_inbox = [i["id"] for i in pc.get("/api/inbox").json()]
+    assert ours["id"] in pc_inbox and mine["id"] not in pc_inbox and theirs["id"] not in pc_inbox
+    left = {i["id"] for i in inbox.pending(via=None)}
+    assert mine["id"] not in left and {theirs["id"], ours["id"]} <= left

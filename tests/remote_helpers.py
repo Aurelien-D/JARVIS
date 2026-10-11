@@ -42,11 +42,11 @@ def as_caller(monkeypatch, caller) -> None:
 
 
 def enable_remote(monkeypatch, *, host=REMOTE_HOST, logins=(LOGIN,), cap=5.0) -> list:
-    """Remote access switched on as the PC would leave it: READY, an enabled
-    remote.json with this Serve name and these logins, a daily cap, and a fake
-    Serve listener (nothing is bound). Returns the listener calls ("start", "stop")."""
+    """Remote access switched on as the PC would leave it (remote.READY is True
+    since C2): an enabled remote.json with this Serve name and these logins, a
+    daily cap, and a fake Serve listener (nothing is bound). Returns the listener
+    calls ("start", "stop")."""
     calls = []
-    monkeypatch.setattr(remote, "READY", True)
     monkeypatch.setattr(config, "DAILY_BUDGET_USD", cap)
     monkeypatch.setattr(listener, "start", lambda: calls.append("start") or
                         {"running": True, "port": config.REMOTE_PORT, "error": ""})

@@ -396,6 +396,46 @@ def test_the_access_log_with_the_stream_token_is_off_holds(monkeypatch):
         access.propagate = saved[2]
         server.SERVER = None
 
+def test_the_serve_listener_never_logs_the_phone_token_holds(monkeypatch, caplog, capfd):
+    """The iPhone's event stream carries its page token in its URL too, through
+    the second listener (the one Tailscale Serve reaches): neither uvicorn's
+    request log nor the remote audit ever writes that URL."""
+    import socket
+
+    from remote_helpers import LOGIN, REMOTE_HOST, remote_headers
+
+    from jarvis import listener
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    monkeypatch.setattr(config, "REMOTE_PORT", port)
+    monkeypatch.setattr(config, "DAILY_BUDGET_USD", 5.0)
+    caplog.set_level(logging.DEBUG)
+    # Every uvicorn logger listening (the listener's own Config then sets their level
+    # when it starts: access_log=False and log_level="warning" both keep request lines out).
+    for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+        caplog.set_level(logging.DEBUG, logger=name)
+    secret = "PAGETOKEN-SENTINEL-0123456789abcdef"
+    remote.set_enabled(True, host=REMOTE_HOST, login=LOGIN)  # the real listener
+    try:
+        assert listener.state()["running"] is True
+        with httpx.Client(trust_env=False, timeout=5) as c:
+            r = c.get(f"http://127.0.0.1:{port}/api/events?token={secret}&client=page-1",
+                      headers=remote_headers(origin=False))
+            assert r.status_code == 401  # unpaired: refused, and its URL noted nowhere
+            assert c.get(f"http://127.0.0.1:{port}/healthz?token={secret}",
+                         headers=remote_headers(origin=False)).status_code == 200
+    finally:
+        remote.set_enabled(False)
+    out, err = capfd.readouterr()
+    # The server's own records (the test's httpx client logs its URL itself: not JARVIS's).
+    logged = "\n".join(f"{r.name} {r.getMessage()}" for r in caplog.records
+                       if not r.name.startswith(("httpx", "httpcore")))
+    trail = "".join(p.read_text(encoding="utf-8") for p in config.DATA_DIR.glob("remote-*.jsonl"))
+    assert "/api/events" in trail  # the refusal is audited, by its route
+    for text in (logged, out, err, trail):
+        assert secret not in text and "token=" not in text
+
 # ---------------------------------------------------------------- 7. the ephemeral secret
 
 
