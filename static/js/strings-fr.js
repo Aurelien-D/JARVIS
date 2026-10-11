@@ -827,7 +827,7 @@ export const T = typeset({
     thisPhone: "Cet iPhone",
     phoneActive: "Accès à distance actif",
     phoneComplet: (when) => `Accès complet autorisé par le PC jusqu'au ${when}.`,
-    pauseHelp: "Mettre en pause coupe l'accès depuis cet iPhone ; seul le PC peut le rallumer avant la fin de la pause.",
+    pauseHelp: "Mettre en pause coupe tout l'accès à distance (vos iPhone et Siri) ; seul le PC peut le rallumer avant la fin de la pause.",
     pause: "Mettre en pause",
     pauseTitle: "Couper l'accès depuis l'iPhone ?",
     pauseText: "Seul le PC pourra le rallumer avant la fin de la pause.",
@@ -987,7 +987,7 @@ export const T = typeset({
     dismiss: "Fermer ce message",
     micInterrupted: "Micro interrompu (appel, Siri ou autre app) : JARVIS vous entend de nouveau dès qu'iOS le rend.",
     // The microphone refused or busy, on the iPhone (no address bar, no Windows): explainError, voice.js.
-    micBlocked: "Micro refusé : réessayez et autorisez le micro quand iOS le demande. S'il ne le demande plus : Réglages de l'iPhone › Safari › Micro.",
+    micBlocked: "Micro refusé : réessayez et autorisez le micro quand iOS le demande. S'il ne le demande plus : Réglages de l'iPhone › Apps › Safari › Micro.",
     micBusy: "Micro occupé par un appel ou une autre app : réessayez une fois libéré.",
     // Réglages › Écoute on iOS: Safari cannot choose the output (settings.js).
     speakerNote: "Sur l'iPhone, iOS choisit la sortie du son : haut-parleur, écouteurs ou AirPlay (Centre de contrôle).",

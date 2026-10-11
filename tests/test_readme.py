@@ -450,6 +450,8 @@ def test_the_iphone_pauses_for_1_h_or_24_h_and_only_the_pc_resumes(monkeypatch):
     assert (js_text("remote", "pause1"), js_text("remote", "pause24")) == ("1 h", "24 h")
     assert ("**Mettre en pause** (sur l'iPhone, Réglages › Accès à distance) : coupe tout l'accès à distance "
             "(vos iPhone et Siri) **1 h** ou **24 h**") in guide()
+    # The phone's own help says the same scope as the guide.
+    assert js_text("remote", "pauseHelp").startswith("Mettre en pause coupe tout l'accès à distance (vos iPhone et Siri)")
     assert js_text("remote", "resume") == "Reprendre maintenant" and "« Reprendre maintenant »" in guide()
     assert "on peut seulement le mettre en pause, 1 h ou 24 h" in section("## 🔒 Sécurité")
 
@@ -618,7 +620,9 @@ def test_the_troubleshooting_messages_are_the_codes():
     assert "12 conversations par 10 minutes et 40 par jour" in text
     assert "12 connexions par 10 minutes et 40 par jour" in section("## 🔒 Sécurité")
     assert f"« {remote.T_PROXY} »" in section("## ❓ Problèmes fréquents")
-    assert "Apps › Safari › Micro" in text  # where iOS 18 and later keep Safari's microphone setting
+    # Where iOS 18 and later keep Safari's microphone setting: the guide and the phone's own message agree.
+    assert "Réglages de l'iPhone › Apps › Safari › Micro" in text
+    assert js_text("ios", "micBlocked").endswith("Réglages de l'iPhone › Apps › Safari › Micro.")
 
 
 def test_security_and_data_flows_tell_the_remote_model():

@@ -5,8 +5,11 @@ access from the phone needs the PC's opt-in, a clean conversation and the
 phone's own [Lancer]; PC actions wait for that button; a phone never sets up a
 full-access routine; sessions stay with their origin; Siri never gets a card.
 
-Until the remote core lands, the phone is a stamped caller (remote_helpers.as_caller)
-and remote.complet_allowed, remote.origin_active and audit.alert are faked here.
+Here the phone is a stamped caller (remote_helpers.as_caller) and
+remote.complet_allowed, remote.origin_active and audit.alert are faked, to
+reach each rule on its own. The same rows through the real gate (real cookie
+and page token, the PC's real opt-in, real alerts) are proven in
+tests/test_protections_remote.py::test_phone_tools_and_requests_hold_through_the_real_gate_holds.
 Fictitious names only: the repository is public."""
 import sys
 import time

@@ -15,7 +15,7 @@ pytestmark = pytest.mark.e2e
 NNBSP = "\u202f"
 PAUSED = "Conversation en pause (écran verrouillé ou autre app)."
 MIC_BLOCKED = ("Micro refusé : réessayez et autorisez le micro quand iOS le demande. "
-               "S'il ne le demande plus : Réglages de l'iPhone › Safari › Micro.")
+               "S'il ne le demande plus : Réglages de l'iPhone › Apps › Safari › Micro.")
 
 # What iOS has and Chromium has not, recorded in window.__order:
 # navigator.audioSession (Safari 17+) and the moment the microphone opens;
