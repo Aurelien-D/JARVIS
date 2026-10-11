@@ -367,6 +367,7 @@ def test_siri_rate_limits_daily_cap_and_task_caps_hold_holds(monkeypatch, openai
     # Each Siri task spends at most 0,50 $ (tasks.create_task, from its via).
     monkeypatch.setattr(config, "TASK_BUDGET_USD", 2.0)
     assert tasks.siri_budget(job.origin) == tasks.SIRI_TASK_BUDGET_USD == 0.50
+    monkeypatch.setattr(tasks, "claude_command", lambda: ["claude"])  # CI has no Claude Code installed
     assert "--max-budget-usd" in tasks.build_command("recherche", budget=0.5)
     cmd = tasks.build_command("recherche", budget=tasks.siri_budget(job.origin))
     assert cmd[cmd.index("--max-budget-usd") + 1] == "0.5"
